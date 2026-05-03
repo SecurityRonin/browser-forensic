@@ -2,6 +2,7 @@
 
 pub mod analyze;
 pub mod timestamp;
+pub mod test_utils;
 
 use std::collections::HashMap;
 use std::path::Path;
