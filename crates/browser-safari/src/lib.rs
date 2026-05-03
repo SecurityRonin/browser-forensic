@@ -2,6 +2,8 @@
 
 pub mod history;
 pub mod downloads;
+pub mod bookmarks;
 
 pub use history::parse_history;
 pub use downloads::parse_downloads;
+pub use bookmarks::parse_bookmarks;
