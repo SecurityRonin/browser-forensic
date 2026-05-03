@@ -4,6 +4,7 @@ members = [
     "crates/browser-chrome",
     "crates/browser-firefox",
     "crates/bw-cli",
+    "crates/browser-discovery",
 ]
 resolver = "2"
 
