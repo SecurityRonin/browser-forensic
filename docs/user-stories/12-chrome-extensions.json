@@ -17,6 +17,6 @@
       "Test: parse_highest_version_only — two version dirs, only latest manifest name is used",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
