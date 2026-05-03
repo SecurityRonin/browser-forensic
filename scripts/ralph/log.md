@@ -111,3 +111,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 17: Chrome autofill parser
+
+**Changes:** crates/browser-chrome/src/autofill.rs, crates/browser-chrome/src/lib.rs
+**Status:** Completed
+
+---
