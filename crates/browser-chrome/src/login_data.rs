@@ -9,7 +9,9 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 use crate::history::webkit_to_unix_ns;
 
@@ -20,8 +22,37 @@ use crate::history::webkit_to_unix_ns;
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_login_data(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    // CRITICAL: password_value is NEVER in this query
+    let mut stmt = conn.prepare(
+        "SELECT origin_url, action_url, username_value, date_created, date_last_used \
+         FROM logins \
+         WHERE date_created > 0 \
+         ORDER BY date_created ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let origin_url: String = row.get(0)?;
+            let action_url: String = row.get(1)?;
+            let username: String = row.get(2)?;
+            let date_created: i64 = row.get(3)?;
+            let date_last_used: i64 = row.get(4)?;
+            Ok((origin_url, action_url, username, date_created, date_last_used))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(origin_url, action_url, username, date_created, date_last_used)| {
+            let ts_ns = webkit_to_unix_ns(date_created);
+            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::LoginData, &source, origin_url.clone())
+                .with_attr("origin_url", json!(origin_url))
+                .with_attr("action_url", json!(action_url))
+                .with_attr("username", json!(username))
+                .with_attr("date_last_used", json!(date_last_used))
+                .with_attr("password", json!("ENCRYPTED"))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
