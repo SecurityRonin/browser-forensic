@@ -6,15 +6,73 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 /// Parse a Chromium `Cache/` directory (best-effort).
 ///
 /// # Errors
 ///
 /// Returns an error if the directory cannot be read.
-pub fn parse_cache(_cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
+    let source = cache_dir.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    let entries = match std::fs::read_dir(cache_dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(events),
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let file_path = entry.path();
+        // Only walk immediate files, not subdirectories
+        if !file_path.is_file() {
+            continue;
+        }
+
+        let data = match std::fs::read(&file_path) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let file_len = data.len();
+        if file_len < 24 {
+            continue;
+        }
+
+        // EOF record is last 24 bytes
+        let eof_start = file_len - 24;
+        let eof_record = &data[eof_start..];
+
+        // Bytes 8-12 of EOF record = key_size as u32 LE
+        let key_size = u32::from_le_bytes(eof_record[8..12].try_into().unwrap()) as usize;
+
+        if key_size == 0 || key_size > 8192 {
+            continue;
+        }
+
+        if eof_start < key_size {
+            continue;
+        }
+
+        let key_start = eof_start - key_size;
+        let key_bytes = &data[key_start..eof_start];
+
+        let url = match std::str::from_utf8(key_bytes) {
+            Ok(s) => s.to_string(),
+            Err(_) => continue,
+        };
+
+        if !url.contains("http") {
+            continue;
+        }
+
+        let ev = BrowserEvent::new(0, BrowserFamily::Chromium, ArtifactKind::Cache, &source, url.clone())
+            .with_attr("url", json!(url));
+        events.push(ev);
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
