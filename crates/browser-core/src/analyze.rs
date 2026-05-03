@@ -6,8 +6,28 @@ use crate::BrowserEvent;
 /// `count <= cap`, sorted by count ascending.
 ///
 /// Only events that have a valid URL in `attrs["url"]` are considered.
-pub fn rare_domains(_events: &[BrowserEvent], _cap: usize) -> Vec<(String, usize)> {
-    todo!("not yet implemented")
+pub fn rare_domains(events: &[BrowserEvent], cap: usize) -> Vec<(String, usize)> {
+    let mut domain_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    for event in events {
+        if let Some(url_val) = event.attrs.get("url") {
+            if let Some(url_str) = url_val.as_str() {
+                if let Ok(parsed) = url::Url::parse(url_str) {
+                    if let Some(host) = parsed.host_str() {
+                        *domain_counts.entry(host.to_string()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result: Vec<(String, usize)> = domain_counts
+        .into_iter()
+        .filter(|(_, count)| *count <= cap)
+        .collect();
+
+    result.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+    result
 }
 
 #[cfg(test)]

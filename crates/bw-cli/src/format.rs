@@ -7,27 +7,52 @@ pub const TIMELINE_CSV_HEADER: &str = "timestamp,browser,artifact,source,descrip
 
 /// Escape a string for CSV: wraps in double quotes if it contains commas or quotes.
 pub fn csv_escape(s: &str) -> String {
-    todo!("not yet implemented")
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        let escaped = s.replace('"', "\"\"");
+        format!("\"{escaped}\"")
+    } else {
+        s.to_string()
+    }
 }
 
 /// Format a Unix nanosecond timestamp as RFC3339.
 pub fn format_timestamp_ns(ns: i64) -> String {
-    todo!("not yet implemented")
+    if ns == 0 {
+        return "1970-01-01T00:00:00Z".to_string();
+    }
+    use chrono::{DateTime, Utc};
+    let secs = ns / 1_000_000_000;
+    let nanos = u32::try_from(ns % 1_000_000_000).unwrap_or(0);
+    DateTime::<Utc>::from_timestamp(secs, nanos)
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_else(|| "invalid".to_string())
 }
 
 /// Format a [`BrowserEvent`] as a human-readable text line.
 pub fn event_to_text(ev: &BrowserEvent) -> String {
-    todo!("not yet implemented")
+    let ts = format_timestamp_ns(ev.timestamp_ns);
+    format!("[{ts}] {browser}/{artifact}: {desc}",
+        browser = ev.browser,
+        artifact = ev.artifact,
+        desc = ev.description)
 }
 
 /// Format a [`BrowserEvent`] as a JSONL (newline-delimited JSON) string.
 pub fn event_to_jsonl(ev: &BrowserEvent) -> String {
-    todo!("not yet implemented")
+    serde_json::to_string(ev).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// Format a [`BrowserEvent`] as a CSV row (5 fields).
 pub fn event_to_csv_row(ev: &BrowserEvent) -> String {
-    todo!("not yet implemented")
+    let ts = format_timestamp_ns(ev.timestamp_ns);
+    let browser = ev.browser.to_string();
+    let artifact = ev.artifact.to_string();
+    format!("{},{},{},{},{}",
+        csv_escape(&ts),
+        csv_escape(&browser),
+        csv_escape(&artifact),
+        csv_escape(&ev.source),
+        csv_escape(&ev.description))
 }
 
 #[cfg(test)]
