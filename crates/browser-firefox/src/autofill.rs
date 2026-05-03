@@ -51,48 +51,35 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
-    use rusqlite::Connection;
+    use browser_core::test_utils::sqlite::TestDb;
+    use rusqlite::params;
     use serde_json::json;
-    use tempfile::NamedTempFile;
 
-    fn create_formhistory_db(rows: &[(&str, &str, i64, i64, i64)]) -> NamedTempFile {
-        // rows: (fieldname, value, times_used, first_used_us, last_used_us)
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE moz_formhistory (
-                id        INTEGER PRIMARY KEY,
-                fieldname TEXT NOT NULL,
-                value     TEXT NOT NULL,
-                timesUsed INTEGER NOT NULL DEFAULT 0,
-                firstUsed INTEGER NOT NULL DEFAULT 0,
-                lastUsed  INTEGER NOT NULL DEFAULT 0
-            );",
-        )
-        .unwrap();
-        for (fieldname, value, times_used, first_used, last_used) in rows {
-            conn.execute(
-                "INSERT INTO moz_formhistory (fieldname, value, timesUsed, firstUsed, lastUsed) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![fieldname, value, times_used, first_used, last_used],
-            )
-            .unwrap();
-        }
-        f
-    }
+    const SCHEMA: &str = "CREATE TABLE moz_formhistory (
+        id        INTEGER PRIMARY KEY,
+        fieldname TEXT NOT NULL,
+        value     TEXT NOT NULL,
+        timesUsed INTEGER NOT NULL DEFAULT 0,
+        firstUsed INTEGER NOT NULL DEFAULT 0,
+        lastUsed  INTEGER NOT NULL DEFAULT 0
+    );";
 
     #[test]
     fn parse_empty_formhistory_returns_empty() {
-        let f = create_formhistory_db(&[]);
-        let events = parse_autofill(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_autofill(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_formhistory_entry() {
         let first_used_us = 1_648_000_000_000_000_i64;
-        let f = create_formhistory_db(&[("email", "user@example.com", 5, first_used_us, 0)]);
-        let events = parse_autofill(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO moz_formhistory (fieldname, value, timesUsed, firstUsed, lastUsed) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params!["email", "user@example.com", 5_i64, first_used_us, 0_i64],
+        );
+        let events = parse_autofill(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert_eq!(ev.artifact, ArtifactKind::Autofill);

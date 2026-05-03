@@ -50,40 +50,32 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
+    use browser_core::test_utils::sqlite::TestDb;
     use browser_core::timestamp::core_data_secs_to_unix_nanos;
     use rusqlite::Connection;
-    use tempfile::NamedTempFile;
 
-    fn create_safari_history_db(rows: &[(&str, i64, f64)]) -> NamedTempFile {
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE history_items (
-                id          INTEGER PRIMARY KEY,
-                url         TEXT NOT NULL,
-                visit_count INTEGER DEFAULT 0
-            );
-            CREATE TABLE history_visits (
-                id           INTEGER PRIMARY KEY,
-                history_item INTEGER NOT NULL,
-                visit_time   REAL NOT NULL
-            );",
-        )
-        .unwrap();
-        for (url, visit_count, visit_time) in rows {
-            conn.execute(
-                "INSERT INTO history_items (url, visit_count) VALUES (?1, ?2)",
-                rusqlite::params![url, visit_count],
-            )
-            .unwrap();
-            let item_id = conn.last_insert_rowid();
-            conn.execute(
-                "INSERT INTO history_visits (history_item, visit_time) VALUES (?1, ?2)",
-                rusqlite::params![item_id, visit_time],
-            )
-            .unwrap();
-        }
-        f
+    const SCHEMA: &str = "CREATE TABLE history_items (
+        id          INTEGER PRIMARY KEY,
+        url         TEXT NOT NULL,
+        visit_count INTEGER DEFAULT 0
+    );
+    CREATE TABLE history_visits (
+        id           INTEGER PRIMARY KEY,
+        history_item INTEGER NOT NULL,
+        visit_time   REAL NOT NULL
+    );";
+
+    fn insert_visit(db: &TestDb, url: &str, visit_count: i64, visit_time: f64) {
+        let conn = Connection::open(db.path()).unwrap();
+        conn.execute(
+            "INSERT INTO history_items (url, visit_count) VALUES (?1, ?2)",
+            rusqlite::params![url, visit_count],
+        ).unwrap();
+        let item_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO history_visits (history_item, visit_time) VALUES (?1, ?2)",
+            rusqlite::params![item_id, visit_time],
+        ).unwrap();
     }
 
     #[test]
@@ -100,15 +92,16 @@ mod tests {
 
     #[test]
     fn parse_empty_safari_history_returns_empty() {
-        let f = create_safari_history_db(&[]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_history(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_safari_url() {
-        let f = create_safari_history_db(&[("https://example.com", 3, 700_000_000.0)]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        insert_visit(&db, "https://example.com", 3, 700_000_000.0);
+        let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert_eq!(ev.browser, BrowserFamily::Safari);
@@ -120,11 +113,10 @@ mod tests {
 
     #[test]
     fn parse_multiple_visits_creates_one_event_per_visit() {
-        let f = create_safari_history_db(&[
-            ("https://a.com", 1, 100_000_000.0),
-            ("https://b.com", 2, 200_000_000.0),
-        ]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        insert_visit(&db, "https://a.com", 1, 100_000_000.0);
+        insert_visit(&db, "https://b.com", 2, 200_000_000.0);
+        let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 2);
     }
 }

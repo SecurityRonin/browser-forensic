@@ -56,46 +56,33 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
-    use rusqlite::Connection;
+    use browser_core::test_utils::sqlite::TestDb;
+    use rusqlite::params;
     use serde_json::json;
-    use tempfile::NamedTempFile;
 
-    fn create_autofill_db(rows: &[(&str, &str, i32, i64, i64)]) -> NamedTempFile {
-        // rows: (name, value, count, date_created_secs, date_last_used_secs)
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE autofill (
-                name           TEXT NOT NULL,
-                value          TEXT NOT NULL,
-                count          INTEGER NOT NULL DEFAULT 0,
-                date_created   INTEGER NOT NULL DEFAULT 0,
-                date_last_used INTEGER NOT NULL DEFAULT 0
-            );",
-        )
-        .unwrap();
-        for (name, value, count, date_created, date_last_used) in rows {
-            conn.execute(
-                "INSERT INTO autofill (name, value, count, date_created, date_last_used) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![name, value, count, date_created, date_last_used],
-            )
-            .unwrap();
-        }
-        f
-    }
+    const SCHEMA: &str = "CREATE TABLE autofill (
+        name           TEXT NOT NULL,
+        value          TEXT NOT NULL,
+        count          INTEGER NOT NULL DEFAULT 0,
+        date_created   INTEGER NOT NULL DEFAULT 0,
+        date_last_used INTEGER NOT NULL DEFAULT 0
+    );";
 
     #[test]
     fn parse_empty_autofill_returns_empty() {
-        let f = create_autofill_db(&[]);
-        let events = parse_autofill(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_autofill(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_autofill_entry() {
-        let f = create_autofill_db(&[("email", "user@example.com", 5, 1_648_000_000, 1_650_000_000)]);
-        let events = parse_autofill(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO autofill (name, value, count, date_created, date_last_used) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params!["email", "user@example.com", 5_i32, 1_648_000_000_i64, 1_650_000_000_i64],
+        );
+        let events = parse_autofill(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert_eq!(ev.artifact, ArtifactKind::Autofill);
@@ -107,8 +94,12 @@ mod tests {
     #[test]
     fn autofill_uses_unix_seconds_not_webkit() {
         let date_created_secs = 1_648_000_000_i64;
-        let f = create_autofill_db(&[("name_field", "John", 1, date_created_secs, 0)]);
-        let events = parse_autofill(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO autofill (name, value, count, date_created, date_last_used) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params!["name_field", "John", 1_i32, date_created_secs, 0_i64],
+        );
+        let events = parse_autofill(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         // Must use Unix epoch seconds * 1_000_000_000, NOT webkit_to_unix_ns
         assert_eq!(events[0].timestamp_ns, date_created_secs * 1_000_000_000);

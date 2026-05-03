@@ -58,50 +58,37 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
+    use browser_core::test_utils::sqlite::TestDb;
     use browser_core::timestamp::core_data_secs_to_unix_nanos;
-    use rusqlite::Connection;
+    use rusqlite::params;
     use serde_json::json;
-    use tempfile::NamedTempFile;
 
-    fn create_safari_cookies_db(rows: &[(&str, &str, &str, &str, f64, f64, bool, bool)]) -> NamedTempFile {
-        // rows: (name, value, domain, path, creation, expiry, is_secure, is_httponly)
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE cookies (
-                name        TEXT NOT NULL,
-                value       TEXT NOT NULL DEFAULT '',
-                domain      TEXT NOT NULL DEFAULT '',
-                path        TEXT NOT NULL DEFAULT '/',
-                creation    REAL NOT NULL DEFAULT 0,
-                expiry      REAL NOT NULL DEFAULT 0,
-                is_secure   INTEGER NOT NULL DEFAULT 0,
-                is_httponly INTEGER NOT NULL DEFAULT 0
-            );",
-        )
-        .unwrap();
-        for (name, value, domain, path, creation, expiry, is_secure, is_httponly) in rows {
-            conn.execute(
-                "INSERT INTO cookies (name, value, domain, path, creation, expiry, is_secure, is_httponly) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                rusqlite::params![name, value, domain, path, creation, expiry, *is_secure as i64, *is_httponly as i64],
-            )
-            .unwrap();
-        }
-        f
-    }
+    const SCHEMA: &str = "CREATE TABLE cookies (
+        name        TEXT NOT NULL,
+        value       TEXT NOT NULL DEFAULT '',
+        domain      TEXT NOT NULL DEFAULT '',
+        path        TEXT NOT NULL DEFAULT '/',
+        creation    REAL NOT NULL DEFAULT 0,
+        expiry      REAL NOT NULL DEFAULT 0,
+        is_secure   INTEGER NOT NULL DEFAULT 0,
+        is_httponly INTEGER NOT NULL DEFAULT 0
+    );";
 
     #[test]
     fn parse_empty_safari_cookies_returns_empty() {
-        let f = create_safari_cookies_db(&[]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_cookies(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_safari_cookie() {
-        let f = create_safari_cookies_db(&[("session_id", "abc123", ".example.com", "/", 700_000_000.0, 0.0, true, false)]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO cookies (name, value, domain, path, creation, expiry, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params!["session_id", "abc123", ".example.com", "/", 700_000_000.0_f64, 0.0_f64, 1_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert_eq!(ev.browser, BrowserFamily::Safari);
@@ -113,8 +100,12 @@ mod tests {
     #[test]
     fn safari_cookie_timestamp_uses_core_data_epoch() {
         let creation = 700_000_000.0_f64;
-        let f = create_safari_cookies_db(&[("ts_test", "v", ".example.com", "/", creation, 0.0, false, false)]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO cookies (name, value, domain, path, creation, expiry, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params!["ts_test", "v", ".example.com", "/", creation, 0.0_f64, 0_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].timestamp_ns, core_data_secs_to_unix_nanos(creation));
     }

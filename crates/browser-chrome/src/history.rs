@@ -56,50 +56,33 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use browser_core::test_utils::sqlite::TestDb;
     use browser_core::timestamp::webkit_micros_to_unix_nanos;
-    use rusqlite::Connection;
-    use tempfile::NamedTempFile;
+    use rusqlite::params;
 
-    fn create_history_db(rows: &[(&str, &str, i64, i64)]) -> NamedTempFile {
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE urls (
-                id INTEGER PRIMARY KEY,
-                url TEXT NOT NULL,
-                title TEXT DEFAULT '',
-                visit_count INTEGER DEFAULT 0 NOT NULL,
-                last_visit_time INTEGER NOT NULL
-            );",
-        )
-        .unwrap();
-        for (url, title, vc, ts) in rows {
-            conn.execute(
-                "INSERT INTO urls (url, title, visit_count, last_visit_time) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![url, title, vc, ts],
-            )
-            .unwrap();
-        }
-        f
-    }
+    const SCHEMA: &str = "CREATE TABLE urls (
+        id INTEGER PRIMARY KEY,
+        url TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        visit_count INTEGER DEFAULT 0 NOT NULL,
+        last_visit_time INTEGER NOT NULL
+    );";
 
     #[test]
     fn parse_empty_history_returns_empty() {
-        let f = create_history_db(&[]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_history(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_url_emits_event() {
-        let f = create_history_db(&[(
-            "https://example.com",
-            "Example",
-            3,
-            13_327_626_000_000_000,
-        )]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO urls (url, title, visit_count, last_visit_time) VALUES (?1, ?2, ?3, ?4)",
+            params!["https://example.com", "Example", 3_i64, 13_327_626_000_000_000_i64],
+        );
+        let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert!(ev.description.contains("https://example.com"));
@@ -116,11 +99,16 @@ mod tests {
 
     #[test]
     fn zero_timestamp_row_skipped() {
-        let f = create_history_db(&[
-            ("https://zero.example", "Zero", 1, 0),
-            ("https://real.example", "Real", 2, 13_327_626_000_000_000),
-        ]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO urls (url, title, visit_count, last_visit_time) VALUES (?1, ?2, ?3, ?4)",
+            params!["https://zero.example", "Zero", 1_i64, 0_i64],
+        );
+        db.insert(
+            "INSERT INTO urls (url, title, visit_count, last_visit_time) VALUES (?1, ?2, ?3, ?4)",
+            params!["https://real.example", "Real", 2_i64, 13_327_626_000_000_000_i64],
+        );
+        let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert!(events[0].description.contains("real.example"));
     }

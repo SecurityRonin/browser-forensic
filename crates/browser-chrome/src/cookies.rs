@@ -68,53 +68,39 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
+    use browser_core::test_utils::sqlite::TestDb;
     use browser_core::timestamp::webkit_micros_to_unix_nanos;
-    use rusqlite::Connection;
+    use rusqlite::params;
     use serde_json::json;
-    use tempfile::NamedTempFile;
 
-    // (host, name, path, creation_utc, expires_utc, is_secure, is_httponly)
-    fn create_cookies_db(rows: &[(&str, &str, &str, i64, i64, bool, bool)]) -> NamedTempFile {
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE cookies (
-                creation_utc    INTEGER NOT NULL,
-                host_key        TEXT NOT NULL,
-                name            TEXT NOT NULL,
-                value           TEXT DEFAULT '',
-                path            TEXT NOT NULL,
-                expires_utc     INTEGER DEFAULT 0,
-                is_secure       INTEGER DEFAULT 0,
-                is_httponly     INTEGER DEFAULT 0,
-                samesite        INTEGER DEFAULT -1,
-                encrypted_value BLOB DEFAULT ''
-            );",
-        )
-        .unwrap();
-        for (host, name, path, creation, expires, secure, httponly) in rows {
-            conn.execute(
-                "INSERT INTO cookies \
-                 (creation_utc, host_key, name, path, expires_utc, is_secure, is_httponly) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![creation, host, name, path, expires, *secure as i64, *httponly as i64],
-            )
-            .unwrap();
-        }
-        f
-    }
+    const SCHEMA: &str = "CREATE TABLE cookies (
+        creation_utc    INTEGER NOT NULL,
+        host_key        TEXT NOT NULL,
+        name            TEXT NOT NULL,
+        value           TEXT DEFAULT '',
+        path            TEXT NOT NULL,
+        expires_utc     INTEGER DEFAULT 0,
+        is_secure       INTEGER DEFAULT 0,
+        is_httponly     INTEGER DEFAULT 0,
+        samesite        INTEGER DEFAULT -1,
+        encrypted_value BLOB DEFAULT ''
+    );";
 
     #[test]
     fn parse_empty_cookies_returns_empty() {
-        let f = create_cookies_db(&[]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_cookies(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_cookie_emits_event() {
-        let f = create_cookies_db(&[(".example.com", "session", "/", 13_327_626_000_000_000, 0, true, false)]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, expires_utc, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![13_327_626_000_000_000_i64, ".example.com", "session", "/", 0_i64, 1_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert_eq!(ev.artifact, ArtifactKind::Cookies);
@@ -129,19 +115,28 @@ mod tests {
     #[test]
     fn cookie_timestamp_uses_webkit_epoch() {
         let creation_utc = 13_327_626_000_000_000_i64;
-        let f = create_cookies_db(&[(".example.com", "ts_test", "/", creation_utc, 0, false, false)]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, expires_utc, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![creation_utc, ".example.com", "ts_test", "/", 0_i64, 0_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].timestamp_ns, webkit_micros_to_unix_nanos(creation_utc));
     }
 
     #[test]
     fn zero_creation_utc_is_skipped() {
-        let f = create_cookies_db(&[
-            (".skip.example", "zero", "/", 0, 0, false, false),
-            (".keep.example", "real", "/", 13_327_626_000_000_000, 0, false, false),
-        ]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, expires_utc, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![0_i64, ".skip.example", "zero", "/", 0_i64, 0_i64, 0_i64],
+        );
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, expires_utc, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![13_327_626_000_000_000_i64, ".keep.example", "real", "/", 0_i64, 0_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert!(events[0].description.contains(".keep.example"));
     }

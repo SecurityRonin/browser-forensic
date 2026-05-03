@@ -61,53 +61,39 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
-    use rusqlite::Connection;
+    use browser_core::test_utils::sqlite::TestDb;
+    use rusqlite::params;
     use serde_json::json;
-    use tempfile::NamedTempFile;
 
-    // (host, name, path, creationTime_us, expiry_epoch_secs, isSecure, isHttpOnly)
-    fn create_ff_cookies_db(rows: &[(&str, &str, &str, i64, i64, bool, bool)]) -> NamedTempFile {
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE moz_cookies (
-                id          INTEGER PRIMARY KEY,
-                host        TEXT NOT NULL,
-                name        TEXT NOT NULL,
-                value       TEXT DEFAULT '',
-                path        TEXT NOT NULL,
-                expiry      INTEGER DEFAULT 0,
-                creationTime INTEGER NOT NULL,
-                lastAccessed INTEGER DEFAULT 0,
-                isSecure    INTEGER DEFAULT 0,
-                isHttpOnly  INTEGER DEFAULT 0,
-                sameSite    INTEGER DEFAULT 0
-            );",
-        )
-        .unwrap();
-        for (host, name, path, creation, expiry, secure, httponly) in rows {
-            conn.execute(
-                "INSERT INTO moz_cookies \
-                 (host, name, path, creationTime, expiry, isSecure, isHttpOnly) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![host, name, path, creation, expiry, *secure as i64, *httponly as i64],
-            )
-            .unwrap();
-        }
-        f
-    }
+    const SCHEMA: &str = "CREATE TABLE moz_cookies (
+        id          INTEGER PRIMARY KEY,
+        host        TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        value       TEXT DEFAULT '',
+        path        TEXT NOT NULL,
+        expiry      INTEGER DEFAULT 0,
+        creationTime INTEGER NOT NULL,
+        lastAccessed INTEGER DEFAULT 0,
+        isSecure    INTEGER DEFAULT 0,
+        isHttpOnly  INTEGER DEFAULT 0,
+        sameSite    INTEGER DEFAULT 0
+    );";
 
     #[test]
     fn parse_empty_cookies_returns_empty() {
-        let f = create_ff_cookies_db(&[]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_cookies(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_firefox_cookie() {
-        let f = create_ff_cookies_db(&[(".example.com", "session", "/", 1_648_000_000_000_000, 0, true, false)]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO moz_cookies (host, name, path, creationTime, expiry, isSecure, isHttpOnly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![".example.com", "session", "/", 1_648_000_000_000_000_i64, 0_i64, 1_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert_eq!(ev.artifact, ArtifactKind::Cookies);
@@ -121,8 +107,12 @@ mod tests {
     #[test]
     fn firefox_cookie_timestamp_microseconds_to_ns() {
         let creation_us = 1_648_000_000_000_000_i64;
-        let f = create_ff_cookies_db(&[(".example.com", "ts_test", "/", creation_us, 0, false, false)]);
-        let events = parse_cookies(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO moz_cookies (host, name, path, creationTime, expiry, isSecure, isHttpOnly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![".example.com", "ts_test", "/", creation_us, 0_i64, 0_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].timestamp_ns, creation_us * 1_000);
     }
