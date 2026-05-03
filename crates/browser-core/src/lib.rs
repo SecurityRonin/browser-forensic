@@ -122,6 +122,56 @@ mod tests {
     }
 
     #[test]
+    fn browser_family_has_safari_variant() {
+        let _safari = BrowserFamily::Safari;
+    }
+
+    #[test]
+    fn artifact_kind_has_bookmarks() {
+        let _bk = ArtifactKind::Bookmarks;
+    }
+
+    #[test]
+    fn artifact_kind_has_autofill() {
+        let _af = ArtifactKind::Autofill;
+    }
+
+    #[test]
+    fn artifact_kind_has_session() {
+        let _s = ArtifactKind::Session;
+    }
+
+    #[test]
+    fn detect_safari_history_db() {
+        let p = Path::new("/Users/test/Library/Safari/History.db");
+        assert_eq!(detect_browser(p), Some(BrowserFamily::Safari));
+    }
+
+    #[test]
+    fn detect_brave_history() {
+        let p = Path::new(
+            "/Users/test/Library/Application Support/BraveSoftware/Brave-Browser/Default/History",
+        );
+        assert_eq!(detect_browser(p), Some(BrowserFamily::Chromium));
+    }
+
+    #[test]
+    fn browser_family_display() {
+        assert_eq!(format!("{}", BrowserFamily::Chromium), "Chromium");
+        assert_eq!(format!("{}", BrowserFamily::Firefox), "Firefox");
+        assert_eq!(format!("{}", BrowserFamily::Safari), "Safari");
+    }
+
+    #[test]
+    fn artifact_kind_display() {
+        assert_eq!(format!("{}", ArtifactKind::History), "History");
+        assert_eq!(format!("{}", ArtifactKind::Cookies), "Cookies");
+        assert_eq!(format!("{}", ArtifactKind::Bookmarks), "Bookmarks");
+        assert_eq!(format!("{}", ArtifactKind::Autofill), "Autofill");
+        assert_eq!(format!("{}", ArtifactKind::Session), "Session");
+    }
+
+    #[test]
     fn browser_event_with_attr() {
         use serde_json::json;
         let ev = BrowserEvent::new(
