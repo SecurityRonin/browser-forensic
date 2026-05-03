@@ -6,7 +6,9 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 /// Parse a Firefox `cookies.sqlite` file.
 ///
@@ -16,8 +18,42 @@ use browser_core::BrowserEvent;
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_cookies(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT host, name, path, creationTime, expiry, isSecure, isHttpOnly, sameSite \
+         FROM moz_cookies \
+         WHERE creationTime > 0 \
+         ORDER BY creationTime ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let host: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            let cookie_path: String = row.get(2)?;
+            let creation_us: i64 = row.get(3)?;
+            let expiry: i64 = row.get(4)?;
+            let is_secure: bool = row.get::<_, i64>(5)? != 0;
+            let is_httponly: bool = row.get::<_, i64>(6)? != 0;
+            let samesite: i32 = row.get(7)?;
+            Ok((host, name, cookie_path, creation_us, expiry, is_secure, is_httponly, samesite))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(host, name, cookie_path, creation_us, expiry, is_secure, is_httponly, samesite)| {
+            let ts_ns = creation_us * 1_000;
+            let desc = format!("{host} \u{2014} {name} (path={cookie_path})");
+            BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Cookies, &source, desc)
+                .with_attr("host", json!(host))
+                .with_attr("name", json!(name))
+                .with_attr("path", json!(cookie_path))
+                .with_attr("expiry", json!(expiry))
+                .with_attr("is_secure", json!(is_secure))
+                .with_attr("is_httponly", json!(is_httponly))
+                .with_attr("samesite", json!(samesite))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
