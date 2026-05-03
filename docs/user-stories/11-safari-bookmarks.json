@@ -15,6 +15,6 @@
       "Test: nested_safari_bookmarks_all_found — 2 URLs in nested folders both found",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
