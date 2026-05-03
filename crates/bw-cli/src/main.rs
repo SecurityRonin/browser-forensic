@@ -46,6 +46,10 @@ fn timeline(path: &std::path::Path, format: &str) -> Result<()> {
     let mut events = match family {
         BrowserFamily::Chromium => browser_chrome::parse_history(path)?,
         BrowserFamily::Firefox => browser_firefox::parse_history(path)?,
+        BrowserFamily::Safari => {
+            eprintln!("Use specific artifact subcommands for Safari (e.g., bw history <path>)");
+            std::process::exit(1);
+        }
     };
     events.sort_by_key(|e| e.timestamp_ns);
 

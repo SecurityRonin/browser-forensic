@@ -10,6 +10,17 @@ use serde::{Deserialize, Serialize};
 pub enum BrowserFamily {
     Chromium,
     Firefox,
+    Safari,
+}
+
+impl std::fmt::Display for BrowserFamily {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Chromium => write!(f, "Chromium"),
+            Self::Firefox  => write!(f, "Firefox"),
+            Self::Safari   => write!(f, "Safari"),
+        }
+    }
 }
 
 /// Kind of browser artifact.
@@ -21,6 +32,25 @@ pub enum ArtifactKind {
     Extensions,
     LoginData,
     Cache,
+    Bookmarks,
+    Autofill,
+    Session,
+}
+
+impl std::fmt::Display for ArtifactKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::History    => write!(f, "History"),
+            Self::Cookies    => write!(f, "Cookies"),
+            Self::Downloads  => write!(f, "Downloads"),
+            Self::Extensions => write!(f, "Extensions"),
+            Self::LoginData  => write!(f, "LoginData"),
+            Self::Cache      => write!(f, "Cache"),
+            Self::Bookmarks  => write!(f, "Bookmarks"),
+            Self::Autofill   => write!(f, "Autofill"),
+            Self::Session    => write!(f, "Session"),
+        }
+    }
 }
 
 /// A single browser forensic event.
@@ -65,26 +95,36 @@ impl BrowserEvent {
 /// Returns `None` if the path does not match a known browser artifact.
 #[must_use]
 pub fn detect_browser(path: &Path) -> Option<BrowserFamily> {
-    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    let name     = path.file_name()?.to_string_lossy().to_lowercase();
     let path_str = path.to_string_lossy().to_lowercase();
 
-    let chromium_browsers = ["chrome", "chromium", "edge", "brave", "opera"];
-    let is_chromium_path = chromium_browsers.iter().any(|b| path_str.contains(b));
+    // Safari
+    if path_str.contains("safari") {
+        let safari_files = ["history.db", "cookies.db", "downloads.plist", "bookmarks.plist"];
+        if safari_files.contains(&name.as_str()) {
+            return Some(BrowserFamily::Safari);
+        }
+    }
 
-    if name == "history" && is_chromium_path {
+    // Chromium family
+    let chromium_vendors = ["chrome", "chromium", "edge", "brave", "opera", "vivaldi", "arc"];
+    let is_chromium_path = chromium_vendors.iter().any(|b| path_str.contains(b));
+    let chromium_files   = ["history", "cookies", "login data", "web data", "bookmarks"];
+    if chromium_files.contains(&name.as_str()) && is_chromium_path {
         return Some(BrowserFamily::Chromium);
     }
-    if name == "cookies" && is_chromium_path {
-        return Some(BrowserFamily::Chromium);
-    }
-    if name == "places.sqlite" {
+
+    // Firefox family
+    if name == "places.sqlite" || name == "formhistory.sqlite" {
         return Some(BrowserFamily::Firefox);
     }
-    if name == "cookies.sqlite"
+    let firefox_files = ["cookies.sqlite", "logins.json", "extensions.json", "sessionstore.jsonlz4"];
+    if firefox_files.contains(&name.as_str())
         && (path_str.contains("firefox") || path_str.contains("mozilla"))
     {
         return Some(BrowserFamily::Firefox);
     }
+
     None
 }
 
