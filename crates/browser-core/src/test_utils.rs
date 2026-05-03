@@ -11,15 +11,19 @@ pub mod sqlite {
 
     impl TestDb {
         pub fn new(schema_sql: &str) -> Self {
-            todo!("not yet implemented")
+            let file = NamedTempFile::new().unwrap();
+            let conn = Connection::open(file.path()).unwrap();
+            conn.execute_batch(schema_sql).unwrap();
+            Self { file }
         }
 
         pub fn path(&self) -> &Path {
-            todo!("not yet implemented")
+            self.file.path()
         }
 
         pub fn insert(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) {
-            todo!("not yet implemented")
+            let conn = Connection::open(self.file.path()).unwrap();
+            conn.execute(sql, params).unwrap();
         }
     }
 }
