@@ -5,16 +5,46 @@
 
 use std::path::Path;
 
-use anyhow::Result;
-use browser_core::BrowserEvent;
+use anyhow::{anyhow, Result};
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 /// Parse a Safari `Extensions/Extensions.plist` file.
 ///
 /// # Errors
 ///
 /// Returns an error if the plist file cannot be opened or parsed.
-pub fn parse_extensions(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let value = plist::Value::from_file(path)?;
+    let root = value.as_dictionary().ok_or_else(|| anyhow!("plist root is not a dictionary"))?;
+    let installed = root
+        .get("Installed Extensions")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow!("Installed Extensions not found or not an array"))?;
+
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    for entry in installed {
+        let dict = match entry.as_dictionary() {
+            Some(d) => d,
+            None => continue,
+        };
+        let bundle_name = dict.get("Bundle Directory Name")
+            .and_then(|v| v.as_string())
+            .unwrap_or("")
+            .to_string();
+        let enabled = dict.get("Enabled")
+            .and_then(|v| v.as_boolean())
+            .unwrap_or(false);
+
+        let ev = BrowserEvent::new(0, BrowserFamily::Safari, ArtifactKind::Extensions, &source, bundle_name.clone())
+            .with_attr("bundle_name", json!(bundle_name))
+            .with_attr("enabled", json!(enabled));
+        events.push(ev);
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
