@@ -104,3 +104,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 16: Firefox login data parser
+
+**Changes:** crates/browser-firefox/src/login_data.rs, crates/browser-firefox/src/lib.rs
+**Status:** Completed
+
+---

@@ -16,6 +16,6 @@
       "Test: ff_login_emits_hostname — attrs['hostname'] correct, ts_ns = timeCreated * 1_000_000",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
