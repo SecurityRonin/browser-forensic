@@ -118,3 +118,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 18: Firefox autofill parser
+
+**Changes:** crates/browser-firefox/src/autofill.rs, crates/browser-firefox/src/lib.rs
+**Status:** Completed
+
+---
