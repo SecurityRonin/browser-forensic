@@ -15,6 +15,6 @@
       "Test: parse_single_safari_download — browser=Safari, artifact=Downloads, attrs[url] correct",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
