@@ -1,0 +1,30 @@
+[workspace]
+members = [
+    "crates/browser-core",
+    "crates/browser-chrome",
+    "crates/browser-firefox",
+    "crates/bw-cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+assert_cmd = "2"
+tempfile = "3"
+
+[workspace.lints.rust]
+unused_imports = "warn"
+unused_variables = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
