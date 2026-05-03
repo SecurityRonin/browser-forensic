@@ -7,23 +7,23 @@ pub const WEBKIT_EPOCH_OFFSET_US: i64 = 11_644_473_600 * 1_000_000;
 pub const CORE_DATA_EPOCH_OFFSET_SECS: i64 = 978_307_200;
 
 pub fn webkit_micros_to_unix_nanos(webkit_us: i64) -> i64 {
-    todo!("not yet implemented")
+    (webkit_us - WEBKIT_EPOCH_OFFSET_US) * 1_000
 }
 
 pub fn core_data_secs_to_unix_nanos(core_data_secs: f64) -> i64 {
-    todo!("not yet implemented")
+    ((core_data_secs as i64) + CORE_DATA_EPOCH_OFFSET_SECS) * 1_000_000_000
 }
 
 pub fn unix_micros_to_nanos(us: i64) -> i64 {
-    todo!("not yet implemented")
+    us * 1_000
 }
 
 pub fn unix_millis_to_nanos(ms: i64) -> i64 {
-    todo!("not yet implemented")
+    ms * 1_000_000
 }
 
 pub fn unix_secs_to_nanos(secs: i64) -> i64 {
-    todo!("not yet implemented")
+    secs * 1_000_000_000
 }
 
 #[cfg(test)]
