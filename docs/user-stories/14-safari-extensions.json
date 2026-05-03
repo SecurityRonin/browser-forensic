@@ -14,6 +14,6 @@
       "Test: parse_single_safari_extension — attrs[bundle_name] and attrs[enabled] correct",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

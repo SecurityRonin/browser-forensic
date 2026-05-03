@@ -90,3 +90,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 14: Safari extensions parser
+
+**Changes:** crates/browser-safari/src/extensions.rs, crates/browser-safari/src/lib.rs
+**Status:** Completed
+
+---
