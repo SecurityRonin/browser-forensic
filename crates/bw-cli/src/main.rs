@@ -1,12 +1,11 @@
 //! `bw` — browser forensic CLI.
-//!
-//! Subcommands:
-//!   bw timeline <PATH>   — chronological history from a browser history file
+
+mod format;
 
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// bw — browser forensic analysis CLI.
 #[derive(Parser, Debug)]
@@ -16,64 +15,252 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(Clone, Debug, ValueEnum, Default)]
+enum OutputFormat {
+    #[default]
+    Text,
+    Jsonl,
+    Csv,
+}
+
+#[derive(Parser, Debug)]
+struct ArtifactArgs {
+    /// Path to the browser artifact file or directory.
+    #[arg(value_name = "PATH")]
+    path: PathBuf,
+
+    /// Output format: text (default), jsonl, csv.
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
+}
+
+#[derive(Parser, Debug)]
+struct ProfilesArgs {
+    /// Output format: text (default), jsonl, csv.
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
+}
+
+#[derive(Parser, Debug)]
+struct AnalyzeArgs {
+    /// Path to a browser history file.
+    #[arg(value_name = "PATH")]
+    path: PathBuf,
+
+    /// Show domains visited at most this many times (cap).
+    #[arg(long, default_value = "5")]
+    cap: usize,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Parse browser history and output a chronological timeline.
-    Timeline {
-        /// Path to a browser history file (Chrome `History` or Firefox `places.sqlite`).
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-
-        /// Output format: text (default), jsonl.
-        #[arg(long, default_value = "text")]
-        format: String,
-    },
+    Timeline(ArtifactArgs),
+    /// Parse browser history events.
+    History(ArtifactArgs),
+    /// Parse browser cookies.
+    Cookies(ArtifactArgs),
+    /// Parse browser downloads.
+    Downloads(ArtifactArgs),
+    /// Parse browser bookmarks.
+    Bookmarks(ArtifactArgs),
+    /// Parse browser extensions.
+    Extensions(ArtifactArgs),
+    /// Parse browser login data (passwords NEVER exposed).
+    LoginData(ArtifactArgs),
+    /// Parse browser autofill data.
+    Autofill(ArtifactArgs),
+    /// Parse Firefox session store.
+    Session(ArtifactArgs),
+    /// Parse browser cache.
+    Cache(ArtifactArgs),
+    /// Discover browser profiles on this system.
+    Profiles(ProfilesArgs),
+    /// Analyze browser history for rarely-visited domains.
+    Analyze(AnalyzeArgs),
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Timeline { path, format } => timeline(&path, &format),
+        Commands::Timeline(args) | Commands::History(args) => run_artifact(args, ArtifactType::History),
+        Commands::Cookies(args) => run_artifact(args, ArtifactType::Cookies),
+        Commands::Downloads(args) => run_artifact(args, ArtifactType::Downloads),
+        Commands::Bookmarks(args) => run_artifact(args, ArtifactType::Bookmarks),
+        Commands::Extensions(args) => run_artifact(args, ArtifactType::Extensions),
+        Commands::LoginData(args) => run_artifact(args, ArtifactType::LoginData),
+        Commands::Autofill(args) => run_artifact(args, ArtifactType::Autofill),
+        Commands::Session(args) => run_artifact(args, ArtifactType::Session),
+        Commands::Cache(args) => run_artifact(args, ArtifactType::Cache),
+        Commands::Profiles(args) => run_profiles(args),
+        Commands::Analyze(args) => run_analyze(args),
     }
 }
 
-fn timeline(path: &std::path::Path, format: &str) -> Result<()> {
+enum ArtifactType {
+    History,
+    Cookies,
+    Downloads,
+    Bookmarks,
+    Extensions,
+    LoginData,
+    Autofill,
+    Session,
+    Cache,
+}
+
+fn run_artifact(args: ArtifactArgs, artifact: ArtifactType) -> Result<()> {
     use browser_core::{detect_browser, BrowserFamily};
 
-    let family = detect_browser(path)
-        .ok_or_else(|| anyhow::anyhow!("unrecognised browser history file: {}", path.display()))?;
+    let path = &args.path;
 
-    let mut events = match family {
-        BrowserFamily::Chromium => browser_chrome::parse_history(path)?,
-        BrowserFamily::Firefox => browser_firefox::parse_history(path)?,
-        BrowserFamily::Safari => {
-            eprintln!("Use specific artifact subcommands for Safari (e.g., bw history <path>)");
+    // Detect browser from path
+    let family = detect_browser(path)
+        .or_else(|| infer_browser_from_filename(path));
+
+    let family = match family {
+        Some(f) => f,
+        None => {
+            eprintln!("error: cannot determine browser from path: {}", path.display());
             std::process::exit(1);
         }
     };
-    events.sort_by_key(|e| e.timestamp_ns);
 
-    match format {
-        "jsonl" => {
-            for ev in &events {
-                println!("{}", serde_json::to_string(ev)?);
+    let mut events = match (&family, &artifact) {
+        (BrowserFamily::Chromium, ArtifactType::History) => browser_chrome::parse_history(path)?,
+        (BrowserFamily::Firefox, ArtifactType::History) => browser_firefox::parse_history(path)?,
+        (BrowserFamily::Safari, ArtifactType::History) => browser_safari::parse_history(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Cookies) => browser_chrome::parse_cookies(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Cookies) => browser_firefox::parse_cookies(path)?,
+        (BrowserFamily::Safari, ArtifactType::Cookies) => browser_safari::parse_cookies(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Downloads) => browser_chrome::parse_downloads(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Downloads) => browser_firefox::parse_downloads(path)?,
+        (BrowserFamily::Safari, ArtifactType::Downloads) => browser_safari::parse_downloads(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Bookmarks) => browser_chrome::parse_bookmarks(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Bookmarks) => browser_firefox::parse_bookmarks(path)?,
+        (BrowserFamily::Safari, ArtifactType::Bookmarks) => browser_safari::parse_bookmarks(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Extensions) => browser_chrome::parse_extensions(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Extensions) => browser_firefox::parse_extensions(path)?,
+        (BrowserFamily::Safari, ArtifactType::Extensions) => browser_safari::parse_extensions(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::LoginData) => browser_chrome::parse_login_data(path)?,
+        (BrowserFamily::Firefox, ArtifactType::LoginData) => browser_firefox::parse_login_data(path)?,
+        (BrowserFamily::Safari, ArtifactType::LoginData) => {
+            eprintln!("error: Safari login data not supported");
+            std::process::exit(1);
+        }
+
+        (BrowserFamily::Chromium, ArtifactType::Autofill) => browser_chrome::parse_autofill(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Autofill) => browser_firefox::parse_autofill(path)?,
+        (BrowserFamily::Safari, ArtifactType::Autofill) => {
+            eprintln!("error: Safari autofill not supported");
+            std::process::exit(1);
+        }
+
+        (BrowserFamily::Firefox, ArtifactType::Session) => browser_firefox::parse_session(path)?,
+        (_, ArtifactType::Session) => {
+            eprintln!("error: session only supported for Firefox");
+            std::process::exit(1);
+        }
+
+        (BrowserFamily::Chromium, ArtifactType::Cache) => browser_chrome::parse_cache(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Cache) => browser_firefox::parse_cache(path)?,
+        (BrowserFamily::Safari, ArtifactType::Cache) => {
+            eprintln!("error: Safari cache not supported");
+            std::process::exit(1);
+        }
+    };
+
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, &args.format);
+    Ok(())
+}
+
+fn run_profiles(args: ProfilesArgs) -> Result<()> {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    let profiles = browser_discovery::discover_profiles(&home);
+
+    match args.format {
+        OutputFormat::Csv => {
+            println!("browser,name,path");
+            for p in &profiles {
+                println!("{},{},{}", p.browser, format::csv_escape(&p.name), format::csv_escape(&p.path.to_string_lossy()));
             }
         }
-        _ => {
-            for ev in &events {
-                let ts = if ev.timestamp_ns == 0 {
-                    "unknown".to_string()
-                } else {
-                    use chrono::{DateTime, Utc};
-                    let secs = ev.timestamp_ns / 1_000_000_000;
-                    let nanos = u32::try_from(ev.timestamp_ns % 1_000_000_000).unwrap_or(0);
-                    DateTime::<Utc>::from_timestamp(secs, nanos)
-                        .map(|d| d.to_rfc3339())
-                        .unwrap_or_else(|| "invalid".to_string())
-                };
-                println!("[{ts}] {:?}: {}", ev.browser, ev.description);
+        OutputFormat::Jsonl => {
+            for p in &profiles {
+                println!("{{\"browser\":\"{}\",\"name\":\"{}\",\"path\":\"{}\"}}",
+                    p.browser, p.name, p.path.display());
+            }
+        }
+        OutputFormat::Text => {
+            for p in &profiles {
+                println!("{} \u{2014} {} ({})", p.browser, p.name, p.path.display());
             }
         }
     }
     Ok(())
+}
+
+fn run_analyze(args: AnalyzeArgs) -> Result<()> {
+    use browser_core::{detect_browser, BrowserFamily};
+
+    let path = &args.path;
+    let family = detect_browser(path)
+        .or_else(|| infer_browser_from_filename(path));
+
+    let events = match family {
+        Some(BrowserFamily::Chromium) => browser_chrome::parse_history(path)?,
+        Some(BrowserFamily::Firefox) => browser_firefox::parse_history(path)?,
+        Some(BrowserFamily::Safari) => browser_safari::parse_history(path)?,
+        None => {
+            eprintln!("error: cannot determine browser from path: {}", path.display());
+            std::process::exit(1);
+        }
+    };
+
+    let domains = browser_core::analyze::rare_domains(&events, args.cap);
+    for (domain, count) in &domains {
+        println!("{count}\t{domain}");
+    }
+    Ok(())
+}
+
+fn infer_browser_from_filename(path: &std::path::Path) -> Option<browser_core::BrowserFamily> {
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    if name == "history.db" {
+        return Some(browser_core::BrowserFamily::Safari);
+    }
+    if name == "places.sqlite" || name == "formhistory.sqlite"
+        || name == "cookies.sqlite" || name == "extensions.json"
+        || name == "logins.json" || name == "sessionstore.jsonlz4"
+    {
+        return Some(browser_core::BrowserFamily::Firefox);
+    }
+    None
+}
+
+fn print_events(events: &[browser_core::BrowserEvent], format: &OutputFormat) {
+    match format {
+        OutputFormat::Csv => {
+            println!("{}", format::TIMELINE_CSV_HEADER);
+            for ev in events {
+                println!("{}", format::event_to_csv_row(ev));
+            }
+        }
+        OutputFormat::Jsonl => {
+            for ev in events {
+                println!("{}", format::event_to_jsonl(ev));
+            }
+        }
+        OutputFormat::Text => {
+            for ev in events {
+                println!("{}", format::event_to_text(ev));
+            }
+        }
+    }
 }
