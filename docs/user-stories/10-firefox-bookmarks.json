@@ -14,6 +14,6 @@
       "Test: folder_type_excluded — row with type=2 in moz_bookmarks produces no events",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

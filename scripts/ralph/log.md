@@ -62,3 +62,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 10: Firefox bookmarks parser
+
+**Changes:** crates/browser-firefox/src/bookmarks.rs, crates/browser-firefox/src/lib.rs
+**Status:** Completed
+
+---
