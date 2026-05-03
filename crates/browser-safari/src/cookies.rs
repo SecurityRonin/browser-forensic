@@ -6,7 +6,9 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 use crate::history::safari_to_unix_ns;
 
@@ -15,8 +17,41 @@ use crate::history::safari_to_unix_ns;
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_cookies(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT name, value, domain, path, creation, expiry, is_secure, is_httponly \
+         FROM cookies \
+         WHERE creation > 0 \
+         ORDER BY creation ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let name: String = row.get(0)?;
+            let _value: String = row.get(1)?;
+            let domain: String = row.get(2)?;
+            let cookie_path: String = row.get(3)?;
+            let creation: f64 = row.get(4)?;
+            let expiry: f64 = row.get(5)?;
+            let is_secure: bool = row.get::<_, i64>(6)? != 0;
+            let is_httponly: bool = row.get::<_, i64>(7)? != 0;
+            Ok((name, domain, cookie_path, creation, expiry, is_secure, is_httponly))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(name, domain, cookie_path, creation, expiry, is_secure, is_httponly)| {
+            let ts_ns = safari_to_unix_ns(creation);
+            let desc = format!("{domain} \u{2014} {name}");
+            BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::Cookies, &source, desc)
+                .with_attr("name", json!(name))
+                .with_attr("domain", json!(domain))
+                .with_attr("path", json!(cookie_path))
+                .with_attr("expiry", json!(expiry))
+                .with_attr("is_secure", json!(is_secure))
+                .with_attr("is_httponly", json!(is_httponly))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
