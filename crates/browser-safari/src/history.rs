@@ -7,7 +7,9 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 /// Core Data epoch offset in seconds (2001-01-01 to 1970-01-01).
 pub const CORE_DATA_EPOCH_OFFSET_SECS: f64 = 978_307_200.0;
@@ -15,7 +17,7 @@ pub const CORE_DATA_EPOCH_OFFSET_SECS: f64 = 978_307_200.0;
 /// Convert a Core Data timestamp (seconds since 2001-01-01) to Unix nanoseconds.
 #[must_use]
 pub fn safari_to_unix_ns(core_data_secs: f64) -> i64 {
-    todo!("not yet implemented")
+    ((core_data_secs + CORE_DATA_EPOCH_OFFSET_SECS) * 1_000_000_000.0) as i64
 }
 
 /// Parse a Safari `History.db` SQLite file.
@@ -23,8 +25,33 @@ pub fn safari_to_unix_ns(core_data_secs: f64) -> i64 {
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_history(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT i.url, i.visit_count, v.visit_time \
+         FROM history_visits v \
+         JOIN history_items i ON v.history_item = i.id \
+         WHERE v.visit_time > 0 \
+         ORDER BY v.visit_time ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let url: String = row.get(0)?;
+            let visit_count: i64 = row.get(1)?;
+            let visit_time: f64 = row.get(2)?;
+            Ok((url, visit_count, visit_time))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(url, visit_count, visit_time)| {
+            let ts_ns = safari_to_unix_ns(visit_time);
+            let desc = format!("[{visit_count} visits] {url}");
+            BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::History, &source, desc)
+                .with_attr("url", json!(url))
+                .with_attr("visit_count", json!(visit_count))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
