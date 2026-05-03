@@ -1,0 +1,17 @@
+[package]
+name = "browser-safari"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+browser-core = { path = "../browser-core" }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+plist = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
