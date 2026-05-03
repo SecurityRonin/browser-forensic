@@ -16,6 +16,6 @@
       "Test: zero_creation_utc_is_skipped — row with creation_utc=0 produces no events",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

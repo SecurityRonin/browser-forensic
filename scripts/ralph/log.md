@@ -13,3 +13,10 @@ Tracks what each agent iteration completed. Append below.
 **Notes:** Tasks 1 (browser-core types) and 2 (browser-discovery) already implemented with RED+GREEN commits. 25 tasks remain (3–27).
 
 ---
+
+## 2026-05-04 — Story 03: Chrome cookies parser
+
+**Changes:** crates/browser-chrome/src/cookies.rs (already implemented with RED+GREEN commits)
+**Status:** Completed
+
+---
