@@ -13,6 +13,6 @@
       "Test: parse_single_ff_download — artifact=Downloads, browser=Firefox, attrs[url] correct, ts_ns = dateAdded * 1_000",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

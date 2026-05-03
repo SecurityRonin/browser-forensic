@@ -41,3 +41,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 07: Firefox downloads parser
+
+**Changes:** crates/browser-firefox/src/downloads.rs, crates/browser-firefox/src/lib.rs
+**Status:** Completed
+
+---
