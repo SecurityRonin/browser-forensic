@@ -6,15 +6,44 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 /// Parse a Firefox `places.sqlite` file for download records.
 ///
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_downloads(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT p.url, a.content AS dest_path, a.dateAdded \
+         FROM moz_annos a \
+         JOIN moz_places p ON a.place_id = p.id \
+         JOIN moz_anno_attributes attr ON a.anno_attribute_id = attr.id \
+         WHERE attr.name = 'downloads/destinationFileURI' \
+         ORDER BY a.dateAdded ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let url: String = row.get(0)?;
+            let dest_path: Option<String> = row.get(1)?;
+            let date_added_us: i64 = row.get(2)?;
+            Ok((url, dest_path, date_added_us))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(url, dest_path, date_added_us)| {
+            let ts_ns = date_added_us * 1_000;
+            let dest = dest_path.clone().unwrap_or_default();
+            let desc = format!("{url} -> {dest}");
+            BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Downloads, &source, desc)
+                .with_attr("url", json!(url))
+                .with_attr("dest_path", json!(dest))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
