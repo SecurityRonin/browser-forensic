@@ -6,15 +6,71 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 /// Parse a Firefox `cache2/entries/` directory (best-effort).
 ///
 /// # Errors
 ///
 /// Returns an error if the directory cannot be read.
-pub fn parse_cache(_cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
+    let source = cache_dir.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    let entries = match std::fs::read_dir(cache_dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(events),
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let file_path = entry.path();
+        if !file_path.is_file() {
+            continue;
+        }
+
+        let data = match std::fs::read(&file_path) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let file_len = data.len();
+        if file_len < 4 {
+            continue;
+        }
+
+        // Last 4 bytes = metadata offset (big-endian u32)
+        let metadata_offset = u32::from_be_bytes(data[file_len - 4..].try_into().unwrap()) as usize;
+
+        if metadata_offset >= file_len - 4 {
+            continue;
+        }
+
+        let metadata = &data[metadata_offset..file_len - 4];
+
+        // Find "http" in metadata
+        let http_needle = b"http";
+        let http_pos = metadata.windows(http_needle.len())
+            .position(|w| w == http_needle);
+
+        if let Some(pos) = http_pos {
+            let url_slice = &metadata[pos..];
+            // Extract until null byte, newline, or end
+            let end = url_slice.iter()
+                .position(|&b| b == b'\0' || b == b'\n')
+                .unwrap_or(url_slice.len());
+            let url = match std::str::from_utf8(&url_slice[..end]) {
+                Ok(s) => s.to_string(),
+                Err(_) => continue,
+            };
+
+            let ev = BrowserEvent::new(0, BrowserFamily::Firefox, ArtifactKind::Cache, &source, url.clone())
+                .with_attr("url", json!(url));
+            events.push(ev);
+        }
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
