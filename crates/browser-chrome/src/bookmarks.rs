@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 use crate::history::webkit_to_unix_ns;
 
@@ -15,8 +16,46 @@ use crate::history::webkit_to_unix_ns;
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or parsed.
-pub fn parse_bookmarks(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let file = std::fs::File::open(path)?;
+    let root: serde_json::Value = serde_json::from_reader(file)?;
+
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    let roots = root.get("roots").and_then(|r| r.as_object());
+    if let Some(roots) = roots {
+        for key in &["bookmark_bar", "other", "synced"] {
+            if let Some(node) = roots.get(*key) {
+                walk_bookmarks(node, &source, &mut events);
+            }
+        }
+    }
+
+    Ok(events)
+}
+
+fn walk_bookmarks(node: &serde_json::Value, source: &str, events: &mut Vec<BrowserEvent>) {
+    let node_type = node.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    if node_type == "url" {
+        let url = node.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
+        let name = node.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+        let date_added = node.get("date_added")
+            .and_then(|d| d.as_str())
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
+        let ts_ns = webkit_to_unix_ns(date_added);
+        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Bookmarks, source, name.clone())
+            .with_attr("url", json!(url))
+            .with_attr("name", json!(name));
+        events.push(ev);
+    } else if node_type == "folder" {
+        if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+            for child in children {
+                walk_bookmarks(child, source, events);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
