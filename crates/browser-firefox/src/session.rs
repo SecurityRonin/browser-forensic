@@ -5,8 +5,9 @@
 
 use std::path::Path;
 
-use anyhow::Result;
-use browser_core::BrowserEvent;
+use anyhow::{anyhow, Result};
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 /// The magic bytes at the start of a Firefox sessionstore file.
 const MOZLZ4_MAGIC: &[u8; 8] = b"mozLz40\0";
@@ -16,8 +17,54 @@ const MOZLZ4_MAGIC: &[u8; 8] = b"mozLz40\0";
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, has wrong magic, or decompression fails.
-pub fn parse_session(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let data = std::fs::read(path)?;
+
+    if data.len() < 12 {
+        return Err(anyhow!("file too short to be a valid mozLz4 file"));
+    }
+
+    if &data[..8] != MOZLZ4_MAGIC {
+        return Err(anyhow!("invalid mozLz4 magic bytes"));
+    }
+
+    let uncompressed_size = u32::from_le_bytes(data[8..12].try_into()?) as usize;
+    let decompressed = lz4_flex::block::decompress(&data[12..], uncompressed_size)
+        .map_err(|e| anyhow!("LZ4 decompression failed: {e}"))?;
+
+    let session: serde_json::Value = serde_json::from_slice(&decompressed)?;
+
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    if let Some(windows) = session.get("windows").and_then(|w| w.as_array()) {
+        for window in windows {
+            if let Some(tabs) = window.get("tabs").and_then(|t| t.as_array()) {
+                for tab in tabs {
+                    let last_accessed_ms = tab.get("lastAccessed")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let ts_ns = last_accessed_ms * 1_000_000;
+
+                    // Take last entry from entries array
+                    let entries = tab.get("entries").and_then(|e| e.as_array());
+                    if let Some(entries) = entries {
+                        if let Some(entry) = entries.last() {
+                            let url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let desc = if title.is_empty() { url.clone() } else { title.clone() };
+                            let ev = BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Session, &source, desc)
+                                .with_attr("url", json!(url))
+                                .with_attr("title", json!(title));
+                            events.push(ev);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
