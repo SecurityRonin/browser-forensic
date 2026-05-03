@@ -18,6 +18,6 @@
       "Test: parse_cache_extracts_url_from_entry — crafted file yields event with correct url attr",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
