@@ -1,0 +1,23 @@
+[
+  {
+    "description": "Chrome cache parser (best-effort) walks Cache directory, extracts URLs from SimpleCache EOF records",
+    "steps": [
+      "Create crates/browser-chrome/src/cache.rs with parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_cache from crates/browser-chrome/src/lib.rs",
+      "Walk immediate files in cache_dir (not subdirectories)",
+      "For each file: read all bytes, if < 24 bytes skip",
+      "Read last 24 bytes as EOF record. Bytes 8-12 (offset 8 from end-24) = key_size as u32 LE",
+      "If key_size == 0 or key_size > 8192 skip (sanity check)",
+      "Read bytes at position [file_len - 24 - key_size .. file_len - 24] as UTF-8 string",
+      "If valid UTF-8 and contains 'http', emit event with that as URL",
+      "Timestamp: 0 (cache entries have no reliable timestamp in this approach)",
+      "Set browser = BrowserFamily::Chromium, artifact = ArtifactKind::Cache",
+      "Description: url. Attrs: url",
+      "Test factory: create TempDir, write hand-crafted binary files with known URL embedded before 24-byte EOF record",
+      "Test: parse_empty_cache_dir_returns_empty — no files yields empty vec",
+      "Test: parse_cache_extracts_url_from_entry — crafted file yields event with correct url attr",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

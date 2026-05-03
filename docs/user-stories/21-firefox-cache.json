@@ -1,0 +1,24 @@
+[
+  {
+    "description": "Firefox cache parser (best-effort) walks cache2/entries, extracts URLs from metadata sections",
+    "steps": [
+      "Create crates/browser-firefox/src/cache.rs with parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_cache from crates/browser-firefox/src/lib.rs",
+      "Walk files in cache_dir (not subdirectories)",
+      "For each file: read all bytes, if < 4 bytes skip",
+      "Read last 4 bytes as big-endian u32 = metadata_offset from start of file",
+      "If metadata_offset >= file_len - 4, skip (invalid)",
+      "Read bytes [metadata_offset .. file_len - 4] as metadata section",
+      "Scan metadata bytes for first occurrence of 'http' as UTF-8 substring",
+      "Extract URL: from that position to next null byte or newline or end of metadata",
+      "If valid URL found, emit event",
+      "Timestamp: 0. Set browser = BrowserFamily::Firefox, artifact = ArtifactKind::Cache",
+      "Description: url. Attrs: url",
+      "Test factory: create TempDir, write hand-crafted binary file with URL in metadata section followed by big-endian metadata offset as last 4 bytes",
+      "Test: parse_empty_cache_dir_returns_empty",
+      "Test: parse_ff_cache_extracts_url — crafted file yields event with attrs[url] containing 'http'",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

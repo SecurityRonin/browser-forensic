@@ -1,0 +1,20 @@
+[
+  {
+    "description": "Safari downloads parser reads Downloads.plist and emits BrowserEvent per download",
+    "steps": [
+      "Create crates/browser-safari/src/downloads.rs with parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_downloads from crates/browser-safari/src/lib.rs",
+      "Use plist crate to read the file: plist::Value::from_file(path)",
+      "Root dict has key 'DownloadHistory' containing an array of dicts",
+      "Each dict has: DownloadEntryURL (string), DownloadEntryPath (string), DownloadEntryDateAddedKey (real/f64 = Core Data secs), DownloadEntryProgressTotalToLoad (integer)",
+      "Timestamp: safari_to_unix_ns(date_added_core_data) from crate::history",
+      "Set browser = BrowserFamily::Safari, artifact = ArtifactKind::Downloads",
+      "Attrs: url, path, total_bytes",
+      "Test factory creates a binary plist with plist::to_file_binary(f.path(), &value)",
+      "Test: parse_empty_safari_downloads — empty DownloadHistory array yields empty vec",
+      "Test: parse_single_safari_download — browser=Safari, artifact=Downloads, attrs[url] correct",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

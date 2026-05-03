@@ -1,0 +1,19 @@
+[
+  {
+    "description": "Safari cookies parser reads Cookies.db SQLite (newer Safari 12+) and emits BrowserEvent per cookie",
+    "steps": [
+      "Create crates/browser-safari/src/cookies.rs with parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_cookies from crates/browser-safari/src/lib.rs",
+      "Query: SELECT name, value, domain, path, creation, expiry, is_secure, is_httponly FROM cookies WHERE creation > 0 ORDER BY creation ASC",
+      "Timestamp: safari_to_unix_ns(creation) from crate::history — creation is Core Data f64 seconds",
+      "Set browser = BrowserFamily::Safari, artifact = ArtifactKind::Cookies",
+      "Description: '{domain} — {name}'. Attrs: name, domain, path, expiry (f64), is_secure (bool), is_httponly (bool)",
+      "Test factory creates cookies table matching this schema",
+      "Test: parse_empty_safari_cookies_returns_empty",
+      "Test: parse_single_safari_cookie — attrs[domain] and attrs[name] correct",
+      "Test: safari_cookie_timestamp_uses_core_data_epoch — ts_ns == safari_to_unix_ns(creation)",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

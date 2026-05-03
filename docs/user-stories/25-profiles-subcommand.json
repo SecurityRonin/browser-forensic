@@ -1,0 +1,14 @@
+[
+  {
+    "description": "bw profiles subcommand auto-discovers all browser profiles on the local system",
+    "steps": [
+      "bw profiles --help exits 0",
+      "bw profiles exits 0 (even if no browsers installed — returns empty list gracefully)",
+      "bw profiles --format text prints lines in format: '{browser} — {name} ({path})'",
+      "bw profiles --format jsonl prints one JSON object per line with browser, name, path fields",
+      "bw profiles --format csv prints header 'browser,name,path' then one row per profile",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

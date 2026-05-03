@@ -1,0 +1,20 @@
+[
+  {
+    "description": "Chrome login data parser reads Login Data SQLite and emits BrowserEvent per saved login — passwords NEVER exposed",
+    "steps": [
+      "Create crates/browser-chrome/src/login_data.rs with parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_login_data from crates/browser-chrome/src/lib.rs",
+      "Query ONLY: SELECT origin_url, action_url, username_value, date_created, date_last_used FROM logins WHERE date_created > 0 ORDER BY date_created ASC",
+      "NEVER SELECT password_value — it must not appear anywhere in the query",
+      "Timestamp: webkit_to_unix_ns(date_created)",
+      "Set browser = BrowserFamily::Chromium, artifact = ArtifactKind::LoginData",
+      "Description: origin_url. Attrs: origin_url, action_url, username, date_last_used (i64)",
+      "CRITICAL: always set attrs['password'] = json!('ENCRYPTED')",
+      "Test: parse_empty_login_data_returns_empty",
+      "Test: login_data_password_never_exposed — attrs['password'] == 'ENCRYPTED' for every row",
+      "Test: login_data_emits_url_and_username — attrs['origin_url'] and attrs['username'] correct",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

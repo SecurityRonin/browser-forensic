@@ -1,0 +1,15 @@
+[
+  {
+    "description": "Full end-to-end integration tests for bw CLI covering Chrome, Firefox output formats",
+    "steps": [
+      "Test: bw_timeline_chrome_history_csv_has_header — create Chrome History SQLite in tempfile, run bw timeline --format csv, assert stdout first line contains 'timestamp,browser,artifact,source,description'",
+      "Test: bw_timeline_chrome_history_jsonl_valid_json — run bw timeline --format jsonl, assert each output line parses as valid serde_json::Value",
+      "Test: bw_cookies_nonexistent_path_exits_nonzero — run bw cookies /nonexistent/path, assert exit code != 0",
+      "Test: bw_timeline_firefox_history_text — create Firefox places.sqlite in tempfile, run bw timeline, assert stdout contains '[' (timestamp bracket)",
+      "Test: bw_history_chrome_text_output — same as timeline but using bw history subcommand",
+      "All existing help tests still pass",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

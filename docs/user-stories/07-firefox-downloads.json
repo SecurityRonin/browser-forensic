@@ -1,0 +1,18 @@
+[
+  {
+    "description": "Firefox downloads parser reads places.sqlite moz_annos and emits BrowserEvent per download",
+    "steps": [
+      "Create crates/browser-firefox/src/downloads.rs with parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_downloads from crates/browser-firefox/src/lib.rs",
+      "Query: SELECT p.url, a.content AS dest_path, a.dateAdded FROM moz_annos a JOIN moz_places p ON a.place_id = p.id JOIN moz_anno_attributes attr ON a.anno_attribute_id = attr.id WHERE attr.name = 'downloads/destinationFileURI' ORDER BY a.dateAdded ASC",
+      "Timestamp: ts_ns = dateAdded * 1_000 (microseconds to nanoseconds)",
+      "Set browser = BrowserFamily::Firefox, artifact = ArtifactKind::Downloads",
+      "Attrs: url, dest_path",
+      "Test factory creates moz_places, moz_anno_attributes (with id=1, name='downloads/destinationFileURI'), moz_annos tables",
+      "Test: parse_empty_ff_downloads_returns_empty",
+      "Test: parse_single_ff_download — artifact=Downloads, browser=Firefox, attrs[url] correct, ts_ns = dateAdded * 1_000",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

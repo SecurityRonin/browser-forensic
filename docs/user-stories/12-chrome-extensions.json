@@ -1,0 +1,22 @@
+[
+  {
+    "description": "Chrome extensions parser walks Extensions directory and emits BrowserEvent per installed extension",
+    "steps": [
+      "Create crates/browser-chrome/src/extensions.rs with parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_extensions from crates/browser-chrome/src/lib.rs",
+      "Walk immediate subdirs of extensions_dir (each is an extension ID)",
+      "For each extension ID dir, find the highest-version subdirectory (sort by dir name, take last)",
+      "Read <id>/<version>/manifest.json as serde_json::Value",
+      "Extract: name, version, description, permissions array",
+      "Use manifest.json file mtime as timestamp (or 0 if unavailable)",
+      "Set browser = BrowserFamily::Chromium, artifact = ArtifactKind::Extensions",
+      "Description: '{name} v{version}'. Attrs: name, version, id, description",
+      "Test factory: create TempDir, create Extensions/<id>/<version>/manifest.json with known content",
+      "Test: parse_empty_extensions_dir — no subdirs yields empty vec",
+      "Test: parse_single_extension — attrs[name] and attrs[version] correct",
+      "Test: parse_highest_version_only — two version dirs, only latest manifest name is used",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]

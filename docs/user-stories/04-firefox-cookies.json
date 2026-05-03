@@ -1,0 +1,20 @@
+[
+  {
+    "description": "Firefox cookies parser reads cookies.sqlite moz_cookies table and emits BrowserEvent per cookie",
+    "steps": [
+      "Create crates/browser-firefox/src/cookies.rs with parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_cookies from crates/browser-firefox/src/lib.rs",
+      "Query moz_cookies: host, name, path, creationTime, expiry, isSecure, isHttpOnly, sameSite",
+      "Filter WHERE creationTime > 0, ORDER BY creationTime ASC",
+      "Timestamp: ts_ns = creationTime * 1_000 (microseconds to nanoseconds)",
+      "Set browser = BrowserFamily::Firefox, artifact = ArtifactKind::Cookies",
+      "Description format: '{host} — {name} (path={path})'",
+      "Attrs: host, name, path, expiry (i64), is_secure (bool), is_httponly (bool), samesite (i32)",
+      "Test: parse_empty_cookies_returns_empty",
+      "Test: parse_single_firefox_cookie — attrs[host] correct, attrs[is_secure]=true",
+      "Test: firefox_cookie_timestamp_microseconds_to_ns — ts_ns == creation_us * 1_000",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": false
+  }
+]
