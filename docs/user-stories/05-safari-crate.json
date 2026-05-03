@@ -18,6 +18,6 @@
       "Test: parse_multiple_visits_creates_one_event_per_visit — 2 rows = 2 events",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

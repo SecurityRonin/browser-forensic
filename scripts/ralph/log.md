@@ -27,3 +27,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 05: Safari crate with history parser
+
+**Changes:** crates/browser-safari/ (new crate), Cargo.toml (added plist dep, safari member)
+**Status:** Completed
+
+---
