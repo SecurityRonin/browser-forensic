@@ -15,6 +15,6 @@
       "Test: firefox_cookie_timestamp_microseconds_to_ns — ts_ns == creation_us * 1_000",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

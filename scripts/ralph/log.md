@@ -20,3 +20,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 04: Firefox cookies parser
+
+**Changes:** crates/browser-firefox/src/cookies.rs
+**Status:** Completed
+
+---
