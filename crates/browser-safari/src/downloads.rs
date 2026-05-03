@@ -5,8 +5,9 @@
 
 use std::path::Path;
 
-use anyhow::Result;
-use browser_core::BrowserEvent;
+use anyhow::{anyhow, Result};
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 use crate::history::safari_to_unix_ns;
 
@@ -15,8 +16,52 @@ use crate::history::safari_to_unix_ns;
 /// # Errors
 ///
 /// Returns an error if the plist file cannot be opened or parsed.
-pub fn parse_downloads(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let value = plist::Value::from_file(path)?;
+    let root = value.as_dictionary().ok_or_else(|| anyhow!("plist root is not a dictionary"))?;
+    let history = root
+        .get("DownloadHistory")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow!("DownloadHistory not found or not an array"))?;
+
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    for entry in history {
+        let dict = match entry.as_dictionary() {
+            Some(d) => d,
+            None => continue,
+        };
+        let url = dict.get("DownloadEntryURL")
+            .and_then(|v| v.as_string())
+            .unwrap_or("")
+            .to_string();
+        let dl_path = dict.get("DownloadEntryPath")
+            .and_then(|v| v.as_string())
+            .unwrap_or("")
+            .to_string();
+        let date_added = dict.get("DownloadEntryDateAddedKey")
+            .and_then(|v| v.as_real())
+            .unwrap_or(0.0);
+        let total_bytes = dict.get("DownloadEntryProgressTotalToLoad")
+            .and_then(|v| v.as_signed_integer())
+            .unwrap_or(0);
+
+        let ts_ns = safari_to_unix_ns(date_added);
+        let filename = std::path::Path::new(&dl_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| dl_path.clone());
+        let desc = format!("{filename} from {url}");
+
+        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::Downloads, &source, desc)
+            .with_attr("url", json!(url))
+            .with_attr("path", json!(dl_path))
+            .with_attr("total_bytes", json!(total_bytes));
+        events.push(ev);
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
