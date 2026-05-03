@@ -9,15 +9,46 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 /// Parse a Chromium `Web Data` SQLite file for autofill entries.
 ///
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_autofill(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT name, value, count, date_created, date_last_used \
+         FROM autofill \
+         WHERE date_created > 0 \
+         ORDER BY date_created ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let name: String = row.get(0)?;
+            let value: String = row.get(1)?;
+            let count: i32 = row.get(2)?;
+            let date_created: i64 = row.get(3)?;
+            let date_last_used: i64 = row.get(4)?;
+            Ok((name, value, count, date_created, date_last_used))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(name, value, count, date_created, date_last_used)| {
+            // NOTE: date_created is Unix epoch SECONDS, not WebKit microseconds
+            let ts_ns = date_created * 1_000_000_000;
+            let desc = format!("{name}: {value}");
+            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Autofill, &source, desc)
+                .with_attr("name", json!(name))
+                .with_attr("value", json!(value))
+                .with_attr("count", json!(count))
+                .with_attr("date_last_used", json!(date_last_used))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
