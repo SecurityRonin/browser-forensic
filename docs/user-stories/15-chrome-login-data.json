@@ -15,6 +15,6 @@
       "Test: login_data_emits_url_and_username — attrs['origin_url'] and attrs['username'] correct",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

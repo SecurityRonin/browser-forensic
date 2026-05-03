@@ -97,3 +97,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 15: Chrome login data parser
+
+**Changes:** crates/browser-chrome/src/login_data.rs, crates/browser-chrome/src/lib.rs
+**Status:** Completed
+
+---
