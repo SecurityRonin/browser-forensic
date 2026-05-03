@@ -160,3 +160,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 27: Integration tests for bw CLI
+
+**Changes:** crates/bw-cli/tests/integration_tests.rs, crates/bw-cli/Cargo.toml (dev deps)
+**Status:** Completed
+
+---

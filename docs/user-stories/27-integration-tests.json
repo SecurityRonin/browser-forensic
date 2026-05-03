@@ -10,6 +10,6 @@
       "All existing help tests still pass",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
