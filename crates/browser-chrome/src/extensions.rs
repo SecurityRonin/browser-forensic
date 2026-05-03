@@ -6,15 +6,78 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 /// Parse a Chromium `Extensions/` directory.
 ///
 /// # Errors
 ///
 /// Returns an error if the directory cannot be read.
-pub fn parse_extensions(_extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
+    let source = extensions_dir.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    let entries = match std::fs::read_dir(extensions_dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(events),
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let id_path = entry.path();
+        if !id_path.is_dir() {
+            continue;
+        }
+        let ext_id = id_path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        // Find the highest-version subdirectory (sort by name, take last)
+        let mut versions: Vec<std::path::PathBuf> = match std::fs::read_dir(&id_path) {
+            Ok(v) => v.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect(),
+            Err(_) => continue,
+        };
+        versions.sort_by(|a, b| {
+            a.file_name().cmp(&b.file_name())
+        });
+        let version_dir = match versions.last() {
+            Some(v) => v.clone(),
+            None => continue,
+        };
+
+        let manifest_path = version_dir.join("manifest.json");
+        let manifest_file = match std::fs::File::open(&manifest_path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        let manifest: serde_json::Value = match serde_json::from_reader(manifest_file) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let name = manifest.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let version = manifest.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let description = manifest.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+        // Use mtime of manifest.json as timestamp (0 if unavailable)
+        let ts_ns = std::fs::metadata(&manifest_path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or(0);
+
+        let desc = format!("{name} v{version}");
+        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Extensions, &source, desc)
+            .with_attr("name", json!(name))
+            .with_attr("version", json!(version))
+            .with_attr("id", json!(ext_id))
+            .with_attr("description", json!(description));
+        events.push(ev);
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
