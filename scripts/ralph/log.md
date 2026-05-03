@@ -34,3 +34,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 06: Chrome downloads parser
+
+**Changes:** crates/browser-chrome/src/downloads.rs, crates/browser-chrome/src/lib.rs
+**Status:** Completed
+
+---

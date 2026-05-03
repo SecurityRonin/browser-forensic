@@ -16,6 +16,6 @@
       "Test: dangerous_download_flagged_in_attrs — attrs[danger_type] = 1",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
