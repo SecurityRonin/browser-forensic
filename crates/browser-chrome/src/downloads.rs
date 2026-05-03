@@ -11,7 +11,7 @@ use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
-use crate::history::webkit_to_unix_ns;
+use browser_core::timestamp::webkit_micros_to_unix_nanos;
 
 /// Parse a Chromium `History` SQLite file for download records.
 ///
@@ -40,7 +40,7 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(start_time, target_path, total_bytes, state, danger_type, url)| {
-            let ts_ns = webkit_to_unix_ns(start_time);
+            let ts_ns = webkit_micros_to_unix_nanos(start_time);
             let filename = std::path::Path::new(&target_path)
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
@@ -127,7 +127,7 @@ mod tests {
         assert_eq!(ev.browser, BrowserFamily::Chromium);
         assert_eq!(ev.attrs["url"], json!("https://example.com/file.zip"));
         assert_eq!(ev.attrs["total_bytes"], json!(1024_i64));
-        assert_eq!(ev.timestamp_ns, webkit_to_unix_ns(13_327_626_000_000_000));
+        assert_eq!(ev.timestamp_ns, webkit_micros_to_unix_nanos(13_327_626_000_000_000));
     }
 
     #[test]

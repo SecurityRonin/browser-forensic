@@ -7,6 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_millis_to_nanos;
 use serde_json::json;
 
 /// Parse a Firefox `extensions.json` file.
@@ -37,7 +38,7 @@ pub fn parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>> {
         let install_date_ms = addon.get("installDate")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        let ts_ns = install_date_ms * 1_000_000;
+        let ts_ns = unix_millis_to_nanos(install_date_ms);
         let desc = format!("{name} v{version}");
         let ev = BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Extensions, &source, desc)
             .with_attr("id", json!(id))

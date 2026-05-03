@@ -9,7 +9,7 @@ use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use serde_json::json;
 
-use crate::history::webkit_to_unix_ns;
+use browser_core::timestamp::webkit_micros_to_unix_nanos;
 
 /// Parse a Chromium `Bookmarks` JSON file.
 ///
@@ -44,7 +44,7 @@ fn walk_bookmarks(node: &serde_json::Value, source: &str, events: &mut Vec<Brows
             .and_then(|d| d.as_str())
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(0);
-        let ts_ns = webkit_to_unix_ns(date_added);
+        let ts_ns = webkit_micros_to_unix_nanos(date_added);
         let ev = BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Bookmarks, source, name.clone())
             .with_attr("url", json!(url))
             .with_attr("name", json!(name));
@@ -148,6 +148,6 @@ mod tests {
         let f = create_bookmarks_file(&content);
         let events = parse_bookmarks(f.path()).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].timestamp_ns, webkit_to_unix_ns(date_added));
+        assert_eq!(events[0].timestamp_ns, webkit_micros_to_unix_nanos(date_added));
     }
 }

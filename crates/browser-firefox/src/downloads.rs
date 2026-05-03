@@ -7,6 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_micros_to_nanos;
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -35,7 +36,7 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(url, dest_path, date_added_us)| {
-            let ts_ns = date_added_us * 1_000;
+            let ts_ns = unix_micros_to_nanos(date_added_us);
             let dest = dest_path.clone().unwrap_or_default();
             let desc = format!("{url} -> {dest}");
             BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Downloads, &source, desc)

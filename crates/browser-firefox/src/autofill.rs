@@ -7,6 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_micros_to_nanos;
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -35,7 +36,7 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(fieldname, value, times_used, first_used_us, _last_used_us)| {
-            let ts_ns = first_used_us * 1_000;
+            let ts_ns = unix_micros_to_nanos(first_used_us);
             let desc = format!("{fieldname}: {value}");
             BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Autofill, &source, desc)
                 .with_attr("fieldname", json!(fieldname))

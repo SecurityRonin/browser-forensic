@@ -7,6 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_micros_to_nanos;
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -41,7 +42,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(host, name, cookie_path, creation_us, expiry, is_secure, is_httponly, samesite)| {
-            let ts_ns = creation_us * 1_000;
+            let ts_ns = unix_micros_to_nanos(creation_us);
             let desc = format!("{host} \u{2014} {name} (path={cookie_path})");
             BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Cookies, &source, desc)
                 .with_attr("host", json!(host))

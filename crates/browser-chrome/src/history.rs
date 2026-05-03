@@ -7,17 +7,9 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::webkit_micros_to_unix_nanos;
 use rusqlite::Connection;
 use serde_json::json;
-
-/// Microseconds from 1601-01-01 to 1970-01-01 (WebKit epoch offset).
-pub const WEBKIT_EPOCH_OFFSET_US: i64 = 11_644_473_600_000_000;
-
-/// Convert a WebKit timestamp (µs since 1601-01-01) to Unix nanoseconds.
-#[must_use]
-pub fn webkit_to_unix_ns(webkit_us: i64) -> i64 {
-    (webkit_us - WEBKIT_EPOCH_OFFSET_US) * 1_000
-}
 
 /// Parse a Chromium `History` SQLite file.
 ///
@@ -46,7 +38,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
         .filter_map(|r| r.ok())
         .filter(|(_, _, _, webkit_time)| *webkit_time > 0)
         .map(|(url, title, visit_count, webkit_time)| {
-            let ts_ns = webkit_to_unix_ns(webkit_time);
+            let ts_ns = webkit_micros_to_unix_nanos(webkit_time);
             let desc = if title.is_empty() {
                 url.clone()
             } else {
@@ -64,6 +56,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use browser_core::timestamp::webkit_micros_to_unix_nanos;
     use rusqlite::Connection;
     use tempfile::NamedTempFile;
 
@@ -118,7 +111,7 @@ mod tests {
     fn webkit_epoch_conversion() {
         // (13_327_626_000_000_000 - 11_644_473_600_000_000) * 1000
         // = 1_683_152_400_000_000_000
-        assert_eq!(webkit_to_unix_ns(13_327_626_000_000_000), 1_683_152_400_000_000_000);
+        assert_eq!(webkit_micros_to_unix_nanos(13_327_626_000_000_000), 1_683_152_400_000_000_000);
     }
 
     #[test]

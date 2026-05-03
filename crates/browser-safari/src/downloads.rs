@@ -9,7 +9,7 @@ use anyhow::{anyhow, Result};
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use serde_json::json;
 
-use crate::history::safari_to_unix_ns;
+use browser_core::timestamp::core_data_secs_to_unix_nanos;
 
 /// Parse a Safari `Downloads.plist` file.
 ///
@@ -47,7 +47,7 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
             .and_then(|v| v.as_signed_integer())
             .unwrap_or(0);
 
-        let ts_ns = safari_to_unix_ns(date_added);
+        let ts_ns = core_data_secs_to_unix_nanos(date_added);
         let filename = std::path::Path::new(&dl_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -113,6 +113,6 @@ mod tests {
         assert_eq!(ev.browser, BrowserFamily::Safari);
         assert_eq!(ev.artifact, ArtifactKind::Downloads);
         assert_eq!(ev.attrs["url"], json!("https://example.com/file.zip"));
-        assert_eq!(ev.timestamp_ns, safari_to_unix_ns(700_000_000.0));
+        assert_eq!(ev.timestamp_ns, core_data_secs_to_unix_nanos(700_000_000.0));
     }
 }

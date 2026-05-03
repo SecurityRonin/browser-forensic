@@ -4,6 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_micros_to_nanos;
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -34,7 +35,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(url, title, visit_count, last_visit_us)| {
-            let ts_ns = last_visit_us * 1_000;
+            let ts_ns = unix_micros_to_nanos(last_visit_us);
             let title_str = title.unwrap_or_default();
             let desc = if title_str.is_empty() {
                 url.clone()

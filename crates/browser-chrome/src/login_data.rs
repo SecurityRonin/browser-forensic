@@ -13,7 +13,7 @@ use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
-use crate::history::webkit_to_unix_ns;
+use browser_core::timestamp::webkit_micros_to_unix_nanos;
 
 /// Parse a Chromium `Login Data` SQLite file.
 ///
@@ -43,7 +43,7 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(origin_url, action_url, username, date_created, date_last_used)| {
-            let ts_ns = webkit_to_unix_ns(date_created);
+            let ts_ns = webkit_micros_to_unix_nanos(date_created);
             BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::LoginData, &source, origin_url.clone())
                 .with_attr("origin_url", json!(origin_url))
                 .with_attr("action_url", json!(action_url))

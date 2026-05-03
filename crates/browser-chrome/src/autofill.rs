@@ -10,6 +10,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_secs_to_nanos;
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -39,7 +40,7 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
         .filter_map(|r| r.ok())
         .map(|(name, value, count, date_created, date_last_used)| {
             // NOTE: date_created is Unix epoch SECONDS, not WebKit microseconds
-            let ts_ns = date_created * 1_000_000_000;
+            let ts_ns = unix_secs_to_nanos(date_created);
             let desc = format!("{name}: {value}");
             BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Autofill, &source, desc)
                 .with_attr("name", json!(name))

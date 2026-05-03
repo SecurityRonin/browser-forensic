@@ -10,7 +10,7 @@ use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
-use crate::history::safari_to_unix_ns;
+use browser_core::timestamp::core_data_secs_to_unix_nanos;
 
 /// Parse a Safari `Cookies.db` SQLite file.
 ///
@@ -40,7 +40,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(name, domain, cookie_path, creation, expiry, is_secure, is_httponly)| {
-            let ts_ns = safari_to_unix_ns(creation);
+            let ts_ns = core_data_secs_to_unix_nanos(creation);
             let desc = format!("{domain} \u{2014} {name}");
             BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::Cookies, &source, desc)
                 .with_attr("name", json!(name))
@@ -58,7 +58,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
-    use crate::history::safari_to_unix_ns;
+    use browser_core::timestamp::core_data_secs_to_unix_nanos;
     use rusqlite::Connection;
     use serde_json::json;
     use tempfile::NamedTempFile;
@@ -116,6 +116,6 @@ mod tests {
         let f = create_safari_cookies_db(&[("ts_test", "v", ".example.com", "/", creation, 0.0, false, false)]);
         let events = parse_cookies(f.path()).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].timestamp_ns, safari_to_unix_ns(creation));
+        assert_eq!(events[0].timestamp_ns, core_data_secs_to_unix_nanos(creation));
     }
 }

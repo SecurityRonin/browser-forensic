@@ -9,6 +9,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_millis_to_nanos;
 use serde_json::json;
 
 /// Parse a Firefox `logins.json` file.
@@ -35,7 +36,7 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
         let form_submit_url = login.get("formSubmitURL").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let username_field = login.get("usernameField").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let time_created_ms = login.get("timeCreated").and_then(|v| v.as_i64()).unwrap_or(0);
-        let ts_ns = time_created_ms * 1_000_000;
+        let ts_ns = unix_millis_to_nanos(time_created_ms);
         let ev = BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::LoginData, &source, hostname.clone())
             .with_attr("hostname", json!(hostname))
             .with_attr("form_submit_url", json!(form_submit_url))

@@ -7,6 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_micros_to_nanos;
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -34,7 +35,7 @@ pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(title, url, date_added_us)| {
-            let ts_ns = date_added_us * 1_000;
+            let ts_ns = unix_micros_to_nanos(date_added_us);
             let title_str = title.clone().unwrap_or_default();
             BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Bookmarks, &source, title_str.clone())
                 .with_attr("url", json!(url))

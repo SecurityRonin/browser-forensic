@@ -13,7 +13,7 @@ use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
-use crate::history::webkit_to_unix_ns;
+use browser_core::timestamp::webkit_micros_to_unix_nanos;
 
 /// Parse a Chromium `Cookies` SQLite file.
 ///
@@ -48,7 +48,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(creation_utc, host_key, name, cookie_path, expires_utc, is_secure, is_httponly, samesite)| {
-            let ts_ns = webkit_to_unix_ns(creation_utc);
+            let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
             let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
             BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Cookies, &source, desc)
                 .with_attr("host", json!(host_key))
@@ -68,7 +68,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
-    use crate::history::webkit_to_unix_ns;
+    use browser_core::timestamp::webkit_micros_to_unix_nanos;
     use rusqlite::Connection;
     use serde_json::json;
     use tempfile::NamedTempFile;
@@ -132,7 +132,7 @@ mod tests {
         let f = create_cookies_db(&[(".example.com", "ts_test", "/", creation_utc, 0, false, false)]);
         let events = parse_cookies(f.path()).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].timestamp_ns, webkit_to_unix_ns(creation_utc));
+        assert_eq!(events[0].timestamp_ns, webkit_micros_to_unix_nanos(creation_utc));
     }
 
     #[test]

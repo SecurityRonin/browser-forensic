@@ -8,17 +8,9 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::core_data_secs_to_unix_nanos;
 use rusqlite::Connection;
 use serde_json::json;
-
-/// Core Data epoch offset in seconds (2001-01-01 to 1970-01-01).
-pub const CORE_DATA_EPOCH_OFFSET_SECS: f64 = 978_307_200.0;
-
-/// Convert a Core Data timestamp (seconds since 2001-01-01) to Unix nanoseconds.
-#[must_use]
-pub fn safari_to_unix_ns(core_data_secs: f64) -> i64 {
-    ((core_data_secs + CORE_DATA_EPOCH_OFFSET_SECS) * 1_000_000_000.0) as i64
-}
 
 /// Parse a Safari `History.db` SQLite file.
 ///
@@ -44,7 +36,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(url, visit_count, visit_time)| {
-            let ts_ns = safari_to_unix_ns(visit_time);
+            let ts_ns = core_data_secs_to_unix_nanos(visit_time);
             let desc = format!("[{visit_count} visits] {url}");
             BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::History, &source, desc)
                 .with_attr("url", json!(url))
@@ -58,6 +50,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
+    use browser_core::timestamp::core_data_secs_to_unix_nanos;
     use rusqlite::Connection;
     use tempfile::NamedTempFile;
 
@@ -96,13 +89,13 @@ mod tests {
     #[test]
     fn safari_epoch_offset_is_correct() {
         // core_data_secs=0 => Unix epoch 978_307_200 sec
-        assert_eq!(safari_to_unix_ns(0.0), 978_307_200_000_000_000);
+        assert_eq!(core_data_secs_to_unix_nanos(0.0), 978_307_200_000_000_000);
     }
 
     #[test]
     fn safari_epoch_known_value() {
         // 700_000_000 + 978_307_200 = 1_678_307_200 seconds
-        assert_eq!(safari_to_unix_ns(700_000_000.0), 1_678_307_200_000_000_000);
+        assert_eq!(core_data_secs_to_unix_nanos(700_000_000.0), 1_678_307_200_000_000_000);
     }
 
     #[test]
@@ -122,7 +115,7 @@ mod tests {
         assert_eq!(ev.artifact, ArtifactKind::History);
         assert_eq!(ev.attrs["url"], serde_json::json!("https://example.com"));
         assert_eq!(ev.attrs["visit_count"], serde_json::json!(3_i64));
-        assert_eq!(ev.timestamp_ns, safari_to_unix_ns(700_000_000.0));
+        assert_eq!(ev.timestamp_ns, core_data_secs_to_unix_nanos(700_000_000.0));
     }
 
     #[test]

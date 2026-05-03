@@ -7,6 +7,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_millis_to_nanos;
 use serde_json::json;
 
 /// The magic bytes at the start of a Firefox sessionstore file.
@@ -44,7 +45,7 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
                     let last_accessed_ms = tab.get("lastAccessed")
                         .and_then(|v| v.as_i64())
                         .unwrap_or(0);
-                    let ts_ns = last_accessed_ms * 1_000_000;
+                    let ts_ns = unix_millis_to_nanos(last_accessed_ms);
 
                     // Take last entry from entries array
                     let entries = tab.get("entries").and_then(|e| e.as_array());
