@@ -6,15 +6,42 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 /// Parse a Firefox `places.sqlite` file for bookmarks.
 ///
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_bookmarks(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT b.title, p.url, b.dateAdded \
+         FROM moz_bookmarks b \
+         JOIN moz_places p ON b.fk = p.id \
+         WHERE b.type = 1 AND b.dateAdded > 0 \
+         ORDER BY b.dateAdded ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let title: Option<String> = row.get(0)?;
+            let url: String = row.get(1)?;
+            let date_added_us: i64 = row.get(2)?;
+            Ok((title, url, date_added_us))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(title, url, date_added_us)| {
+            let ts_ns = date_added_us * 1_000;
+            let title_str = title.clone().unwrap_or_default();
+            BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Bookmarks, &source, title_str.clone())
+                .with_attr("url", json!(url))
+                .with_attr("title", json!(title_str))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
