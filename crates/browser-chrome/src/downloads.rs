@@ -7,7 +7,9 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 use crate::history::webkit_to_unix_ns;
 
@@ -16,8 +18,44 @@ use crate::history::webkit_to_unix_ns;
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_downloads(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT d.start_time, d.target_path, d.total_bytes, d.state, d.danger_type, u.url \
+         FROM downloads d \
+         LEFT JOIN downloads_url_chains u ON d.id = u.id AND u.chain_index = 0 \
+         WHERE d.start_time > 0 \
+         ORDER BY d.start_time ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let start_time: i64 = row.get(0)?;
+            let target_path: String = row.get(1)?;
+            let total_bytes: i64 = row.get(2)?;
+            let state: i32 = row.get(3)?;
+            let danger_type: i32 = row.get(4)?;
+            let url: Option<String> = row.get(5)?;
+            Ok((start_time, target_path, total_bytes, state, danger_type, url))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(start_time, target_path, total_bytes, state, danger_type, url)| {
+            let ts_ns = webkit_to_unix_ns(start_time);
+            let filename = std::path::Path::new(&target_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| target_path.clone());
+            let desc = format!("{filename} ({total_bytes} bytes)");
+            let url_val = url.unwrap_or_default();
+            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Downloads, &source, desc)
+                .with_attr("url", json!(url_val))
+                .with_attr("target_path", json!(target_path))
+                .with_attr("total_bytes", json!(total_bytes))
+                .with_attr("state", json!(state))
+                .with_attr("danger_type", json!(danger_type))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
