@@ -11,12 +11,104 @@ pub struct DiscoveredProfile {
     pub path: PathBuf,
 }
 
+/// Known Chromium-based browser base directories relative to `home`.
+static CHROMIUM_BASES: &[&str] = &[
+    // macOS
+    "Library/Application Support/Google/Chrome",
+    "Library/Application Support/Microsoft Edge",
+    "Library/Application Support/BraveSoftware/Brave-Browser",
+    "Library/Application Support/Vivaldi",
+    "Library/Application Support/com.operasoftware.Opera",
+    "Library/Application Support/Arc/User Data",
+    "Library/Application Support/Chromium",
+    // Linux
+    ".config/google-chrome",
+    ".config/microsoft-edge",
+    ".config/BraveSoftware/Brave-Browser",
+    ".config/vivaldi",
+    ".config/opera",
+    ".config/chromium",
+];
+
+/// Known Firefox profile base directories relative to `home`.
+static FIREFOX_BASES: &[&str] = &[
+    // macOS
+    "Library/Application Support/Firefox/Profiles",
+    // Linux
+    ".mozilla/firefox",
+];
+
 /// Discover all browser profiles found under `home`.
 ///
 /// Checks known macOS and Linux profile directories for Chrome, Firefox,
 /// and Safari.
-pub fn discover_profiles(_home: &Path) -> Vec<DiscoveredProfile> {
-    unimplemented!("discover_profiles not yet implemented")
+pub fn discover_profiles(home: &Path) -> Vec<DiscoveredProfile> {
+    let mut profiles = Vec::new();
+    discover_chromium_profiles(home, &mut profiles);
+    discover_firefox_profiles(home, &mut profiles);
+    discover_safari_profiles(home, &mut profiles);
+    profiles
+}
+
+/// Walk each known Chromium base directory and collect subdirectories that
+/// contain a `History` file.
+fn discover_chromium_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
+    for base_rel in CHROMIUM_BASES {
+        let base = home.join(base_rel);
+        if !base.is_dir() {
+            continue;
+        }
+        if let Ok(entries) = std::fs::read_dir(&base) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() && path.join("History").is_file() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    out.push(DiscoveredProfile {
+                        browser: BrowserFamily::Chromium,
+                        name,
+                        path,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Walk each known Firefox base directory and collect subdirectories that
+/// contain a `places.sqlite` file.
+fn discover_firefox_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
+    for base_rel in FIREFOX_BASES {
+        let base = home.join(base_rel);
+        if !base.is_dir() {
+            continue;
+        }
+        if let Ok(entries) = std::fs::read_dir(&base) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() && path.join("places.sqlite").is_file() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    out.push(DiscoveredProfile {
+                        browser: BrowserFamily::Firefox,
+                        name,
+                        path,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Check the Safari directory: if `Library/Safari/History.db` exists, emit a
+/// single "Default" profile.
+fn discover_safari_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
+    let safari = home.join("Library/Safari");
+    if safari.join("History.db").is_file() {
+        out.push(DiscoveredProfile {
+            browser: BrowserFamily::Safari,
+            name: "Default".to_string(),
+            path: safari,
+        });
+    }
 }
 
 #[cfg(test)]
