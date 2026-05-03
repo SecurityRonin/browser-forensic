@@ -1,6 +1,7 @@
 //! Core types for browser forensic analysis.
 
 pub mod analyze;
+pub mod timestamp;
 
 use std::collections::HashMap;
 use std::path::Path;
