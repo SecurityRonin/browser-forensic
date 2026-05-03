@@ -14,6 +14,6 @@
       "Test: parse_single_firefox_addon — attrs[name] and attrs[version] correct, ts_ns = installDate * 1_000_000",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
