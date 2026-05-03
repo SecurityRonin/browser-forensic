@@ -6,15 +6,44 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserEvent;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
 
 /// Parse a Firefox `formhistory.sqlite` file.
 ///
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_autofill(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("not yet implemented")
+pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT fieldname, value, timesUsed, firstUsed, lastUsed \
+         FROM moz_formhistory \
+         WHERE firstUsed > 0 \
+         ORDER BY firstUsed ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let fieldname: String = row.get(0)?;
+            let value: String = row.get(1)?;
+            let times_used: i64 = row.get(2)?;
+            let first_used_us: i64 = row.get(3)?;
+            let last_used_us: i64 = row.get(4)?;
+            Ok((fieldname, value, times_used, first_used_us, last_used_us))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(fieldname, value, times_used, first_used_us, _last_used_us)| {
+            let ts_ns = first_used_us * 1_000;
+            let desc = format!("{fieldname}: {value}");
+            BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Autofill, &source, desc)
+                .with_attr("fieldname", json!(fieldname))
+                .with_attr("value", json!(value))
+                .with_attr("times_used", json!(times_used))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
