@@ -153,3 +153,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Stories 23-26: CLI subcommands, format.rs, profiles, analyze
+
+**Changes:** crates/bw-cli/src/main.rs, crates/bw-cli/src/format.rs, crates/browser-core/src/analyze.rs, crates/bw-cli/tests/cli_tests.rs, root Cargo.toml (added dirs, url), crates/browser-core/Cargo.toml, crates/bw-cli/Cargo.toml
+**Status:** Completed
+
+---

@@ -16,6 +16,6 @@
       "Test in tests/cli_tests.rs: all these commands exit 0 with --help: cookies, downloads, bookmarks, extensions, login-data, autofill, session, cache, profiles, analyze",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

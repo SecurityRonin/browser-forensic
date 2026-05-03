@@ -9,6 +9,6 @@
       "bw profiles --format csv prints header 'browser,name,path' then one row per profile",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

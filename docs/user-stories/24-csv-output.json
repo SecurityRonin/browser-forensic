@@ -14,6 +14,6 @@
       "CLI integration: bw timeline --format csv <chrome_history_file> first line contains 'timestamp,browser,artifact'",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

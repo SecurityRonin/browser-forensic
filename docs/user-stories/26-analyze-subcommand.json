@@ -16,6 +16,6 @@
       "bw analyze <chrome_history_path> exits 0 and prints domains",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
