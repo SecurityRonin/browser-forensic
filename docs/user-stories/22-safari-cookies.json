@@ -14,6 +14,6 @@
       "Test: safari_cookie_timestamp_uses_core_data_epoch — ts_ns == safari_to_unix_ns(creation)",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
