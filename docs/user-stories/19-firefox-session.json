@@ -20,6 +20,6 @@
       "Test: parse_session_invalid_magic_fails — file with wrong header returns Err",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]

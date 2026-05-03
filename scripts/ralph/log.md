@@ -125,3 +125,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 19: Firefox session parser
+
+**Changes:** crates/browser-firefox/src/session.rs, crates/browser-firefox/src/lib.rs, crates/browser-firefox/Cargo.toml, Cargo.toml (added lz4_flex)
+**Status:** Completed
+
+---
