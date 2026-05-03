@@ -139,3 +139,10 @@ Tracks what each agent iteration completed. Append below.
 **Status:** Completed
 
 ---
+
+## 2026-05-04 — Story 21: Firefox cache parser
+
+**Changes:** crates/browser-firefox/src/cache.rs, crates/browser-firefox/src/lib.rs
+**Status:** Completed
+
+---

@@ -19,6 +19,6 @@
       "Test: parse_ff_cache_extracts_url — crafted file yields event with attrs[url] containing 'http'",
       "cargo test --workspace passes with 0 failures"
     ],
-    "passes": false
+    "passes": true
   }
 ]
