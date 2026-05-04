@@ -14,12 +14,18 @@ anyhow = { workspace = true }
 browser-core = { path = "../browser-core" }
 browser-chrome = { path = "../browser-chrome" }
 browser-firefox = { path = "../browser-firefox" }
+browser-safari = { path = "../browser-safari" }
+browser-discovery = { path = "../browser-discovery" }
 clap = { workspace = true }
 chrono = { workspace = true }
+dirs = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

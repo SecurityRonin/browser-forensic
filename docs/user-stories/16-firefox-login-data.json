@@ -1,0 +1,21 @@
+[
+  {
+    "description": "Firefox login data parser reads logins.json and emits BrowserEvent per saved login — passwords NEVER exposed",
+    "steps": [
+      "Create crates/browser-firefox/src/login_data.rs with parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_login_data from crates/browser-firefox/src/lib.rs",
+      "Read file as serde_json::Value, iterate logins array",
+      "Each login: hostname, formSubmitURL, usernameField, timeCreated (i64 ms since Unix epoch)",
+      "Timestamp: ts_ns = timeCreated * 1_000_000 (ms to ns)",
+      "Set browser = BrowserFamily::Firefox, artifact = ArtifactKind::LoginData",
+      "Description: hostname. Attrs: hostname, form_submit_url, username_field",
+      "CRITICAL: always set attrs['password'] = json!('ENCRYPTED'). Never read encryptedPassword.",
+      "Test: write test logins.json to NamedTempFile",
+      "Test: parse_empty_logins_returns_empty — empty logins array yields empty vec",
+      "Test: ff_login_password_never_exposed — attrs['password'] == 'ENCRYPTED'",
+      "Test: ff_login_emits_hostname — attrs['hostname'] correct, ts_ns = timeCreated * 1_000_000",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]

@@ -4,6 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use browser_core::timestamp::unix_micros_to_nanos;
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -34,7 +35,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
         })?
         .filter_map(|r| r.ok())
         .map(|(url, title, visit_count, last_visit_us)| {
-            let ts_ns = last_visit_us * 1_000;
+            let ts_ns = unix_micros_to_nanos(last_visit_us);
             let title_str = title.unwrap_or_default();
             let desc = if title_str.is_empty() {
                 url.clone()
@@ -59,49 +60,32 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::Connection;
-    use tempfile::NamedTempFile;
+    use browser_core::test_utils::sqlite::TestDb;
+    use rusqlite::params;
 
-    fn create_places_db(rows: &[(&str, Option<&str>, i64, Option<i64>)]) -> NamedTempFile {
-        let f = NamedTempFile::new().unwrap();
-        let conn = Connection::open(f.path()).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE moz_places (
-                id INTEGER PRIMARY KEY,
-                url TEXT NOT NULL,
-                title TEXT,
-                visit_count INTEGER DEFAULT 0,
-                last_visit_date INTEGER
-            );",
-        )
-        .unwrap();
-        for (url, title, vc, ts) in rows {
-            conn.execute(
-                "INSERT INTO moz_places (url, title, visit_count, last_visit_date) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![url, title, vc, ts],
-            )
-            .unwrap();
-        }
-        f
-    }
+    const SCHEMA: &str = "CREATE TABLE moz_places (
+        id INTEGER PRIMARY KEY,
+        url TEXT NOT NULL,
+        title TEXT,
+        visit_count INTEGER DEFAULT 0,
+        last_visit_date INTEGER
+    );";
 
     #[test]
     fn parse_empty_places_returns_empty() {
-        let f = create_places_db(&[]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        let events = parse_history(db.path()).unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn parse_single_url_emits_event() {
-        let f = create_places_db(&[(
-            "https://example.com",
-            Some("Example"),
-            5,
-            Some(1_648_000_000_000_000),
-        )]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO moz_places (url, title, visit_count, last_visit_date) VALUES (?1, ?2, ?3, ?4)",
+            params!["https://example.com", "Example", 5_i64, 1_648_000_000_000_000_i64],
+        );
+        let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].timestamp_ns, 1_648_000_000_000_000_000);
         assert!(events[0].description.contains("example.com"));
@@ -109,16 +93,16 @@ mod tests {
 
     #[test]
     fn null_visit_date_skipped() {
-        let f = create_places_db(&[
-            ("https://null.example", Some("Null"), 1, None),
-            (
-                "https://real.example",
-                Some("Real"),
-                2,
-                Some(1_648_000_000_000_000),
-            ),
-        ]);
-        let events = parse_history(f.path()).unwrap();
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO moz_places (url, title, visit_count, last_visit_date) VALUES (?1, ?2, ?3, NULL)",
+            params!["https://null.example", "Null", 1_i64],
+        );
+        db.insert(
+            "INSERT INTO moz_places (url, title, visit_count, last_visit_date) VALUES (?1, ?2, ?3, ?4)",
+            params!["https://real.example", "Real", 2_i64, 1_648_000_000_000_000_i64],
+        );
+        let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert!(events[0].description.contains("real.example"));
     }

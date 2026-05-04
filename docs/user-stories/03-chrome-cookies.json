@@ -1,0 +1,21 @@
+[
+  {
+    "description": "Chrome cookies parser reads Cookies SQLite and emits BrowserEvent per cookie",
+    "steps": [
+      "Create crates/browser-chrome/src/cookies.rs with parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_cookies from crates/browser-chrome/src/lib.rs",
+      "Query cookies table: host_key, name, path, creation_utc, expires_utc, is_secure, is_httponly, samesite",
+      "Filter rows WHERE creation_utc > 0",
+      "Convert creation_utc with webkit_to_unix_ns() from crate::history",
+      "Set browser = BrowserFamily::Chromium, artifact = ArtifactKind::Cookies",
+      "Description format: '{host_key} — {name} (path={cookie_path})'",
+      "Attrs: host, name, path, is_secure (bool), is_httponly (bool), samesite (i32), expires_utc (i64), encrypted_value = 'ENCRYPTED'",
+      "Test: parse_empty_cookies_returns_empty — empty table yields empty vec",
+      "Test: parse_single_cookie_emits_event — attrs[host], attrs[is_secure]=true, attrs[encrypted_value]='ENCRYPTED'",
+      "Test: cookie_timestamp_uses_webkit_epoch — ts_ns == webkit_to_unix_ns(creation_utc)",
+      "Test: zero_creation_utc_is_skipped — row with creation_utc=0 produces no events",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]
