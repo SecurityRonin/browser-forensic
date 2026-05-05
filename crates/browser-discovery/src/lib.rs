@@ -6,7 +6,7 @@ use browser_core::BrowserFamily;
 use serde::Serialize;
 
 /// A browser profile discovered on the filesystem.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct DiscoveredProfile {
     pub browser: BrowserFamily,
     pub name: String,
