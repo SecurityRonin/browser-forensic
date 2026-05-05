@@ -4,6 +4,8 @@
 //! Recovers deleted browser data from SQLite free pages, WAL files,
 //! and binary formats.
 
+pub mod sqlite_carve;
+
 use std::collections::HashMap;
 
 use browser_integrity::IntegrityIndicator;
