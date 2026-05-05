@@ -176,4 +176,19 @@ mod tests {
             serde_json::to_string(&cloned).expect("ser2"),
         );
     }
+
+    #[test]
+    fn crate_root_reexports_check_functions() {
+        use std::path::Path;
+        use browser_core::BrowserFamily;
+        // Verify functions are accessible at crate root (not just in submodules)
+        let _: fn(&Path, BrowserFamily) -> anyhow::Result<Vec<IntegrityIndicator>>
+            = check_history_integrity;
+        let _: fn(&Path, BrowserFamily) -> anyhow::Result<Vec<IntegrityIndicator>>
+            = check_cookie_integrity;
+        let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>>
+            = check_database_integrity;
+        let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>>
+            = check_wal_state;
+    }
 }
