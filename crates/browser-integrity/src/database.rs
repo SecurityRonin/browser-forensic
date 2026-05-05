@@ -1,5 +1,53 @@
 //! SQLite database-level integrity checks.
 
+use std::path::Path;
+
+use anyhow::Result;
+use rusqlite::Connection;
+
+use crate::IntegrityIndicator;
+
+/// Run SQLite's `PRAGMA integrity_check` on the database at `path`.
+///
+/// Returns an empty vec if the database passes. Returns `SqliteIntegrityFailure` for each issue.
+pub fn check_database_integrity(path: &Path) -> Result<Vec<IntegrityIndicator>> {
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare("PRAGMA integrity_check")?;
+    let rows: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut indicators = Vec::new();
+    for row in &rows {
+        if row != "ok" {
+            indicators.push(IntegrityIndicator::SqliteIntegrityFailure {
+                path: path.to_path_buf(),
+                message: row.clone(),
+            });
+        }
+    }
+
+    Ok(indicators)
+}
+
+/// Check whether a WAL file exists alongside the database.
+///
+/// A WAL file indicates uncommitted transactions or a crash before checkpointing — both forensically relevant.
+pub fn check_wal_state(path: &Path) -> Result<Vec<IntegrityIndicator>> {
+    let wal_path_str = format!("{}-wal", path.display());
+    let wal_path = std::path::Path::new(&wal_path_str);
+
+    let mut indicators = Vec::new();
+    if wal_path.exists() && std::fs::metadata(wal_path)?.len() > 0 {
+        indicators.push(IntegrityIndicator::WalPresent {
+            path: wal_path.to_path_buf(),
+        });
+    }
+
+    Ok(indicators)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
