@@ -214,4 +214,56 @@ mod tests {
         assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::HistoryCleared { .. })),
             "empty db with high auto-increment should indicate clearing");
     }
+
+    fn firefox_history_schema() -> &'static str {
+        "CREATE TABLE moz_places (
+            id INTEGER PRIMARY KEY,
+            url TEXT NOT NULL,
+            title TEXT,
+            visit_count INTEGER DEFAULT 0,
+            last_visit_date INTEGER
+        );
+        CREATE TABLE moz_historyvisits (
+            id INTEGER PRIMARY KEY,
+            from_visit INTEGER,
+            place_id INTEGER,
+            visit_date INTEGER,
+            visit_type INTEGER
+        );"
+    }
+
+    #[test]
+    fn firefox_history_clean_returns_empty() {
+        let db = TestDb::new(firefox_history_schema());
+        db.insert("INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 1, 1700000000000000)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_places VALUES (2, 'https://b.com', 'B', 1, 1700000001000000)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000000000000, 1)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_historyvisits VALUES (2, 0, 2, 1700000001000000, 1)", rusqlite::params![]);
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
+        assert!(result.is_empty(), "clean Firefox db should have no issues");
+    }
+
+    #[test]
+    fn firefox_visit_id_gap_detected() {
+        let db = TestDb::new(firefox_history_schema());
+        db.insert("INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 2, 1700000001000000)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000000000000, 1)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_historyvisits VALUES (100, 0, 1, 1700000001000000, 1)", rusqlite::params![]);
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
+        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })));
+    }
+
+    #[test]
+    fn firefox_timestamp_non_monotonic_detected() {
+        let db = TestDb::new(firefox_history_schema());
+        db.insert("INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 1, 1700000000000000)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_places VALUES (2, 'https://b.com', 'B', 1, 1600000000000000)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000001000000, 1)", rusqlite::params![]);
+        db.insert("INSERT INTO moz_historyvisits VALUES (2, 0, 2, 1700000000000000, 1)", rusqlite::params![]);
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
+        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::TimestampNonMonotonic { .. })));
+    }
 }
