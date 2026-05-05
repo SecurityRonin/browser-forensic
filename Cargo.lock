@@ -113,6 +113,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
 
 [[package]]
+name = "browser-carve"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-core",
+ "browser-integrity",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "browser-chrome"
 version = "0.1.0"
 dependencies = [
@@ -127,6 +141,7 @@ dependencies = [
 name = "browser-core"
 version = "0.1.0"
 dependencies = [
+ "forensicnomicon",
  "rusqlite",
  "serde",
  "serde_json",
@@ -139,6 +154,7 @@ name = "browser-discovery"
 version = "0.1.0"
 dependencies = [
  "browser-core",
+ "serde",
  "tempfile",
 ]
 
@@ -150,6 +166,49 @@ dependencies = [
  "browser-core",
  "lz4_flex",
  "rusqlite",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "browser-integrity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "browser-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "url",
+]
+
+[[package]]
+name = "browser-rt"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-carve",
+ "browser-chrome",
+ "browser-core",
+ "browser-discovery",
+ "browser-firefox",
+ "browser-integrity",
+ "browser-safari",
+ "rusqlite",
+ "serde",
  "serde_json",
  "tempfile",
 ]
@@ -190,10 +249,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "browser-carve",
  "browser-chrome",
  "browser-core",
  "browser-discovery",
  "browser-firefox",
+ "browser-integrity",
+ "browser-rt",
  "browser-safari",
  "chrono",
  "clap",
@@ -377,6 +439,13 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "forensicnomicon"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "form_urlencoded"
