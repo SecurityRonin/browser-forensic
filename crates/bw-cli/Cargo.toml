@@ -17,6 +17,7 @@ browser-firefox = { path = "../browser-firefox" }
 browser-safari = { path = "../browser-safari" }
 browser-discovery = { path = "../browser-discovery" }
 browser-integrity = { path = "../browser-integrity" }
+browser-carve = { path = "../browser-carve" }
 clap = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
