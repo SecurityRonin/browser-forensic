@@ -5,6 +5,7 @@ pub mod downloads;
 pub mod bookmarks;
 pub mod extensions;
 pub mod cookies;
+pub mod topsites;
 
 pub use history::parse_history;
 pub use downloads::parse_downloads;
