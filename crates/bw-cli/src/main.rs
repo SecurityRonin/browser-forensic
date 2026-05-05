@@ -5,6 +5,7 @@ mod format;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use browser_core::BrowserFamily;
 use clap::{Parser, Subcommand, ValueEnum};
 
 /// bw — browser forensic analysis CLI.
@@ -78,6 +79,8 @@ enum Commands {
     Profiles(ProfilesArgs),
     /// Analyze browser history for rarely-visited domains.
     Analyze(AnalyzeArgs),
+    /// Run integrity checks on a browser artifact.
+    Integrity(ArtifactArgs),
 }
 
 fn main() -> Result<()> {
@@ -94,6 +97,7 @@ fn main() -> Result<()> {
         Commands::Cache(args) => run_artifact(args, ArtifactType::Cache),
         Commands::Profiles(args) => run_profiles(args),
         Commands::Analyze(args) => run_analyze(args),
+        Commands::Integrity(args) => run_integrity(args),
     }
 }
 
@@ -242,6 +246,65 @@ fn infer_browser_from_filename(path: &std::path::Path) -> Option<browser_core::B
         return Some(browser_core::BrowserFamily::Firefox);
     }
     None
+}
+
+fn run_integrity(args: ArtifactArgs) -> Result<()> {
+    let path = &args.path;
+
+    // Default to Chromium for generic SQLite files
+    let family = BrowserFamily::Chromium;
+
+    let mut indicators = Vec::new();
+
+    if let Ok(mut ind) = browser_integrity::check_database_integrity(path) {
+        indicators.append(&mut ind);
+    }
+    if let Ok(mut ind) = browser_integrity::check_wal_state(path) {
+        indicators.append(&mut ind);
+    }
+    if let Ok(mut ind) = browser_integrity::check_history_integrity(path, family.clone()) {
+        indicators.append(&mut ind);
+    }
+    if let Ok(mut ind) = browser_integrity::check_cookie_integrity(path, family) {
+        indicators.append(&mut ind);
+    }
+
+    if indicators.is_empty() {
+        match args.format {
+            OutputFormat::Text => println!("No integrity issues detected."),
+            OutputFormat::Jsonl => println!("{{\"status\":\"clean\"}}"),
+            OutputFormat::Csv => {
+                println!("type,path,detail");
+                println!("clean,{},no issues", path.display());
+            }
+        }
+    } else {
+        match args.format {
+            OutputFormat::Text => {
+                println!("Found {} integrity indicator(s):", indicators.len());
+                for ind in &indicators {
+                    println!("  {ind:?}");
+                }
+            }
+            OutputFormat::Jsonl => {
+                for ind in &indicators {
+                    if let Ok(json) = serde_json::to_string(ind) {
+                        println!("{json}");
+                    }
+                }
+            }
+            OutputFormat::Csv => {
+                println!("type,detail");
+                for ind in &indicators {
+                    if let Ok(json) = serde_json::to_string(ind) {
+                        println!("{json}");
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn print_events(events: &[browser_core::BrowserEvent], format: &OutputFormat) {
