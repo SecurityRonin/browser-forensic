@@ -329,4 +329,96 @@ mod tests {
         let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
         assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::TimestampNonMonotonic { .. })));
     }
+
+    fn safari_history_schema() -> &'static str {
+        "CREATE TABLE history_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL UNIQUE,
+            domain_expansion TEXT,
+            visit_count INTEGER NOT NULL DEFAULT 0,
+            daily_visit_counts BLOB,
+            weekly_visit_counts BLOB,
+            autocomplete_triggers BLOB,
+            should_recompute_derived_visit_counts INTEGER NOT NULL DEFAULT 1,
+            visit_count_score INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE history_visits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            history_item INTEGER NOT NULL REFERENCES history_items(id) ON DELETE CASCADE,
+            visit_time REAL NOT NULL,
+            title TEXT,
+            load_successful BOOLEAN NOT NULL DEFAULT 1,
+            http_non_get INTEGER NOT NULL DEFAULT 0,
+            synthesized INTEGER NOT NULL DEFAULT 0,
+            redirect_source INTEGER,
+            redirect_destination INTEGER,
+            origin INTEGER NOT NULL DEFAULT 0,
+            generation INTEGER NOT NULL DEFAULT 0,
+            attributes INTEGER NOT NULL DEFAULT 0,
+            score INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE history_tombstones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            generation INTEGER NOT NULL
+        );"
+    }
+
+    #[test]
+    fn safari_history_clean_returns_empty() {
+        let db = TestDb::new(safari_history_schema());
+        db.insert(
+            "INSERT INTO history_items (id, url, visit_count) VALUES (1, 'https://a.com', 1)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO history_visits (id, history_item, visit_time) VALUES (1, 1, 700000000.0)",
+            rusqlite::params![],
+        );
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Safari).expect("check");
+        let tombstones: Vec<_> = result.iter()
+            .filter(|i| matches!(i, IntegrityIndicator::HistoryTombstoneFound { .. }))
+            .collect();
+        assert!(tombstones.is_empty());
+    }
+
+    #[test]
+    fn safari_tombstones_detected() {
+        let db = TestDb::new(safari_history_schema());
+        db.insert(
+            "INSERT INTO history_tombstones (id, url, generation) VALUES (1, 'https://deleted.example.com', 5)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO history_tombstones (id, url, generation) VALUES (2, 'https://also-deleted.example.com', 5)",
+            rusqlite::params![],
+        );
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Safari).expect("check");
+        let tombstones: Vec<_> = result.iter()
+            .filter(|i| matches!(i, IntegrityIndicator::HistoryTombstoneFound { .. }))
+            .collect();
+        assert_eq!(tombstones.len(), 2, "should detect 2 tombstoned URLs");
+    }
+
+    #[test]
+    fn safari_visit_id_gap_detected() {
+        let db = TestDb::new(safari_history_schema());
+        db.insert(
+            "INSERT INTO history_items (id, url, visit_count) VALUES (1, 'https://a.com', 2)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO history_visits (id, history_item, visit_time) VALUES (1, 1, 700000000.0)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO history_visits (id, history_item, visit_time) VALUES (50, 1, 700000001.0)",
+            rusqlite::params![],
+        );
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Safari).expect("check");
+        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })));
+    }
 }
