@@ -1,5 +1,77 @@
 //! Cookie integrity checks across browser families.
 
+use std::path::Path;
+
+use anyhow::Result;
+use browser_core::BrowserFamily;
+use rusqlite::Connection;
+
+use crate::IntegrityIndicator;
+
+/// Check a browser cookie database for timestamp anomalies.
+///
+/// Detects cookies where creation timestamp > last_access timestamp,
+/// which is impossible under normal browser operation and indicates timestamp manipulation.
+pub fn check_cookie_integrity(path: &Path, browser: BrowserFamily) -> Result<Vec<IntegrityIndicator>> {
+    match browser {
+        BrowserFamily::Chromium => check_chromium_cookies(path),
+        BrowserFamily::Firefox => check_firefox_cookies(path),
+        BrowserFamily::Safari => Ok(Vec::new()), // Safari uses binary cookies format, not SQLite
+    }
+}
+
+fn check_chromium_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
+    let conn = Connection::open(path)?;
+    let mut indicators = Vec::new();
+
+    let mut stmt = conn.prepare(
+        "SELECT host_key, creation_utc, last_access_utc FROM cookies WHERE last_access_utc > 0"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+    })?;
+
+    for row in rows.flatten() {
+        let (host, creation, last_access) = row;
+        if creation > last_access {
+            // Webkit timestamps: microseconds since 1601-01-01
+            indicators.push(IntegrityIndicator::CookieTimestampAnomaly {
+                path: path.to_path_buf(),
+                host,
+                creation_ns: creation.saturating_mul(1000),
+                last_access_ns: last_access.saturating_mul(1000),
+            });
+        }
+    }
+    Ok(indicators)
+}
+
+fn check_firefox_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
+    let conn = Connection::open(path)?;
+    let mut indicators = Vec::new();
+
+    let mut stmt = conn.prepare(
+        "SELECT host, creationTime, lastAccessed FROM moz_cookies WHERE lastAccessed > 0"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+    })?;
+
+    for row in rows.flatten() {
+        let (host, creation, last_access) = row;
+        if creation > last_access {
+            // Firefox uses microseconds since Unix epoch
+            indicators.push(IntegrityIndicator::CookieTimestampAnomaly {
+                path: path.to_path_buf(),
+                host,
+                creation_ns: creation * 1000,
+                last_access_ns: last_access * 1000,
+            });
+        }
+    }
+    Ok(indicators)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
