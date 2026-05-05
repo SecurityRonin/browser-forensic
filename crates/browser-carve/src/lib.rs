@@ -4,6 +4,63 @@
 //! Recovers deleted browser data from SQLite free pages, WAL files,
 //! and binary formats.
 
+use std::collections::HashMap;
+
+use browser_integrity::IntegrityIndicator;
+use serde::Serialize;
+
+/// How a deleted record was recovered.
+#[derive(Debug, Clone, Serialize)]
+pub enum RecoveryMethod {
+    /// Recovered from a SQLite free (deallocated) page.
+    FreePage,
+    /// Recovered from uncommitted WAL transactions.
+    WalUncommitted,
+    /// Recovered from a rollback journal.
+    JournalRollback,
+    /// Found via direct byte-pattern scanning.
+    DirectScan,
+}
+
+/// Quality of the recovered record.
+#[derive(Debug, Clone, Serialize)]
+pub enum RecoveryQuality {
+    /// All fields successfully recovered.
+    Complete,
+    /// Some fields missing or truncated.
+    Partial,
+    /// Record structure detected but data corrupt.
+    Corrupt,
+}
+
+/// A single recovered record from carving.
+#[derive(Debug, Clone, Serialize)]
+pub struct CarvedRecord {
+    pub offset: u64,
+    pub table: String,
+    pub fields: HashMap<String, serde_json::Value>,
+    pub method: RecoveryMethod,
+    pub quality: RecoveryQuality,
+}
+
+/// Statistics about the carving operation.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CarveStats {
+    pub bytes_scanned: u64,
+    pub pages_scanned: u32,
+    pub free_pages_found: u32,
+    pub records_recovered: usize,
+    pub records_partial: usize,
+}
+
+/// Result of a carving operation.
+#[derive(Debug, Clone, Serialize)]
+pub struct CarveResult {
+    pub records: Vec<CarvedRecord>,
+    pub integrity: Vec<IntegrityIndicator>,
+    pub stats: CarveStats,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
