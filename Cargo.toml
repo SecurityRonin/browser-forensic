@@ -27,6 +27,8 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 assert_cmd = "2"
 tempfile = "3"
+forensicnomicon = { path = "../../../../forensicnomicon", features = ["serde"] }
+thiserror = "2"
 
 [workspace.lints.rust]
 unused_imports = "warn"

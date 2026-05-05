@@ -229,4 +229,37 @@ mod tests {
         assert_eq!(ev.attrs["url"], json!("https://example.com"));
         assert_eq!(ev.timestamp_ns, 1_000_000);
     }
+
+    #[test]
+    fn artifact_kind_has_integrity_variant() {
+        let _ik = ArtifactKind::Integrity;
+        assert_eq!(format!("{}", ArtifactKind::Integrity), "Integrity");
+    }
+
+    #[test]
+    fn artifact_kind_has_carved_variant() {
+        let _c = ArtifactKind::Carved;
+        assert_eq!(format!("{}", ArtifactKind::Carved), "Carved");
+    }
+
+    #[test]
+    fn artifact_kind_has_memory_variant() {
+        let _m = ArtifactKind::Memory;
+        assert_eq!(format!("{}", ArtifactKind::Memory), "Memory");
+    }
+
+    #[test]
+    fn forensic_meta_lookup_chrome_history() {
+        let meta = ForensicMeta::lookup("browser_chrome_history");
+        assert!(meta.is_some());
+        let meta = meta.unwrap();
+        assert_eq!(meta.artifact_id, "browser_chrome_history");
+        assert!(meta.evidence_strength.is_some());
+    }
+
+    #[test]
+    fn forensic_meta_lookup_unknown_returns_none() {
+        let meta = ForensicMeta::lookup("nonexistent_artifact_xyz");
+        assert!(meta.is_none());
+    }
 }
