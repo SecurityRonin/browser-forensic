@@ -81,6 +81,8 @@ enum Commands {
     Analyze(AnalyzeArgs),
     /// Run integrity checks on a browser artifact.
     Integrity(ArtifactArgs),
+    /// Carve deleted records from a browser SQLite database.
+    Carve(ArtifactArgs),
 }
 
 fn main() -> Result<()> {
@@ -98,6 +100,7 @@ fn main() -> Result<()> {
         Commands::Profiles(args) => run_profiles(args),
         Commands::Analyze(args) => run_analyze(args),
         Commands::Integrity(args) => run_integrity(args),
+        Commands::Carve(args) => run_carve(args),
     }
 }
 
@@ -300,6 +303,77 @@ fn run_integrity(args: ArtifactArgs) -> Result<()> {
                         println!("{json}");
                     }
                 }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_carve(args: ArtifactArgs) -> Result<()> {
+    let path = &args.path;
+
+    let empty = || browser_carve::CarveResult {
+        records: Vec::new(),
+        integrity: Vec::new(),
+        stats: browser_carve::CarveStats::default(),
+    };
+    let free_result = browser_carve::carve_sqlite_free_pages(path).unwrap_or_else(|_| empty());
+    let wal_result = browser_carve::recover_from_wal(path).unwrap_or_else(|_| empty());
+
+    let mut all_records = free_result.records;
+    all_records.extend(wal_result.records);
+
+    let total_stats = browser_carve::CarveStats {
+        bytes_scanned: free_result.stats.bytes_scanned + wal_result.stats.bytes_scanned,
+        pages_scanned: free_result.stats.pages_scanned + wal_result.stats.pages_scanned,
+        free_pages_found: free_result.stats.free_pages_found + wal_result.stats.free_pages_found,
+        records_recovered: free_result.stats.records_recovered + wal_result.stats.records_recovered,
+        records_partial: free_result.stats.records_partial + wal_result.stats.records_partial,
+    };
+
+    match args.format {
+        OutputFormat::Text => {
+            println!(
+                "Carve stats: {} bytes scanned, {} pages, {} free pages, {} records recovered ({} partial)",
+                total_stats.bytes_scanned,
+                total_stats.pages_scanned,
+                total_stats.free_pages_found,
+                total_stats.records_recovered,
+                total_stats.records_partial,
+            );
+            for rec in &all_records {
+                println!(
+                    "  offset={} table={} method={:?} quality={:?} fields={}",
+                    rec.offset,
+                    rec.table,
+                    rec.method,
+                    rec.quality,
+                    serde_json::to_string(&rec.fields).unwrap_or_default(),
+                );
+            }
+        }
+        OutputFormat::Jsonl => {
+            if let Ok(json) = serde_json::to_string(&total_stats) {
+                println!("{json}");
+            }
+            for rec in &all_records {
+                if let Ok(json) = serde_json::to_string(rec) {
+                    println!("{json}");
+                }
+            }
+        }
+        OutputFormat::Csv => {
+            println!("offset,table,method,quality,fields");
+            for rec in &all_records {
+                println!(
+                    "{},{},{:?},{:?},{}",
+                    rec.offset,
+                    format::csv_escape(&rec.table),
+                    rec.method,
+                    rec.quality,
+                    format::csv_escape(&serde_json::to_string(&rec.fields).unwrap_or_default()),
+                );
             }
         }
     }
