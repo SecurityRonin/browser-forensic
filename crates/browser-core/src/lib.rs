@@ -294,4 +294,36 @@ mod tests {
         let meta = ForensicMeta::lookup("nonexistent_artifact_xyz");
         assert!(meta.is_none());
     }
+
+    #[test]
+    fn forensic_meta_all_browser_artifacts_have_profiles() {
+        let artifact_ids = [
+            "browser_chrome_history",
+            "browser_chrome_cookies",
+            "browser_chrome_downloads",
+            "browser_chrome_bookmarks",
+            "browser_chrome_extensions",
+            "browser_chrome_autofill",
+            "browser_chrome_cache",
+            "browser_chrome_session",
+            "browser_firefox_history",
+            "browser_firefox_cookies",
+            "browser_firefox_downloads",
+            "browser_safari_history",
+        ];
+
+        for id in &artifact_ids {
+            let meta = ForensicMeta::lookup(id);
+            assert!(meta.is_some(), "ForensicMeta::lookup({id}) should return Some");
+        }
+    }
+
+    #[test]
+    fn forensic_meta_evidence_strength_is_populated() {
+        let meta = ForensicMeta::lookup("browser_chrome_downloads").expect("should exist");
+        assert!(meta.evidence_strength.is_some(), "evidence_strength should be Some");
+        // Downloads are Strong evidence
+        let strength = meta.evidence_strength.as_deref().expect("should have value");
+        assert!(strength.contains("Strong"), "Downloads should be Strong evidence, got: {strength}");
+    }
 }
