@@ -18,8 +18,71 @@ use crate::IntegrityIndicator;
 pub fn check_history_integrity(path: &Path, browser: BrowserFamily) -> Result<Vec<IntegrityIndicator>> {
     match browser {
         BrowserFamily::Chromium => check_chromium_history(path),
+        BrowserFamily::Firefox => check_firefox_history(path),
         _ => Ok(Vec::new()),
     }
+}
+
+fn check_firefox_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
+    let conn = Connection::open(path)?;
+    let mut indicators = Vec::new();
+    check_firefox_visit_id_gaps(&conn, path, &mut indicators)?;
+    check_firefox_timestamp_monotonicity(&conn, path, &mut indicators)?;
+    Ok(indicators)
+}
+
+fn check_firefox_visit_id_gaps(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let mut stmt = conn.prepare("SELECT id FROM moz_historyvisits ORDER BY id ASC")?;
+    let ids: Vec<i64> = stmt
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for window in ids.windows(2) {
+        let prev = window[0];
+        let curr = window[1];
+        if curr - prev > 1 {
+            indicators.push(IntegrityIndicator::VisitIdGap {
+                path: path.to_path_buf(),
+                expected_id: prev + 1,
+                found_id: curr,
+            });
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn check_firefox_timestamp_monotonicity(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let mut stmt = conn.prepare("SELECT id, visit_date FROM moz_historyvisits ORDER BY id ASC")?;
+    let rows: Vec<(i64, i64)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for window in rows.windows(2) {
+        let (_, prev_ts) = window[0];
+        let (curr_id, curr_ts) = window[1];
+        if curr_ts < prev_ts {
+            // Firefox visit_date is in microseconds since Unix epoch
+            indicators.push(IntegrityIndicator::TimestampNonMonotonic {
+                path: path.to_path_buf(),
+                row_id: curr_id,
+                prev_ts_ns: prev_ts * 1000,
+                this_ts_ns: curr_ts * 1000,
+            });
+            break;
+        }
+    }
+    Ok(())
 }
 
 fn check_chromium_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
