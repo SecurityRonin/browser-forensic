@@ -9,6 +9,7 @@ members = [
     "crates/browser-integrity",
     "crates/browser-carve",
     "crates/browser-memory",
+    "crates/browser-rt",
 ]
 resolver = "2"
 

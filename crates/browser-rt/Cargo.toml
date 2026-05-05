@@ -1,0 +1,25 @@
+[package]
+name = "browser-rt"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+browser-core = { path = "../browser-core" }
+browser-chrome = { path = "../browser-chrome" }
+browser-firefox = { path = "../browser-firefox" }
+browser-safari = { path = "../browser-safari" }
+browser-discovery = { path = "../browser-discovery" }
+browser-integrity = { path = "../browser-integrity" }
+browser-carve = { path = "../browser-carve" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rusqlite = { workspace = true }
+
+[lints]
+workspace = true

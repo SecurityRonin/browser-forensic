@@ -7,6 +7,7 @@ license.workspace     = true
 
 [dependencies]
 browser-core = { path = "../browser-core" }
+serde = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
