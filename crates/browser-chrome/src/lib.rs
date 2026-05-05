@@ -8,6 +8,7 @@ pub mod extensions;
 pub mod login_data;
 pub mod autofill;
 pub mod cache;
+pub mod local_state;
 
 pub use history::parse_history;
 pub use cookies::parse_cookies;
