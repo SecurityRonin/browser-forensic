@@ -18,6 +18,7 @@ browser-safari = { path = "../browser-safari" }
 browser-discovery = { path = "../browser-discovery" }
 browser-integrity = { path = "../browser-integrity" }
 browser-carve = { path = "../browser-carve" }
+browser-rt = { path = "../browser-rt" }
 clap = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
