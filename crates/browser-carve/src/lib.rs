@@ -5,6 +5,7 @@
 //! and binary formats.
 
 pub mod sqlite_carve;
+pub mod wal_recovery;
 
 use std::collections::HashMap;
 
