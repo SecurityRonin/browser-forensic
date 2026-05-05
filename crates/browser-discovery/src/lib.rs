@@ -222,4 +222,44 @@ mod tests {
         let profiles = discover_profiles(home.path());
         assert!(profiles.iter().any(|p| p.browser == BrowserFamily::Firefox));
     }
+
+    #[test]
+    fn discover_chrome_windows_layout() {
+        let home = TempDir::new().unwrap();
+        let chrome = home.path()
+            .join("AppData/Local/Google/Chrome/User Data/Default");
+        fs::create_dir_all(&chrome).unwrap();
+        fs::write(chrome.join("History"), b"").unwrap();
+
+        let profiles = discover_profiles(home.path());
+        assert!(profiles.iter().any(|p|
+            p.browser == BrowserFamily::Chromium && p.name == "Default"
+        ), "should discover Chrome profile from Windows path layout");
+    }
+
+    #[test]
+    fn discover_firefox_windows_layout() {
+        let home = TempDir::new().unwrap();
+        let ff = home.path()
+            .join("AppData/Roaming/Mozilla/Firefox/Profiles/abc.default-release");
+        fs::create_dir_all(&ff).unwrap();
+        fs::write(ff.join("places.sqlite"), b"").unwrap();
+
+        let profiles = discover_profiles(home.path());
+        assert!(profiles.iter().any(|p|
+            p.browser == BrowserFamily::Firefox
+        ), "should discover Firefox profile from Windows path layout");
+    }
+
+    #[test]
+    fn discover_edge_windows_layout() {
+        let home = TempDir::new().unwrap();
+        let edge = home.path()
+            .join("AppData/Local/Microsoft/Edge/User Data/Default");
+        fs::create_dir_all(&edge).unwrap();
+        fs::write(edge.join("History"), b"").unwrap();
+
+        let profiles = discover_profiles(home.path());
+        assert!(profiles.iter().any(|p| p.browser == BrowserFamily::Chromium));
+    }
 }
