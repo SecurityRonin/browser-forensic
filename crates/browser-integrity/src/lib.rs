@@ -3,6 +3,7 @@
 //! tampering, clearing, or corruption in browser artifacts.
 
 pub mod database;
+pub mod history;
 
 use std::path::PathBuf;
 
