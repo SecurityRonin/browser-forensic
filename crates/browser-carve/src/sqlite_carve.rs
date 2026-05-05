@@ -5,10 +5,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::{CarveResult, CarveStats, CarvedRecord, RecoveryMethod, RecoveryQuality};
-
-const SQLITE_HEADER_SIZE: usize = 100;
-const PAGE_SIZE_OFFSET: usize = 16;
-const FREELIST_TRUNK_OFFSET: usize = 32;
+use forensicnomicon::sqlite::{
+    SQLITE_FREELIST_TRUNK_OFFSET, SQLITE_HEADER_SIZE, SQLITE_MAGIC,
+    SQLITE_PAGE_SIZE_OFFSET,
+};
 
 pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
     let data = std::fs::read(path)
@@ -18,18 +18,18 @@ pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
         anyhow::bail!("file too small to be a valid SQLite database");
     }
 
-    if &data[0..16] != b"SQLite format 3\0" {
+    if &data[..SQLITE_MAGIC.len()] != SQLITE_MAGIC {
         anyhow::bail!("not a SQLite database (bad magic)");
     }
 
     let page_size = {
-        let raw = u16::from_be_bytes([data[PAGE_SIZE_OFFSET], data[PAGE_SIZE_OFFSET + 1]]) as usize;
+        let raw = u16::from_be_bytes([data[SQLITE_PAGE_SIZE_OFFSET], data[SQLITE_PAGE_SIZE_OFFSET + 1]]) as usize;
         if raw == 1 { 65536 } else { raw }
     };
 
     let freelist_trunk = u32::from_be_bytes([
-        data[FREELIST_TRUNK_OFFSET], data[FREELIST_TRUNK_OFFSET+1],
-        data[FREELIST_TRUNK_OFFSET+2], data[FREELIST_TRUNK_OFFSET+3],
+        data[SQLITE_FREELIST_TRUNK_OFFSET], data[SQLITE_FREELIST_TRUNK_OFFSET+1],
+        data[SQLITE_FREELIST_TRUNK_OFFSET+2], data[SQLITE_FREELIST_TRUNK_OFFSET+3],
     ]) as usize;
 
     let total_pages = data.len() / page_size;

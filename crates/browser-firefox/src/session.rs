@@ -8,10 +8,8 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_millis_to_nanos;
+use forensicnomicon::sqlite::MOZLZ4_MAGIC;
 use serde_json::json;
-
-/// The magic bytes at the start of a Firefox sessionstore file.
-const MOZLZ4_MAGIC: &[u8; 8] = b"mozLz40\0";
 
 /// Parse a Firefox `sessionstore.jsonlz4` file.
 ///

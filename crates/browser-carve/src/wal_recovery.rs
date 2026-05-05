@@ -5,9 +5,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::{CarveResult, CarveStats, CarvedRecord, RecoveryMethod, RecoveryQuality};
-
-const WAL_HEADER_SIZE: usize = 32;
-const WAL_FRAME_HEADER_SIZE: usize = 24;
+use forensicnomicon::sqlite::{SQLITE_WAL_FRAME_HEADER_SIZE, SQLITE_WAL_HEADER_SIZE};
 
 pub fn recover_from_wal(db_path: &Path) -> Result<CarveResult> {
     let wal_path_str = format!("{}-wal", db_path.display());
@@ -28,7 +26,7 @@ pub fn recover_from_wal(db_path: &Path) -> Result<CarveResult> {
     let wal_data = std::fs::read(wal_path)
         .with_context(|| format!("failed to read WAL file: {}", wal_path.display()))?;
 
-    if wal_data.len() < WAL_HEADER_SIZE {
+    if wal_data.len() < SQLITE_WAL_HEADER_SIZE {
         return Ok(CarveResult {
             records: Vec::new(),
             integrity: Vec::new(),
@@ -47,16 +45,16 @@ pub fn recover_from_wal(db_path: &Path) -> Result<CarveResult> {
     };
     let mut records = Vec::new();
 
-    let mut offset = WAL_HEADER_SIZE;
-    while offset + WAL_FRAME_HEADER_SIZE + page_size <= wal_data.len() {
+    let mut offset = SQLITE_WAL_HEADER_SIZE;
+    while offset + SQLITE_WAL_FRAME_HEADER_SIZE + page_size <= wal_data.len() {
         stats.pages_scanned += 1;
-        let page_data = &wal_data[offset + WAL_FRAME_HEADER_SIZE..offset + WAL_FRAME_HEADER_SIZE + page_size];
+        let page_data = &wal_data[offset + SQLITE_WAL_FRAME_HEADER_SIZE..offset + SQLITE_WAL_FRAME_HEADER_SIZE + page_size];
 
         let recovered = scan_wal_page_for_urls(page_data, offset as u64);
         stats.records_recovered += recovered.len();
         records.extend(recovered);
 
-        offset += WAL_FRAME_HEADER_SIZE + page_size;
+        offset += SQLITE_WAL_FRAME_HEADER_SIZE + page_size;
     }
 
     Ok(CarveResult { records, integrity: Vec::new(), stats })

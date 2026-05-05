@@ -1,10 +1,6 @@
 // crates/browser-core/src/timestamp.rs
 
-/// Offset in microseconds from 1601-01-01 to 1970-01-01 (WebKit epoch)
-pub const WEBKIT_EPOCH_OFFSET_US: i64 = 11_644_473_600 * 1_000_000;
-
-/// Offset in seconds from 2001-01-01 to 1970-01-01 (Core Data / Safari epoch)
-pub const CORE_DATA_EPOCH_OFFSET_SECS: i64 = 978_307_200;
+pub use forensicnomicon::heuristics::{CORE_DATA_EPOCH_OFFSET_SECS, WEBKIT_EPOCH_OFFSET_US};
 
 pub fn webkit_micros_to_unix_nanos(webkit_us: i64) -> i64 {
     (webkit_us - WEBKIT_EPOCH_OFFSET_US) * 1_000

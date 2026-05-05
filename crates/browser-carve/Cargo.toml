@@ -13,6 +13,7 @@ serde_json = { workspace = true }
 browser-core = { path = "../browser-core" }
 browser-integrity = { path = "../browser-integrity" }
 rusqlite = { workspace = true }
+forensicnomicon = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
