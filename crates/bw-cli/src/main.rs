@@ -83,6 +83,19 @@ enum Commands {
     Integrity(ArtifactArgs),
     /// Carve deleted records from a browser SQLite database.
     Carve(ArtifactArgs),
+    /// Run full triage: discover profiles, parse, check integrity, carve.
+    Triage(TriageArgs),
+}
+
+#[derive(Parser, Debug)]
+struct TriageArgs {
+    /// Home directory to scan for browser profiles.
+    #[arg(long, value_name = "DIR")]
+    home: Option<PathBuf>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
 }
 
 fn main() -> Result<()> {
@@ -101,6 +114,7 @@ fn main() -> Result<()> {
         Commands::Analyze(args) => run_analyze(args),
         Commands::Integrity(args) => run_integrity(args),
         Commands::Carve(args) => run_carve(args),
+        Commands::Triage(args) => run_triage(args),
     }
 }
 
@@ -374,6 +388,49 @@ fn run_carve(args: ArtifactArgs) -> Result<()> {
                     rec.quality,
                     format::csv_escape(&serde_json::to_string(&rec.fields).unwrap_or_default()),
                 );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_triage(args: TriageArgs) -> Result<()> {
+    let home = args.home.unwrap_or_else(|| {
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
+    });
+
+    let report = browser_rt::triage(&home)?;
+
+    match args.format {
+        OutputFormat::Text => {
+            println!("Browser Forensic Triage Report");
+            println!("==============================");
+            println!("Generated: {}", report.generated_at_ns);
+            println!("Profiles found: {}", report.profiles.len());
+            println!("Events parsed: {}", report.events.len());
+            println!("Integrity indicators: {}", report.integrity.len());
+            println!("Carved records: {}", report.carved.len());
+
+            if !report.events.is_empty() {
+                println!("\nTimeline ({} events):", report.events.len());
+                for ev in report.events.iter().take(50) {
+                    println!("  {}", format::event_to_text(ev));
+                }
+                if report.events.len() > 50 {
+                    println!("  ... and {} more events", report.events.len() - 50);
+                }
+            }
+        }
+        OutputFormat::Jsonl => {
+            if let Ok(json) = serde_json::to_string(&report) {
+                println!("{json}");
+            }
+        }
+        OutputFormat::Csv => {
+            println!("{}", format::TIMELINE_CSV_HEADER);
+            for ev in &report.events {
+                println!("{}", format::event_to_csv_row(ev));
             }
         }
     }
