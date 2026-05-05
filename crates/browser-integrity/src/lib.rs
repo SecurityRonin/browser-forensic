@@ -2,6 +2,8 @@
 //! Browser integrity detection — detects anomalies indicating
 //! tampering, clearing, or corruption in browser artifacts.
 
+pub mod database;
+
 use std::path::PathBuf;
 
 use browser_core::BrowserFamily;
