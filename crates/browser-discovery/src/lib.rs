@@ -28,6 +28,13 @@ static CHROMIUM_BASES: &[&str] = &[
     ".config/vivaldi",
     ".config/opera",
     ".config/chromium",
+    // Windows
+    "AppData/Local/Google/Chrome/User Data",
+    "AppData/Local/Microsoft/Edge/User Data",
+    "AppData/Local/BraveSoftware/Brave-Browser/User Data",
+    "AppData/Local/Vivaldi/User Data",
+    "AppData/Roaming/Opera Software/Opera Stable",
+    "AppData/Local/Chromium/User Data",
 ];
 
 /// Known Firefox profile base directories relative to `home`.
@@ -36,6 +43,8 @@ static FIREFOX_BASES: &[&str] = &[
     "Library/Application Support/Firefox/Profiles",
     // Linux
     ".mozilla/firefox",
+    // Windows
+    "AppData/Roaming/Mozilla/Firefox/Profiles",
 ];
 
 /// Discover all browser profiles found under `home`.
