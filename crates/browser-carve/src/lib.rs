@@ -136,4 +136,12 @@ mod tests {
         assert_eq!(cloned.table, "test");
         assert!(matches!(cloned.method, RecoveryMethod::WalUncommitted));
     }
+
+    #[test]
+    fn crate_root_reexports_carve_functions() {
+        let _f1: fn(&std::path::Path) -> anyhow::Result<CarveResult>
+            = browser_carve::carve_sqlite_free_pages;
+        let _f2: fn(&std::path::Path) -> anyhow::Result<CarveResult>
+            = browser_carve::recover_from_wal;
+    }
 }
