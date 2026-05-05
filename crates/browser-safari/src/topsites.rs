@@ -1,5 +1,66 @@
 //! Safari TopSites.plist parser.
 
+use std::path::Path;
+
+use anyhow::Result;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
+
+/// Parse Safari's `TopSites.plist` file.
+///
+/// Extracts frequently visited sites. These are forensically relevant
+/// because they reveal habitual browsing patterns even when history
+/// has been cleared.
+pub fn parse_topsites(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let value: plist::Value = plist::from_file(path)?;
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    let dict = value
+        .as_dictionary()
+        .ok_or_else(|| anyhow::anyhow!("TopSites.plist root is not a dictionary"))?;
+
+    let sites = match dict.get("TopSites").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return Ok(events),
+    };
+
+    for site in sites {
+        let site_dict = match site.as_dictionary() {
+            Some(d) => d,
+            None => continue,
+        };
+
+        let url = site_dict
+            .get("TopSiteURLString")
+            .and_then(|v| v.as_string())
+            .unwrap_or("");
+        let title = site_dict
+            .get("TopSiteTitle")
+            .and_then(|v| v.as_string())
+            .unwrap_or("");
+
+        if url.is_empty() {
+            continue;
+        }
+
+        let desc = if title.is_empty() {
+            url.to_string()
+        } else {
+            format!("{title} -- {url}")
+        };
+
+        events.push(
+            BrowserEvent::new(0, BrowserFamily::Safari, ArtifactKind::History, &source, desc)
+                .with_attr("url", json!(url))
+                .with_attr("title", json!(title))
+                .with_attr("source_type", json!("topsites")),
+        );
+    }
+
+    Ok(events)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
