@@ -6,6 +6,10 @@ pub mod cookies;
 pub mod database;
 pub mod history;
 
+pub use cookies::check_cookie_integrity;
+pub use database::{check_database_integrity, check_wal_state};
+pub use history::check_history_integrity;
+
 use std::path::PathBuf;
 
 use browser_core::BrowserFamily;
