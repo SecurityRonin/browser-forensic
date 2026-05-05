@@ -19,8 +19,73 @@ pub fn check_history_integrity(path: &Path, browser: BrowserFamily) -> Result<Ve
     match browser {
         BrowserFamily::Chromium => check_chromium_history(path),
         BrowserFamily::Firefox => check_firefox_history(path),
-        _ => Ok(Vec::new()),
+        BrowserFamily::Safari => check_safari_history(path),
     }
+}
+
+fn check_safari_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
+    let conn = Connection::open(path)?;
+    let mut indicators = Vec::new();
+    check_safari_tombstones(&conn, path, &mut indicators)?;
+    check_safari_visit_id_gaps(&conn, path, &mut indicators)?;
+    Ok(indicators)
+}
+
+fn check_safari_tombstones(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let table_exists: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='history_tombstones'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if !table_exists {
+        return Ok(());
+    }
+
+    let mut stmt = conn.prepare("SELECT url FROM history_tombstones")?;
+    let urls: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for url in urls {
+        indicators.push(IntegrityIndicator::HistoryTombstoneFound {
+            path: path.to_path_buf(),
+            url,
+            deleted_at_ns: 0,
+        });
+    }
+    Ok(())
+}
+
+fn check_safari_visit_id_gaps(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let mut stmt = conn.prepare("SELECT id FROM history_visits ORDER BY id ASC")?;
+    let ids: Vec<i64> = stmt
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for window in ids.windows(2) {
+        let prev = window[0];
+        let curr = window[1];
+        if curr - prev > 1 {
+            indicators.push(IntegrityIndicator::VisitIdGap {
+                path: path.to_path_buf(),
+                expected_id: prev + 1,
+                found_id: curr,
+            });
+            break;
+        }
+    }
+    Ok(())
 }
 
 fn check_firefox_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
