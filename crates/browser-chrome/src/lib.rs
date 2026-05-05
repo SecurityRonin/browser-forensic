@@ -18,3 +18,4 @@ pub use extensions::parse_extensions;
 pub use login_data::parse_login_data;
 pub use autofill::parse_autofill;
 pub use cache::parse_cache;
+pub use local_state::parse_local_state;

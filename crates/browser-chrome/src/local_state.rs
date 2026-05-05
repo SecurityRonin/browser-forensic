@@ -1,5 +1,52 @@
 //! Chrome Local State JSON parser.
 
+use std::path::Path;
+
+use anyhow::Result;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
+
+/// Parse a Chrome `Local State` JSON file.
+///
+/// Extracts profile metadata from `profile.info_cache`, including
+/// profile names, associated email addresses, and last active times.
+pub fn parse_local_state(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let data = std::fs::read_to_string(path)?;
+    let root: serde_json::Value = serde_json::from_str(&data)?;
+
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    if let Some(info_cache) = root
+        .get("profile")
+        .and_then(|p| p.get("info_cache"))
+        .and_then(|ic| ic.as_object())
+    {
+        for (profile_dir, info) in info_cache {
+            let name = info.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
+            let user_name = info.get("user_name").and_then(|u| u.as_str()).unwrap_or("");
+            let active_time = info.get("active_time").and_then(|t| t.as_f64()).unwrap_or(0.0);
+            let ts_ns = browser_core::timestamp::unix_secs_to_nanos(active_time as i64);
+
+            let desc = if user_name.is_empty() {
+                format!("Profile {profile_dir}: {name}")
+            } else {
+                format!("Profile {profile_dir}: {name} ({user_name})")
+            };
+
+            events.push(
+                BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Session, &source, desc)
+                    .with_attr("profile_dir", json!(profile_dir))
+                    .with_attr("profile_name", json!(name))
+                    .with_attr("user_name", json!(user_name))
+                    .with_attr("active_time", json!(active_time)),
+            );
+        }
+    }
+
+    Ok(events)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
