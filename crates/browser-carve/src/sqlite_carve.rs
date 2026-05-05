@@ -102,7 +102,7 @@ fn scan_page_for_urls(page_data: &[u8], page_offset: u64) -> Vec<CarvedRecord> {
         // Found "http" at byte index i — scan forward for end of printable ASCII
         let end = page_data[i..]
             .iter()
-            .position(|&b| b < 0x20 || b > 0x7e)
+            .position(|&b| !(0x20..=0x7e).contains(&b))
             .map(|pos| i + pos)
             .unwrap_or(page_data.len());
 

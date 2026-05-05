@@ -74,7 +74,7 @@ fn scan_wal_page_for_urls(page_data: &[u8], frame_offset: u64) -> Vec<CarvedReco
         }
         let end = page_data[i..]
             .iter()
-            .position(|&b| b < 0x20 || b > 0x7e)
+            .position(|&b| !(0x20..=0x7e).contains(&b))
             .map(|pos| i + pos)
             .unwrap_or(page_data.len());
 

@@ -7,6 +7,9 @@
 pub mod sqlite_carve;
 pub mod wal_recovery;
 
+pub use sqlite_carve::carve_sqlite_free_pages;
+pub use wal_recovery::recover_from_wal;
+
 use std::collections::HashMap;
 
 use browser_integrity::IntegrityIndicator;
@@ -140,8 +143,8 @@ mod tests {
     #[test]
     fn crate_root_reexports_carve_functions() {
         let _f1: fn(&std::path::Path) -> anyhow::Result<CarveResult>
-            = browser_carve::carve_sqlite_free_pages;
+            = crate::carve_sqlite_free_pages;
         let _f2: fn(&std::path::Path) -> anyhow::Result<CarveResult>
-            = browser_carve::recover_from_wal;
+            = crate::recover_from_wal;
     }
 }
