@@ -9,6 +9,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+pub use forensicnomicon::evidence::EvidenceStrength;
+
 /// Browser engine family.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BrowserFamily {
@@ -39,6 +41,9 @@ pub enum ArtifactKind {
     Bookmarks,
     Autofill,
     Session,
+    Integrity,
+    Carved,
+    Memory,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -53,6 +58,9 @@ impl std::fmt::Display for ArtifactKind {
             Self::Bookmarks  => write!(f, "Bookmarks"),
             Self::Autofill   => write!(f, "Autofill"),
             Self::Session    => write!(f, "Session"),
+            Self::Integrity  => write!(f, "Integrity"),
+            Self::Carved     => write!(f, "Carved"),
+            Self::Memory     => write!(f, "Memory"),
         }
     }
 }
@@ -91,6 +99,30 @@ impl BrowserEvent {
     pub fn with_attr(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         self.attrs.insert(key.into(), value);
         self
+    }
+}
+
+/// Forensic metadata from forensicnomicon for a specific browser artifact.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForensicMeta {
+    pub artifact_id: String,
+    pub evidence_strength: Option<String>,
+    pub volatility: Option<String>,
+    pub caveats: Vec<String>,
+}
+
+impl ForensicMeta {
+    /// Look up forensic metadata for the given artifact ID.
+    /// Returns `None` if the artifact is not in forensicnomicon's catalog.
+    #[must_use]
+    pub fn lookup(artifact_id: &str) -> Option<Self> {
+        let profile = forensicnomicon::profile::profile_for(artifact_id)?;
+        Some(Self {
+            artifact_id: artifact_id.to_string(),
+            evidence_strength: Some(format!("{:?}", profile.evidence_strength)),
+            volatility: Some(format!("{:?}", profile.volatility)),
+            caveats: profile.evidence_caveats.iter().map(|c| c.to_string()).collect(),
+        })
     }
 }
 
