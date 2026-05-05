@@ -2,6 +2,72 @@
 //! Browser integrity detection — detects anomalies indicating
 //! tampering, clearing, or corruption in browser artifacts.
 
+use std::path::PathBuf;
+
+use browser_core::BrowserFamily;
+use serde::Serialize;
+
+/// An anomaly detected in a browser artifact indicating tampering, clearing, or corruption.
+///
+/// Mirrors `winevt_integrity::IntegrityIndicator` from winevt-forensic.
+#[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
+pub enum IntegrityIndicator {
+    /// Browser history was cleared (empty tables with non-zero auto-increment counters).
+    HistoryCleared {
+        browser: BrowserFamily,
+        path: PathBuf,
+        detected_at_ns: i64,
+    },
+    /// Gap in visit/row IDs suggesting deleted records.
+    VisitIdGap {
+        path: PathBuf,
+        expected_id: i64,
+        found_id: i64,
+    },
+    /// Timestamps are not monotonically increasing within a table.
+    TimestampNonMonotonic {
+        path: PathBuf,
+        row_id: i64,
+        prev_ts_ns: i64,
+        this_ts_ns: i64,
+    },
+    /// Cookie creation timestamp is after last_access (impossible naturally).
+    CookieTimestampAnomaly {
+        path: PathBuf,
+        host: String,
+        creation_ns: i64,
+        last_access_ns: i64,
+    },
+    /// WAL file exists alongside database — uncommitted changes or crash recovery needed.
+    WalPresent {
+        path: PathBuf,
+    },
+    /// SQLite PRAGMA integrity_check reported a problem.
+    SqliteIntegrityFailure {
+        path: PathBuf,
+        message: String,
+    },
+    /// Safari history_tombstones table contains deleted URL records.
+    HistoryTombstoneFound {
+        path: PathBuf,
+        url: String,
+        deleted_at_ns: i64,
+    },
+    /// Download record references a file that no longer exists on disk.
+    DownloadFileMissing {
+        path: PathBuf,
+        target_path: String,
+    },
+    /// Auto-increment counter much higher than max rowid (indicates mass deletion).
+    AutoIncrementGap {
+        path: PathBuf,
+        table: String,
+        max_rowid: i64,
+        auto_increment: i64,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
