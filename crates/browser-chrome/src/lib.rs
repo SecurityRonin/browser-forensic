@@ -10,6 +10,7 @@ pub mod history;
 pub mod local_state;
 pub mod login_data;
 pub mod session;
+pub mod visits;
 
 pub use autofill::parse_autofill;
 pub use bookmarks::parse_bookmarks;
@@ -21,3 +22,4 @@ pub use history::parse_history;
 pub use local_state::parse_local_state;
 pub use login_data::parse_login_data;
 pub use session::parse_session;
+pub use visits::parse_visits;
