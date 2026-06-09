@@ -202,17 +202,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "br4n6"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "crossterm",
- "open",
- "ratatui",
- "snss-core",
-]
-
-[[package]]
 name = "browser-carve"
 version = "0.1.0"
 dependencies = [
@@ -327,6 +316,17 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "browser-tui"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "crossterm",
+ "open",
+ "ratatui",
+ "snss-core",
 ]
 
 [[package]]

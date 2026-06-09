@@ -1,6 +1,6 @@
 //! Milestone 6 — incremental search across all sources.
 
-use br4n6::{Action, App, Direction, Keymap};
+use browser_tui::{Action, App, Direction, Keymap};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 

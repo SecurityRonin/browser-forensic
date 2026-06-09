@@ -1,13 +1,13 @@
 [package]
-name = "br4n6"
+name = "browser-tui"
 version = "0.1.0"
-description = "Midnight-Commander-style, vi-keyed terminal browser for Chromium/Brave on-disk sessions"
+description = "br4n6 — a Midnight-Commander-style, vi-keyed terminal browser for on-disk browser history and session state"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "br4n6"
+name = "browser_tui"
 path = "src/lib.rs"
 
 [[bin]]

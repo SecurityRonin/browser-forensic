@@ -6,3 +6,5 @@
 crates/snss-core/tests/fixtures/Session_real
 crates/snss-core/tests/fixtures/Tabs_real
 crates/snss-core/tests/fixtures/Apps_real
+
+.DS_Store

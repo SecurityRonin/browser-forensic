@@ -1,4 +1,4 @@
-//! `br4n6` entry point: load the default Brave profile and run the TUI.
+//! `browser_tui` entry point: load the default Brave profile and run the TUI.
 
 use std::io;
 
@@ -7,18 +7,18 @@ use std::fs;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use snss::SessionStore;
 
-use br4n6::{draw, Action, App, Effect, Keymap};
+use browser_tui::{draw, Action, App, Effect, Keymap};
 
 fn main() -> io::Result<()> {
     let store = match SessionStore::open_default_profile() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("br4n6: {e}");
+            eprintln!("browser_tui: {e}");
             return Ok(());
         }
     };
     if store.sources().is_empty() {
-        eprintln!("br4n6: no Brave session files found.");
+        eprintln!("browser_tui: no Brave session files found.");
         return Ok(());
     }
 

@@ -1,6 +1,6 @@
 //! Milestone 4 — the App navigation reducer and a render smoke test.
 
-use br4n6::{draw, Action, App, Pane};
+use browser_tui::{draw, Action, App, Pane};
 use ratatui::{backend::TestBackend, Terminal};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 

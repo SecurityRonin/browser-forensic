@@ -1,6 +1,6 @@
 //! Milestone 5 — the vi/F-key keymap (a stateful Key → Action mapping).
 
-use br4n6::{Action, Keymap};
+use browser_tui::{Action, Keymap};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn ch(c: char) -> KeyEvent {

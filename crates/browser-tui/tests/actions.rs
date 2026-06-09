@@ -1,6 +1,6 @@
 //! Milestone 7 — actions: open, yank, export, reload, sort.
 
-use br4n6::{Action, App, Effect, Keymap, SortMode};
+use browser_tui::{Action, App, Effect, Keymap, SortMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 

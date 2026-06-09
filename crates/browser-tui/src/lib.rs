@@ -1,4 +1,4 @@
-//! `br4n6` — the TUI layer over [`snss`]. The pure application state lives in
+//! `browser_tui` — the TUI layer over [`snss`]. The pure application state lives in
 //! [`App`] (a testable reducer over [`Action`]s); rendering is a thin function and
 //! all side effects are returned as [`Effect`]s for the main loop to execute.
 

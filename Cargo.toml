@@ -11,7 +11,7 @@ members = [
     "crates/browser-memory",
     "crates/browser-rt",
     "crates/snss-core",
-    "crates/br4n6",
+    "crates/browser-tui",
     "crates/browsing-state-mcp",
 ]
 resolver = "2"
