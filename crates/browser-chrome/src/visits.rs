@@ -10,25 +10,50 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent};
+use browser_core::timestamp::webkit_micros_to_unix_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use rusqlite::Connection;
+use serde_json::json;
+
+// Chromium transition bitmask (`ui/base/page_transition_types.h`): core type in
+// the low byte, qualifier flags in the high bits.
+const CORE_MASK: u32 = 0xFF;
+const CHAIN_END: u32 = 0x2000_0000;
+const CLIENT_REDIRECT: u32 = 0x4000_0000;
+const SERVER_REDIRECT: u32 = 0x8000_0000;
+const FROM_ADDRESS_BAR: u32 = 0x0200_0000;
 
 /// The user-intended core transition: `link`, `typed`, `reload`, `form_submit`, …
 /// (the low byte of the Chromium `transition` bitmask).
 pub fn transition_core(transition: i64) -> &'static str {
-    let _ = transition;
-    todo!("implemented in the GREEN step")
+    match (transition as u32) & CORE_MASK {
+        0 => "link",
+        1 => "typed",
+        2 => "auto_bookmark",
+        3 => "auto_subframe",
+        4 => "manual_subframe",
+        5 => "generated",
+        6 => "auto_toplevel",
+        7 => "form_submit",
+        8 => "reload",
+        9 => "keyword",
+        10 => "keyword_generated",
+        _ => "unknown",
+    }
 }
 
 /// Whether the visit was reached via a client- or server-side redirect.
 pub fn is_redirect(transition: i64) -> bool {
-    let _ = transition;
-    todo!("implemented in the GREEN step")
+    (transition as u32) & (CLIENT_REDIRECT | SERVER_REDIRECT) != 0
 }
 
 /// Whether the visit is the final landing of a redirect chain (`CHAIN_END`).
 pub fn is_chain_end(transition: i64) -> bool {
-    let _ = transition;
-    todo!("implemented in the GREEN step")
+    (transition as u32) & CHAIN_END != 0
+}
+
+fn from_address_bar(transition: i64) -> bool {
+    (transition as u32) & FROM_ADDRESS_BAR != 0
 }
 
 /// Parse the `visits` table (joined to `urls`) into one [`BrowserEvent`]
@@ -39,9 +64,42 @@ pub fn is_chain_end(transition: i64) -> bool {
 /// # Errors
 /// Returns an error if the SQLite file cannot be opened or queried.
 pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
-    let _ = path;
-    let _: Option<ArtifactKind> = None;
-    todo!("implemented in the GREEN step")
+    let conn = Connection::open(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT v.visit_time, v.transition, v.visit_duration, v.from_visit, u.url, u.title \
+         FROM visits v JOIN urls u ON u.id = v.url \
+         ORDER BY v.visit_time ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let visit_time: i64 = row.get(0)?;
+            let transition: i64 = row.get(1)?;
+            let visit_duration: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
+            let from_visit: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
+            let url: String = row.get(4)?;
+            let title: String = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+            Ok((visit_time, transition, visit_duration, from_visit, url, title))
+        })?
+        .filter_map(|r| r.ok())
+        .filter(|(visit_time, ..)| *visit_time > 0)
+        .map(|(visit_time, transition, visit_duration, from_visit, url, title)| {
+            let ts_ns = webkit_micros_to_unix_nanos(visit_time);
+            let desc = if title.is_empty() { url.clone() } else { title.clone() };
+            // visit_duration is microseconds, navigation-to-navigation (NOT read
+            // time — it includes idle/background); surfaced raw, never ranked on.
+            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::History, &source, desc)
+                .with_attr("url", json!(url))
+                .with_attr("title", json!(title))
+                .with_attr("transition", json!(transition_core(transition)))
+                .with_attr("is_redirect", json!(is_redirect(transition)))
+                .with_attr("chain_end", json!(is_chain_end(transition)))
+                .with_attr("from_address_bar", json!(from_address_bar(transition)))
+                .with_attr("visit_duration_us", json!(visit_duration))
+                .with_attr("from_visit", json!(from_visit))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
