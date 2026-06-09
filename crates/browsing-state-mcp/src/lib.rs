@@ -7,4 +7,5 @@
 //! 2. **PII is redacted** ([`redact`]) from URLs/titles/searches before anything
 //!    leaves the process, because history text itself carries tokens and PII.
 
+pub mod context;
 pub mod redact;
