@@ -1,0 +1,25 @@
+[package]
+name = "bravesess"
+version = "0.1.0"
+description = "Midnight-Commander-style, vi-keyed terminal browser for Chromium/Brave on-disk sessions"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "bravesess"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bravesess"
+path = "src/main.rs"
+
+[dependencies]
+snss-core = { path = "../snss-core" }
+ratatui = "0.30"
+crossterm = "0.29"
+arboard = "3.6"
+open = "5"
+
+[lints]
+workspace = true
