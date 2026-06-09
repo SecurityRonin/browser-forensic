@@ -47,4 +47,6 @@ nav:
 plugins:
   - search
 
-use_directory_urls: false
+# Directory URLs (/privacy/, /terms/) — matches the SecurityRonin README footer
+# standard (…/<repo>/privacy/). Flat .html URLs would 404 the footer links.
+use_directory_urls: true
