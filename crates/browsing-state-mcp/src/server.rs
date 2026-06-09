@@ -160,8 +160,8 @@ mod tests {
             dispatch(&req, &records, &Allowlist::new(["github.com".to_string()]), 100).unwrap();
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(parsed["items"][0]["url"], "https://github.com/a", "query stripped");
-        assert_eq!(parsed["items"][0]["untrusted_evidence"], true);
+        assert_eq!(parsed["recent_visits"][0]["url"], "https://github.com/a", "query stripped");
+        assert_eq!(parsed["recent_visits"][0]["untrusted_evidence"], true);
     }
 
     #[test]

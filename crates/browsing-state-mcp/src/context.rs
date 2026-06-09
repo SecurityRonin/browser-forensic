@@ -24,6 +24,14 @@ impl RecordKind {
             RecordKind::Search => "search",
         }
     }
+
+    /// Whether this is **state** (a current tab snapshot) rather than **history**
+    /// (a timestamped event). State comes from the tab/session artifacts and is a
+    /// point-in-time snapshot — it must NOT be filtered by a history-style time
+    /// window. History (visits/searches) comes from the History DB and is.
+    fn is_state(self) -> bool {
+        matches!(self, RecordKind::OpenTab | RecordKind::ClosedTab)
+    }
 }
 
 /// A normalized browsing record (a history visit or a session tab) before
@@ -107,41 +115,44 @@ pub struct ContextResult {
     pub timeline_basis: String,
 }
 
-/// Recent browsing within `minutes` of `now_ns`: redirect hops collapsed,
-/// allow-list-gated, redacted, newest first, capped to `cap`.
+/// The sectioned result of [`browsing_context`]. **State** (open/closed tabs) and
+/// **history** (visits/searches) are deliberately separate: they come from
+/// different artifacts (tab/session files vs the History DB) and obey different
+/// rules — state is a current snapshot, history is a time window. Conflating them
+/// would, e.g., drop a currently-open tab just because its window was last active
+/// before the lookback window.
+#[derive(Debug, Serialize, PartialEq, Default)]
+pub struct BrowsingContext {
+    /// Currently-open tabs — a snapshot, NOT time-filtered.
+    pub open_tabs: Vec<ContextItem>,
+    /// Recently-closed tabs — a snapshot, NOT time-filtered.
+    pub recently_closed: Vec<ContextItem>,
+    /// History visits within the lookback window (redirect-collapsed).
+    pub recent_visits: Vec<ContextItem>,
+    /// History searches within the lookback window.
+    pub recent_searches: Vec<ContextItem>,
+    /// How many otherwise-eligible records the allow-list withheld.
+    pub omitted_by_policy_count: usize,
+    /// Provenance for the state sections.
+    pub state_basis: String,
+    /// Provenance for the history sections.
+    pub history_basis: String,
+}
+
+/// Assemble browsing context, **keeping state and history separate**. State
+/// sections (open/recently-closed tabs) are a current snapshot and are NOT
+/// time-filtered; history sections (visits/searches) are filtered to the last
+/// `minutes` and redirect-collapsed. Every section is allow-list-gated, redacted,
+/// newest-first, and capped to `cap`.
 pub fn browsing_context(
     records: &[Record],
     now_ns: i64,
     minutes: u32,
     cap: usize,
     allow: &Allowlist,
-) -> ContextResult {
-    let window_ns = i64::from(minutes).saturating_mul(60).saturating_mul(1_000_000_000);
-    let cutoff = now_ns.saturating_sub(window_ns);
-
-    let mut omitted = 0usize;
-    let mut items: Vec<ContextItem> = Vec::new();
-    for r in records {
-        if r.time_ns < cutoff {
-            continue; // outside the time window
-        }
-        if r.is_redirect && !r.chain_end {
-            continue; // intermediate redirect hop — collapsed, not an omission
-        }
-        if !allow.permits(&r.url) {
-            omitted += 1;
-            continue;
-        }
-        items.push(to_item(r));
-    }
-    items.sort_by(|a, b| b.time_ns.cmp(&a.time_ns)); // newest first
-    items.truncate(cap);
-
-    ContextResult {
-        items,
-        omitted_by_policy_count: omitted,
-        timeline_basis: "history.visits + snss (redirect-collapsed, allow-listed)".to_string(),
-    }
+) -> BrowsingContext {
+    let _ = (records, now_ns, minutes, cap, allow, RecordKind::Visit.is_state());
+    todo!("sectioned browsing_context implemented in the GREEN step")
 }
 
 /// Allow-listed records whose URL contains `query` (case-insensitive), redacted.
@@ -184,6 +195,19 @@ mod tests {
         }
     }
 
+    fn tab(url: &str, kind: RecordKind, time_ns: i64) -> Record {
+        Record {
+            url: url.to_string(),
+            title: "Tab".to_string(),
+            kind,
+            time_ns,
+            browser: "Chromium".to_string(),
+            source: "snss",
+            is_redirect: false,
+            chain_end: false,
+        }
+    }
+
     #[test]
     fn allowlist_matches_domain_and_subdomains_only() {
         let a = Allowlist::new(["github.com".to_string()]);
@@ -196,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn browsing_context_windows_collapses_redacts_and_counts_omissions() {
+    fn browsing_context_history_section_windows_collapses_redacts_and_counts() {
         let now = 1_000_000_000_000_000_000_i64;
         let min_ns = 60_000_000_000_i64;
         let records = vec![
@@ -208,23 +232,47 @@ mod tests {
         let allow = Allowlist::new(["github.com".to_string()]);
         let r = browsing_context(&records, now, 5, 10, &allow);
 
-        assert_eq!(r.items.len(), 1, "only the in-window, allow-listed, non-redirect visit");
-        assert_eq!(r.items[0].url, "https://github.com/a", "query string stripped");
-        assert!(r.items[0].title.contains("[redacted-email]"), "email masked");
-        assert!(r.items[0].untrusted_evidence);
-        assert_eq!(r.items[0].source, "history.visits");
+        assert_eq!(r.recent_visits.len(), 1, "only the in-window, allow-listed, non-redirect visit");
+        assert_eq!(r.recent_visits[0].url, "https://github.com/a", "query string stripped");
+        assert!(r.recent_visits[0].title.contains("[redacted-email]"), "email masked");
+        assert!(r.recent_visits[0].untrusted_evidence);
         assert_eq!(r.omitted_by_policy_count, 1, "other.com omitted by allow-list");
+        assert!(r.open_tabs.is_empty(), "no tabs in this input");
     }
 
     #[test]
-    fn browsing_context_caps_and_orders_newest_first() {
+    fn state_section_is_a_snapshot_not_time_filtered() {
+        // The decisive separation test: an open tab whose window was last active
+        // long BEFORE the lookback window must still appear (state != history).
+        let now = 1_000_000_000_000_000_000_i64;
+        let min_ns = 60_000_000_000_i64;
+        let records = vec![
+            tab("https://open.example", RecordKind::OpenTab, now - 9999 * min_ns), // ancient
+            tab("https://closed.example", RecordKind::ClosedTab, now - 9999 * min_ns),
+            rec("https://visit.example", "v", now - 100 * min_ns, false, false), // old history -> dropped
+            rec("https://recent.example", "v", now - min_ns, false, false), // in-window history
+        ];
+        let r = browsing_context(&records, now, 5, 10, &Allowlist::allow_all());
+
+        assert_eq!(r.open_tabs.len(), 1, "open tab kept despite ancient last-active");
+        assert_eq!(r.open_tabs[0].url, "https://open.example");
+        assert_eq!(r.recently_closed.len(), 1, "closed tab kept (snapshot)");
+        assert_eq!(r.recent_visits.len(), 1, "only the in-window visit");
+        assert_eq!(r.recent_visits[0].url, "https://recent.example");
+    }
+
+    #[test]
+    fn each_section_caps_and_orders_newest_first() {
         let now = 10_000_i64;
         let allow = Allowlist::allow_all();
-        let records: Vec<Record> =
-            (0..5).map(|i| rec(&format!("https://s{i}.com/"), "t", i as i64, false, false)).collect();
+        let mut records: Vec<Record> =
+            (0..5).map(|i| rec(&format!("https://v{i}.com/"), "t", i, false, false)).collect();
+        records.extend((0..5).map(|i| tab(&format!("https://t{i}.com/"), RecordKind::OpenTab, i)));
         let r = browsing_context(&records, now, u32::MAX, 2, &allow);
-        assert_eq!(r.items.len(), 2, "capped to 2");
-        assert!(r.items[0].time_ns >= r.items[1].time_ns, "newest first");
+        assert_eq!(r.recent_visits.len(), 2, "visits capped to 2");
+        assert_eq!(r.open_tabs.len(), 2, "open tabs capped to 2");
+        assert!(r.recent_visits[0].time_ns >= r.recent_visits[1].time_ns, "newest first");
+        assert!(r.open_tabs[0].time_ns >= r.open_tabs[1].time_ns, "newest first");
     }
 
     #[test]
