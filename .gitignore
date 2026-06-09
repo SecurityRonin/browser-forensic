@@ -1,2 +1,8 @@
 /target
 .worktrees
+
+# Real SNSS session fixtures contain personal browsing history — never commit.
+# Repopulate locally from your own Brave profile to run the histogram tests.
+crates/snss-core/tests/fixtures/Session_real
+crates/snss-core/tests/fixtures/Tabs_real
+crates/snss-core/tests/fixtures/Apps_real
