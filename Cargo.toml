@@ -12,6 +12,7 @@ members = [
     "crates/browser-rt",
     "crates/snss-core",
     "crates/bravesess",
+    "crates/browsing-state-mcp",
 ]
 resolver = "2"
 

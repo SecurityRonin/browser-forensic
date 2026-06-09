@@ -330,6 +330,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "browsing-state-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-chrome",
+ "browser-discovery",
+ "serde",
+ "serde_json",
+ "snss-core",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
