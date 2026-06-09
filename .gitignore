@@ -1,10 +1,12 @@
 /target
 .worktrees
 
-# Real SNSS session fixtures contain personal browsing history — never commit.
-# Repopulate locally from your own Brave profile to run the histogram tests.
-crates/snss-core/tests/fixtures/Session_real
-crates/snss-core/tests/fixtures/Tabs_real
-crates/snss-core/tests/fixtures/Apps_real
+# Real browser session/history fixtures contain personal, proprietary on-disk
+# data — never commit. Ignore EVERYTHING under the fixtures dir by default
+# (secure-by-default: any file dropped here is uncommittable, not just the three
+# known names); only the tracked placeholder is exempt. Repopulate locally with
+# scripts/copy-fixtures.sh to run the real-bytes tests.
+crates/snss-core/tests/fixtures/*
+!crates/snss-core/tests/fixtures/.gitkeep
 
 .DS_Store
