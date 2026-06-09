@@ -7,9 +7,11 @@
 //! Chromium counterpart to [`crate`]'s Firefox `sessionstore` reader.
 
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
-use anyhow::Result;
-use browser_core::BrowserEvent;
+use anyhow::{anyhow, Result};
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
 
 /// Parse a Chromium SNSS session/tabs file into [`BrowserEvent`]s.
 ///
@@ -19,8 +21,41 @@ use browser_core::BrowserEvent;
 ///
 /// # Errors
 /// Returns an error if the file cannot be read or is not a valid SNSS container.
-pub fn parse_session(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    todo!("SNSS session adapter implemented in the GREEN step")
+pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let bytes = std::fs::read(path)?;
+    let stream = snss::read_records(&bytes[..]).map_err(|e| anyhow!("SNSS decode: {e}"))?;
+
+    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let dialect = if name.starts_with("Tabs") {
+        snss::Dialect::Tabs
+    } else {
+        snss::Dialect::Session
+    };
+    let replayed = snss::replay(&stream, dialect);
+
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+    for window in &replayed.windows {
+        let ts_ns = window
+            .last_active
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or(0);
+        for tab in &window.tabs {
+            let Some(nav) = tab.history.get(tab.current) else { continue };
+            let desc = if nav.title.is_empty() { nav.url.clone() } else { nav.title.clone() };
+            events.push(
+                BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Session, &source, desc)
+                    .with_attr("url", json!(nav.url))
+                    .with_attr("title", json!(nav.title))
+                    .with_attr("tab_id", json!(tab.id))
+                    .with_attr("window_id", json!(window.id))
+                    .with_attr("pinned", json!(tab.pinned))
+                    .with_attr("index", json!(nav.index)),
+            );
+        }
+    }
+    Ok(events)
 }
 
 #[cfg(test)]
