@@ -151,8 +151,51 @@ pub fn browsing_context(
     cap: usize,
     allow: &Allowlist,
 ) -> BrowsingContext {
-    let _ = (records, now_ns, minutes, cap, allow, RecordKind::Visit.is_state());
-    todo!("sectioned browsing_context implemented in the GREEN step")
+    let window_ns = i64::from(minutes).saturating_mul(60).saturating_mul(1_000_000_000);
+    let cutoff = now_ns.saturating_sub(window_ns);
+
+    let mut out = BrowsingContext {
+        state_basis: "session/tab files (current snapshot, not time-filtered)".to_string(),
+        history_basis: "history.visits (last N minutes, redirect-collapsed)".to_string(),
+        ..Default::default()
+    };
+
+    for r in records {
+        // Eligibility: state is a snapshot (always eligible); history is filtered
+        // to the lookback window, and visit redirect-hops are collapsed away.
+        let eligible = if r.kind.is_state() {
+            true
+        } else if r.time_ns < cutoff {
+            false
+        } else {
+            !(matches!(r.kind, RecordKind::Visit) && r.is_redirect && !r.chain_end)
+        };
+        if !eligible {
+            continue;
+        }
+        if !allow.permits(&r.url) {
+            out.omitted_by_policy_count += 1;
+            continue;
+        }
+        let item = to_item(r);
+        match r.kind {
+            RecordKind::OpenTab => out.open_tabs.push(item),
+            RecordKind::ClosedTab => out.recently_closed.push(item),
+            RecordKind::Visit => out.recent_visits.push(item),
+            RecordKind::Search => out.recent_searches.push(item),
+        }
+    }
+
+    for section in [
+        &mut out.open_tabs,
+        &mut out.recently_closed,
+        &mut out.recent_visits,
+        &mut out.recent_searches,
+    ] {
+        section.sort_by(|a, b| b.time_ns.cmp(&a.time_ns)); // newest first
+        section.truncate(cap);
+    }
+    out
 }
 
 /// Allow-listed records whose URL contains `query` (case-insensitive), redacted.
