@@ -6,26 +6,92 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use browser_core::{BrowserEvent, BrowserFamily};
 
 use crate::context::{Record, RecordKind};
 
+fn attr_str(ev: &BrowserEvent, key: &str) -> String {
+    ev.attrs.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+}
+fn attr_bool(ev: &BrowserEvent, key: &str) -> bool {
+    ev.attrs.get(key).and_then(serde_json::Value::as_bool).unwrap_or(false)
+}
+
 /// Build [`Record`]s from a Chromium `History` DB (the `visits` table).
 pub fn records_from_history(path: &Path) -> Result<Vec<Record>> {
-    let _ = path;
-    todo!("implemented in the GREEN step")
+    Ok(browser_chrome::parse_visits(path)?
+        .iter()
+        .map(|ev| Record {
+            url: attr_str(ev, "url"),
+            title: attr_str(ev, "title"),
+            kind: RecordKind::Visit,
+            time_ns: ev.timestamp_ns,
+            browser: ev.browser.to_string(),
+            source: "history.visits",
+            is_redirect: attr_bool(ev, "is_redirect"),
+            chain_end: attr_bool(ev, "chain_end"),
+        })
+        .collect())
 }
 
 /// Build [`Record`]s from a Chromium SNSS session/tabs file.
 pub fn records_from_session(path: &Path) -> Result<Vec<Record>> {
-    let _ = path;
-    todo!("implemented in the GREEN step")
+    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let kind = if name.contains("Tabs") { RecordKind::ClosedTab } else { RecordKind::OpenTab };
+    Ok(browser_chrome::parse_session(path)?
+        .iter()
+        .map(|ev| Record {
+            url: attr_str(ev, "url"),
+            title: attr_str(ev, "title"),
+            kind,
+            time_ns: ev.timestamp_ns,
+            browser: ev.browser.to_string(),
+            source: "snss",
+            is_redirect: false,
+            chain_end: false,
+        })
+        .collect())
 }
 
 /// Discover the default profiles and collect history + session records. Best
 /// effort: unreadable files are skipped. I/O glue (exercised when the server runs).
 pub fn collect_default() -> Result<Vec<Record>> {
-    todo!("implemented in the GREEN step")
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not resolve home directory"))?;
+    let mut out = Vec::new();
+    for profile in browser_discovery::discover_profiles(&home) {
+        if profile.browser != BrowserFamily::Chromium {
+            continue; // Firefox/Safari readers wire in later
+        }
+        let history = profile.path.join("History");
+        if history.exists() {
+            if let Ok(recs) = records_from_history(&history) {
+                out.extend(recs);
+            }
+        }
+        // Modern Sessions/ folder (Session_*/Tabs_*).
+        if let Ok(entries) = std::fs::read_dir(profile.path.join("Sessions")) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if n.starts_with("Session_") || n.starts_with("Tabs_") {
+                    if let Ok(recs) = records_from_session(&p) {
+                        out.extend(recs);
+                    }
+                }
+            }
+        }
+        // Legacy flat session files (live windows; recently-closed deferred).
+        for legacy in ["Current Session", "Last Session"] {
+            let p = profile.path.join(legacy);
+            if p.exists() {
+                if let Ok(recs) = records_from_session(&p) {
+                    out.extend(recs);
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
