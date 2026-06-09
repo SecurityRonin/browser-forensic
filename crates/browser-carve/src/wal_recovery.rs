@@ -149,7 +149,9 @@ mod tests {
             )
             .expect("setup");
         }
+        // `.expect` above is the real assertion: recovery must not error on a
+        // populated WAL. `bytes_scanned` is unsigned, so a `>= 0` bound is vacuous.
         let result = recover_from_wal(f.path()).expect("recover");
-        assert!(result.stats.bytes_scanned >= 0);
+        let _ = result.stats.bytes_scanned;
     }
 }

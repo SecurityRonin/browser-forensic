@@ -534,12 +534,13 @@ impl App {
             SortMode::Recency => {
                 for s in &mut self.sources {
                     // Most-recent first; windows without a timestamp sort last.
-                    s.windows.sort_by(|a, b| b.last_active.cmp(&a.last_active));
+                    s.windows
+                        .sort_by_key(|w| std::cmp::Reverse(w.last_active));
                 }
             }
             SortMode::TabCount => {
                 for s in &mut self.sources {
-                    s.windows.sort_by(|a, b| b.tabs.len().cmp(&a.tabs.len()));
+                    s.windows.sort_by_key(|w| std::cmp::Reverse(w.tabs.len()));
                 }
             }
             SortMode::Title => self.sort_tabs_by(|n| n.title.to_lowercase()),

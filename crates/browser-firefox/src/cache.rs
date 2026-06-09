@@ -85,7 +85,6 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::{ArtifactKind, BrowserFamily};
-    use serde_json::json;
     use std::fs;
     use tempfile::TempDir;
 

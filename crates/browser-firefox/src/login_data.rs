@@ -103,7 +103,7 @@ mod tests {
         let events = parse_login_data(f.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].attrs["password"], json!("ENCRYPTED"));
-        for (_k, v) in &events[0].attrs {
+        for v in events[0].attrs.values() {
             assert_ne!(v, &json!("SHOULD_NEVER_APPEAR"));
         }
     }

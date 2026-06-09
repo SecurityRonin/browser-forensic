@@ -686,7 +686,7 @@ impl SessionStore {
             }
         }
         for files in by_family.values_mut() {
-            files.sort_by(|a, b| b.0.cmp(&a.0)); // newest (largest suffix) first
+            files.sort_by_key(|f| std::cmp::Reverse(f.0)); // newest (largest suffix) first
         }
 
         // Assign kinds: newest Session = Current, next = Last; newest Tabs =

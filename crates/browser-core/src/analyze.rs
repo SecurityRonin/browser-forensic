@@ -73,9 +73,8 @@ mod tests {
 
     #[test]
     fn rare_domains_sorted_by_count_ascending() {
-        let mut events = Vec::new();
         // rare.com appears 1 time
-        events.push(make_history_event("https://rare.com/page"));
+        let mut events = vec![make_history_event("https://rare.com/page")];
         // semi-rare.com appears 2 times
         events.push(make_history_event("https://semi-rare.com/a"));
         events.push(make_history_event("https://semi-rare.com/b"));

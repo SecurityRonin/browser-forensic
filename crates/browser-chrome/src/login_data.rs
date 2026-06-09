@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].attrs["password"], json!("ENCRYPTED"));
         // Ensure no raw password value exists anywhere in attrs
-        for (_key, val) in &events[0].attrs {
+        for val in events[0].attrs.values() {
             assert_ne!(val, &json!("real_password_value"));
         }
     }

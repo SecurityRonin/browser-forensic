@@ -204,7 +204,7 @@ pub fn browsing_context(
         &mut out.recent_visits,
         &mut out.recent_searches,
     ] {
-        section.sort_by(|a, b| b.time_ns.cmp(&a.time_ns)); // newest first
+        section.sort_by_key(|i| std::cmp::Reverse(i.time_ns)); // newest first
         section.truncate(cap);
     }
     out
@@ -225,7 +225,7 @@ pub fn did_user_visit(records: &[Record], query: &str, allow: &Allowlist) -> Con
         }
         items.push(to_item(r));
     }
-    items.sort_by(|a, b| b.time_ns.cmp(&a.time_ns));
+    items.sort_by_key(|i| std::cmp::Reverse(i.time_ns));
     ContextResult {
         items,
         omitted_by_policy_count: omitted,
