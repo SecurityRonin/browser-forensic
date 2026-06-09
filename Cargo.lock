@@ -135,6 +135,7 @@ dependencies = [
  "browser-core",
  "rusqlite",
  "serde_json",
+ "snss-core",
  "tempfile",
 ]
 
