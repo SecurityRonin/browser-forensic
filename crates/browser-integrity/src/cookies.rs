@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use anyhow::Result;
+use browser_core::sqlite::open_evidence_db;
 use browser_core::BrowserFamily;
-use rusqlite::Connection;
 
 use crate::IntegrityIndicator;
 
@@ -24,7 +24,8 @@ pub fn check_cookie_integrity(
 }
 
 fn check_chromium_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut indicators = Vec::new();
 
     let mut stmt = conn.prepare(
@@ -54,7 +55,8 @@ fn check_chromium_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
 }
 
 fn check_firefox_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut indicators = Vec::new();
 
     let mut stmt = conn.prepare(

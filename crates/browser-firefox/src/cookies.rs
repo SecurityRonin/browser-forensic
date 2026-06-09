@@ -6,9 +6,9 @@
 use std::path::Path;
 
 use anyhow::Result;
+use browser_core::sqlite::open_evidence_db;
 use browser_core::timestamp::unix_micros_to_nanos;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
-use rusqlite::Connection;
 use serde_json::json;
 
 /// Parse a Firefox `cookies.sqlite` file.
@@ -20,7 +20,8 @@ use serde_json::json;
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
 pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut stmt = conn.prepare(
         "SELECT host, name, path, creationTime, expiry, isSecure, isHttpOnly, sameSite \
          FROM moz_cookies \

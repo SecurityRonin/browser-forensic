@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use browser_core::sqlite::open_evidence_db;
 use browser_core::timestamp::webkit_micros_to_unix_nanos;
 use browser_core::BrowserFamily;
 use rusqlite::Connection;
@@ -27,10 +28,11 @@ pub fn check_history_integrity(
 }
 
 fn check_safari_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut indicators = Vec::new();
-    check_safari_tombstones(&conn, path, &mut indicators)?;
-    check_safari_visit_id_gaps(&conn, path, &mut indicators)?;
+    check_safari_tombstones(conn, path, &mut indicators)?;
+    check_safari_visit_id_gaps(conn, path, &mut indicators)?;
     Ok(indicators)
 }
 
@@ -92,10 +94,11 @@ fn check_safari_visit_id_gaps(
 }
 
 fn check_firefox_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut indicators = Vec::new();
-    check_firefox_visit_id_gaps(&conn, path, &mut indicators)?;
-    check_firefox_timestamp_monotonicity(&conn, path, &mut indicators)?;
+    check_firefox_visit_id_gaps(conn, path, &mut indicators)?;
+    check_firefox_timestamp_monotonicity(conn, path, &mut indicators)?;
     Ok(indicators)
 }
 
@@ -154,11 +157,12 @@ fn check_firefox_timestamp_monotonicity(
 }
 
 fn check_chromium_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut indicators = Vec::new();
-    check_chromium_autoinc_gap(&conn, path, &mut indicators)?;
-    check_chromium_visit_id_gaps(&conn, path, &mut indicators)?;
-    check_chromium_timestamp_monotonicity(&conn, path, &mut indicators)?;
+    check_chromium_autoinc_gap(conn, path, &mut indicators)?;
+    check_chromium_visit_id_gaps(conn, path, &mut indicators)?;
+    check_chromium_timestamp_monotonicity(conn, path, &mut indicators)?;
     Ok(indicators)
 }
 

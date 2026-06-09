@@ -1,6 +1,7 @@
 //! Core types for browser forensic analysis.
 
 pub mod analyze;
+pub mod sqlite;
 pub mod test_utils;
 pub mod timestamp;
 

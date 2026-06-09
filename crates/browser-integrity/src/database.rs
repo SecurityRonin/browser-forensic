@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use rusqlite::Connection;
+use browser_core::sqlite::open_evidence_db;
 
 use crate::IntegrityIndicator;
 
@@ -11,7 +11,8 @@ use crate::IntegrityIndicator;
 ///
 /// Returns an empty vec if the database passes. Returns `SqliteIntegrityFailure` for each issue.
 pub fn check_database_integrity(path: &Path) -> Result<Vec<IntegrityIndicator>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut stmt = conn.prepare("PRAGMA integrity_check")?;
     let rows: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))?

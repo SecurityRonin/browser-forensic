@@ -6,9 +6,9 @@
 use std::path::Path;
 
 use anyhow::Result;
+use browser_core::sqlite::open_evidence_db;
 use browser_core::timestamp::unix_micros_to_nanos;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
-use rusqlite::Connection;
 use serde_json::json;
 
 /// Parse a Firefox `places.sqlite` file for bookmarks.
@@ -17,7 +17,8 @@ use serde_json::json;
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
 pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut stmt = conn.prepare(
         "SELECT b.title, p.url, b.dateAdded \
          FROM moz_bookmarks b \

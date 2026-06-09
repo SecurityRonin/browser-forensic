@@ -10,9 +10,9 @@
 use std::path::Path;
 
 use anyhow::Result;
+use browser_core::sqlite::open_evidence_db;
 use browser_core::timestamp::webkit_micros_to_unix_nanos;
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
-use rusqlite::Connection;
 use serde_json::json;
 
 // Chromium transition bitmask (`ui/base/page_transition_types.h`): core type in
@@ -64,7 +64,8 @@ fn from_address_bar(transition: i64) -> bool {
 /// # Errors
 /// Returns an error if the SQLite file cannot be opened or queried.
 pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
-    let conn = Connection::open(path)?;
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
     let mut stmt = conn.prepare(
         "SELECT v.visit_time, v.transition, v.visit_duration, v.from_visit, u.url, u.title \
          FROM visits v JOIN urls u ON u.id = v.url \
@@ -79,16 +80,34 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
             let from_visit: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
             let url: String = row.get(4)?;
             let title: String = row.get::<_, Option<String>>(5)?.unwrap_or_default();
-            Ok((visit_time, transition, visit_duration, from_visit, url, title))
+            Ok((
+                visit_time,
+                transition,
+                visit_duration,
+                from_visit,
+                url,
+                title,
+            ))
         })?
         .filter_map(|r| r.ok())
         .filter(|(visit_time, ..)| *visit_time > 0)
-        .map(|(visit_time, transition, visit_duration, from_visit, url, title)| {
-            let ts_ns = webkit_micros_to_unix_nanos(visit_time);
-            let desc = if title.is_empty() { url.clone() } else { title.clone() };
-            // visit_duration is microseconds, navigation-to-navigation (NOT read
-            // time — it includes idle/background); surfaced raw, never ranked on.
-            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::History, &source, desc)
+        .map(
+            |(visit_time, transition, visit_duration, from_visit, url, title)| {
+                let ts_ns = webkit_micros_to_unix_nanos(visit_time);
+                let desc = if title.is_empty() {
+                    url.clone()
+                } else {
+                    title.clone()
+                };
+                // visit_duration is microseconds, navigation-to-navigation (NOT read
+                // time — it includes idle/background); surfaced raw, never ranked on.
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::History,
+                    &source,
+                    desc,
+                )
                 .with_attr("url", json!(url))
                 .with_attr("title", json!(title))
                 .with_attr("transition", json!(transition_core(transition)))
@@ -97,7 +116,8 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
                 .with_attr("from_address_bar", json!(from_address_bar(transition)))
                 .with_attr("visit_duration_us", json!(visit_duration))
                 .with_attr("from_visit", json!(from_visit))
-        })
+            },
+        )
         .collect();
     Ok(events)
 }
@@ -147,7 +167,10 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].artifact, ArtifactKind::History);
         assert_eq!(events[0].browser, BrowserFamily::Chromium);
-        assert!(events[0].timestamp_ns <= events[1].timestamp_ns, "ascending by time");
+        assert!(
+            events[0].timestamp_ns <= events[1].timestamp_ns,
+            "ascending by time"
+        );
         assert_eq!(events[0].attrs["transition"], json!("typed"));
         assert_eq!(events[1].attrs["transition"], json!("link"));
         assert_eq!(events[0].attrs["visit_duration_us"], json!(5_000_000));

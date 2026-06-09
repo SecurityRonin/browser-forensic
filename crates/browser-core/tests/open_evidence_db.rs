@@ -15,51 +15,53 @@ use tempfile::TempDir;
 /// Build a Chromium-style `History` DB whose newest row lives ONLY in an
 /// uncheckpointed `-wal` sidecar.
 ///
-/// Returns the `(dir, db_path)`. The `dir` must be kept alive for the DB to exist.
+/// Returns `(dir, db_path, writer)`. The `dir` keeps the files on disk; the
+/// `writer` connection is **kept open** so SQLite does not checkpoint-and-delete
+/// the `-wal` on a last-connection close — exactly the live-acquisition scenario
+/// where evidence is copied while a process still holds the DB. All three must
+/// be kept alive for the duration of the test.
 ///
-/// We force WAL mode, insert a "checkpointed" row, manually checkpoint, then
-/// insert a second "wal-only" row WITHOUT checkpointing and close. The second
-/// row therefore exists only in `History-wal`.
-fn build_db_with_populated_wal() -> (TempDir, std::path::PathBuf) {
+/// We force WAL mode, insert a "checkpointed" row, manually checkpoint it into
+/// the main file, then insert a second "wal-only" row WITHOUT checkpointing. The
+/// second row therefore exists only in `History-wal`.
+fn build_db_with_populated_wal() -> (TempDir, std::path::PathBuf, Connection) {
     let dir = TempDir::new().expect("tempdir");
     let db_path = dir.path().join("History");
 
-    let conn = Connection::open(&db_path).expect("open rw");
-    conn.pragma_update(None, "journal_mode", "WAL")
+    let writer = Connection::open(&db_path).expect("open rw");
+    writer
+        .pragma_update(None, "journal_mode", "WAL")
         .expect("set wal");
-    conn.execute_batch(
-        "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, last_visit_time INTEGER);",
-    )
-    .expect("schema");
-    conn.execute(
-        "INSERT INTO urls (url, last_visit_time) VALUES (?1, ?2)",
-        params!["https://checkpointed.example", 1_i64],
-    )
-    .expect("insert checkpointed");
+    writer
+        .execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, last_visit_time INTEGER);",
+        )
+        .expect("schema");
+    writer
+        .execute(
+            "INSERT INTO urls (url, last_visit_time) VALUES (?1, ?2)",
+            params!["https://checkpointed.example", 1_i64],
+        )
+        .expect("insert checkpointed");
     // Flush the first row into the main DB file.
-    conn.pragma_update(None, "wal_checkpoint", "TRUNCATE")
+    writer
+        .pragma_update(None, "wal_checkpoint", "TRUNCATE")
         .expect("checkpoint");
 
     // This row stays in the -wal only (no checkpoint after it).
-    conn.execute(
-        "INSERT INTO urls (url, last_visit_time) VALUES (?1, ?2)",
-        params!["https://wal-only.example", 2_i64],
-    )
-    .expect("insert wal-only");
+    writer
+        .execute(
+            "INSERT INTO urls (url, last_visit_time) VALUES (?1, ?2)",
+            params!["https://wal-only.example", 2_i64],
+        )
+        .expect("insert wal-only");
 
-    // Drop WITHOUT checkpoint. rusqlite/sqlite would checkpoint on the *last*
-    // connection close by default, which would defeat the fixture — so keep
-    // a second connection open across the close to leave the -wal populated.
-    let keeper = Connection::open(&db_path).expect("keeper open");
-    drop(conn);
-
-    // Sanity: the -wal sidecar must exist and be non-empty.
+    // Sanity: the -wal sidecar must exist and be non-empty while `writer` lives.
     let wal_path = wal_sidecar(&db_path);
     let wal_len = fs::metadata(&wal_path).expect("wal exists").len();
     assert!(wal_len > 0, "fixture must leave a populated -wal");
 
-    drop(keeper);
-    (dir, db_path)
+    (dir, db_path, writer)
 }
 
 fn wal_sidecar(db_path: &std::path::Path) -> std::path::PathBuf {
@@ -70,7 +72,7 @@ fn wal_sidecar(db_path: &std::path::Path) -> std::path::PathBuf {
 
 #[test]
 fn wal_only_row_is_visible_not_dropped() {
-    let (_dir, db_path) = build_db_with_populated_wal();
+    let (_dir, db_path, _writer) = build_db_with_populated_wal();
 
     let db = browser_core::sqlite::open_evidence_db(&db_path).expect("open evidence db");
 
@@ -97,12 +99,15 @@ fn wal_only_row_is_visible_not_dropped() {
 
 #[test]
 fn original_file_is_not_mutated() {
-    let (_dir, db_path) = build_db_with_populated_wal();
+    let (_dir, db_path, _writer) = build_db_with_populated_wal();
     let wal_path = wal_sidecar(&db_path);
 
     let db_before = fs::read(&db_path).expect("read db before");
     let wal_before = fs::read(&wal_path).expect("read wal before");
-    let mtime_before = fs::metadata(&db_path).expect("meta").modified().expect("mtime");
+    let mtime_before = fs::metadata(&db_path)
+        .expect("meta")
+        .modified()
+        .expect("mtime");
 
     {
         let db = browser_core::sqlite::open_evidence_db(&db_path).expect("open evidence db");
@@ -119,7 +124,10 @@ fn original_file_is_not_mutated() {
 
     let db_after = fs::read(&db_path).expect("read db after");
     let wal_after = fs::read(&wal_path).expect("read wal after");
-    let mtime_after = fs::metadata(&db_path).expect("meta").modified().expect("mtime");
+    let mtime_after = fs::metadata(&db_path)
+        .expect("meta")
+        .modified()
+        .expect("mtime");
 
     assert_eq!(db_before, db_after, "main DB bytes must be unchanged");
     assert_eq!(wal_before, wal_after, "-wal bytes must be unchanged");
@@ -128,7 +136,7 @@ fn original_file_is_not_mutated() {
 
 #[test]
 fn writes_through_connection_fail() {
-    let (_dir, db_path) = build_db_with_populated_wal();
+    let (_dir, db_path, _writer) = build_db_with_populated_wal();
 
     let db = browser_core::sqlite::open_evidence_db(&db_path).expect("open evidence db");
     let res = db.conn.execute(
@@ -143,7 +151,7 @@ fn writes_through_connection_fail() {
 
 #[test]
 fn provenance_records_snapshot_when_wal_present() {
-    let (_dir, db_path) = build_db_with_populated_wal();
+    let (_dir, db_path, _writer) = build_db_with_populated_wal();
 
     let db = browser_core::sqlite::open_evidence_db(&db_path).expect("open evidence db");
 
