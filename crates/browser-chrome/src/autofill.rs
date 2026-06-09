@@ -9,8 +9,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_secs_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -42,11 +42,17 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
             // NOTE: date_created is Unix epoch SECONDS, not WebKit microseconds
             let ts_ns = unix_secs_to_nanos(date_created);
             let desc = format!("{name}: {value}");
-            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Autofill, &source, desc)
-                .with_attr("name", json!(name))
-                .with_attr("value", json!(value))
-                .with_attr("count", json!(count))
-                .with_attr("date_last_used", json!(date_last_used))
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::Autofill,
+                &source,
+                desc,
+            )
+            .with_attr("name", json!(name))
+            .with_attr("value", json!(value))
+            .with_attr("count", json!(count))
+            .with_attr("date_last_used", json!(date_last_used))
         })
         .collect();
     Ok(events)
@@ -55,8 +61,8 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::params;
     use serde_json::json;
 

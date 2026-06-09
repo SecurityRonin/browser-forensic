@@ -6,8 +6,8 @@
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_millis_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use forensicnomicon::sqlite::MOZLZ4_MAGIC;
 use serde_json::json;
 
@@ -40,7 +40,8 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
         for window in windows {
             if let Some(tabs) = window.get("tabs").and_then(|t| t.as_array()) {
                 for tab in tabs {
-                    let last_accessed_ms = tab.get("lastAccessed")
+                    let last_accessed_ms = tab
+                        .get("lastAccessed")
                         .and_then(|v| v.as_i64())
                         .unwrap_or(0);
                     let ts_ns = unix_millis_to_nanos(last_accessed_ms);
@@ -49,12 +50,30 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
                     let entries = tab.get("entries").and_then(|e| e.as_array());
                     if let Some(entries) = entries {
                         if let Some(entry) = entries.last() {
-                            let url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let desc = if title.is_empty() { url.clone() } else { title.clone() };
-                            let ev = BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Session, &source, desc)
-                                .with_attr("url", json!(url))
-                                .with_attr("title", json!(title));
+                            let url = entry
+                                .get("url")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let title = entry
+                                .get("title")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let desc = if title.is_empty() {
+                                url.clone()
+                            } else {
+                                title.clone()
+                            };
+                            let ev = BrowserEvent::new(
+                                ts_ns,
+                                BrowserFamily::Firefox,
+                                ArtifactKind::Session,
+                                &source,
+                                desc,
+                            )
+                            .with_attr("url", json!(url))
+                            .with_attr("title", json!(title));
                             events.push(ev);
                         }
                     }

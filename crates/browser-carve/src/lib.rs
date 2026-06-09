@@ -93,7 +93,10 @@ mod tests {
             table: "urls".to_string(),
             fields: {
                 let mut m = HashMap::new();
-                m.insert("url".to_string(), serde_json::json!("https://carved.example.com"));
+                m.insert(
+                    "url".to_string(),
+                    serde_json::json!("https://carved.example.com"),
+                );
                 m.insert("title".to_string(), serde_json::json!("Carved Page"));
                 m
             },
@@ -142,9 +145,8 @@ mod tests {
 
     #[test]
     fn crate_root_reexports_carve_functions() {
-        let _f1: fn(&std::path::Path) -> anyhow::Result<CarveResult>
-            = crate::carve_sqlite_free_pages;
-        let _f2: fn(&std::path::Path) -> anyhow::Result<CarveResult>
-            = crate::recover_from_wal;
+        let _f1: fn(&std::path::Path) -> anyhow::Result<CarveResult> =
+            crate::carve_sqlite_free_pages;
+        let _f2: fn(&std::path::Path) -> anyhow::Result<CarveResult> = crate::recover_from_wal;
     }
 }

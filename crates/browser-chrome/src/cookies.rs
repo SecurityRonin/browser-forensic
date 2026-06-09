@@ -44,13 +44,38 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
             let is_secure: bool = row.get::<_, i64>(5)? != 0;
             let is_httponly: bool = row.get::<_, i64>(6)? != 0;
             let samesite: i32 = row.get(7)?;
-            Ok((creation_utc, host_key, name, cookie_path, expires_utc, is_secure, is_httponly, samesite))
+            Ok((
+                creation_utc,
+                host_key,
+                name,
+                cookie_path,
+                expires_utc,
+                is_secure,
+                is_httponly,
+                samesite,
+            ))
         })?
         .filter_map(|r| r.ok())
-        .map(|(creation_utc, host_key, name, cookie_path, expires_utc, is_secure, is_httponly, samesite)| {
-            let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
-            let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
-            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Cookies, &source, desc)
+        .map(
+            |(
+                creation_utc,
+                host_key,
+                name,
+                cookie_path,
+                expires_utc,
+                is_secure,
+                is_httponly,
+                samesite,
+            )| {
+                let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
+                let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::Cookies,
+                    &source,
+                    desc,
+                )
                 .with_attr("host", json!(host_key))
                 .with_attr("name", json!(name))
                 .with_attr("path", json!(cookie_path))
@@ -59,7 +84,8 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
                 .with_attr("samesite", json!(samesite))
                 .with_attr("expires_utc", json!(expires_utc))
                 .with_attr("encrypted_value", json!("ENCRYPTED"))
-        })
+            },
+        )
         .collect();
     Ok(events)
 }
@@ -67,9 +93,9 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
     use browser_core::timestamp::webkit_micros_to_unix_nanos;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::params;
     use serde_json::json;
 
@@ -122,7 +148,10 @@ mod tests {
         );
         let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].timestamp_ns, webkit_micros_to_unix_nanos(creation_utc));
+        assert_eq!(
+            events[0].timestamp_ns,
+            webkit_micros_to_unix_nanos(creation_utc)
+        );
     }
 
     #[test]

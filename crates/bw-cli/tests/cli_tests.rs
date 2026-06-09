@@ -2,7 +2,11 @@ use assert_cmd::Command;
 
 #[test]
 fn bw_help_exits_0() {
-    Command::cargo_bin("bw").unwrap().arg("--help").assert().success();
+    Command::cargo_bin("bw")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success();
 }
 
 #[test]

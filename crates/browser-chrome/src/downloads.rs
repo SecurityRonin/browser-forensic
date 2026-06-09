@@ -36,24 +36,39 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
             let state: i32 = row.get(3)?;
             let danger_type: i32 = row.get(4)?;
             let url: Option<String> = row.get(5)?;
-            Ok((start_time, target_path, total_bytes, state, danger_type, url))
+            Ok((
+                start_time,
+                target_path,
+                total_bytes,
+                state,
+                danger_type,
+                url,
+            ))
         })?
         .filter_map(|r| r.ok())
-        .map(|(start_time, target_path, total_bytes, state, danger_type, url)| {
-            let ts_ns = webkit_micros_to_unix_nanos(start_time);
-            let filename = std::path::Path::new(&target_path)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| target_path.clone());
-            let desc = format!("{filename} ({total_bytes} bytes)");
-            let url_val = url.unwrap_or_default();
-            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Downloads, &source, desc)
+        .map(
+            |(start_time, target_path, total_bytes, state, danger_type, url)| {
+                let ts_ns = webkit_micros_to_unix_nanos(start_time);
+                let filename = std::path::Path::new(&target_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| target_path.clone());
+                let desc = format!("{filename} ({total_bytes} bytes)");
+                let url_val = url.unwrap_or_default();
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::Downloads,
+                    &source,
+                    desc,
+                )
                 .with_attr("url", json!(url_val))
                 .with_attr("target_path", json!(target_path))
                 .with_attr("total_bytes", json!(total_bytes))
                 .with_attr("state", json!(state))
                 .with_attr("danger_type", json!(danger_type))
-        })
+            },
+        )
         .collect();
     Ok(events)
 }
@@ -61,8 +76,8 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use serde_json::json;
 
     const SCHEMA: &str = "CREATE TABLE downloads (
@@ -79,7 +94,15 @@ mod tests {
         url         TEXT NOT NULL
     );";
 
-    fn insert_download(db: &TestDb, url: &str, target_path: &str, start_time: i64, total_bytes: i64, state: i32, danger_type: i32) {
+    fn insert_download(
+        db: &TestDb,
+        url: &str,
+        target_path: &str,
+        start_time: i64,
+        total_bytes: i64,
+        state: i32,
+        danger_type: i32,
+    ) {
         // Use rusqlite directly to get last_insert_rowid for the chain
         use rusqlite::Connection;
         let conn = Connection::open(db.path()).unwrap();
@@ -91,7 +114,8 @@ mod tests {
         conn.execute(
             "INSERT INTO downloads_url_chains (id, chain_index, url) VALUES (?1, 0, ?2)",
             rusqlite::params![id, url],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]
@@ -104,7 +128,15 @@ mod tests {
     #[test]
     fn parse_single_download() {
         let db = TestDb::new(SCHEMA);
-        insert_download(&db, "https://example.com/file.zip", "/home/user/Downloads/file.zip", 13_327_626_000_000_000, 1024, 1, 0);
+        insert_download(
+            &db,
+            "https://example.com/file.zip",
+            "/home/user/Downloads/file.zip",
+            13_327_626_000_000_000,
+            1024,
+            1,
+            0,
+        );
         let events = parse_downloads(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
@@ -112,13 +144,24 @@ mod tests {
         assert_eq!(ev.browser, BrowserFamily::Chromium);
         assert_eq!(ev.attrs["url"], json!("https://example.com/file.zip"));
         assert_eq!(ev.attrs["total_bytes"], json!(1024_i64));
-        assert_eq!(ev.timestamp_ns, webkit_micros_to_unix_nanos(13_327_626_000_000_000));
+        assert_eq!(
+            ev.timestamp_ns,
+            webkit_micros_to_unix_nanos(13_327_626_000_000_000)
+        );
     }
 
     #[test]
     fn dangerous_download_flagged_in_attrs() {
         let db = TestDb::new(SCHEMA);
-        insert_download(&db, "https://malware.example/evil.exe", "/tmp/evil.exe", 13_327_626_000_000_000, 512, 0, 1);
+        insert_download(
+            &db,
+            "https://malware.example/evil.exe",
+            "/tmp/evil.exe",
+            13_327_626_000_000_000,
+            512,
+            0,
+            1,
+        );
         let events = parse_downloads(db.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].attrs["danger_type"], json!(1_i32));

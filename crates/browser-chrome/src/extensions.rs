@@ -28,18 +28,21 @@ pub fn parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
         if !id_path.is_dir() {
             continue;
         }
-        let ext_id = id_path.file_name()
+        let ext_id = id_path
+            .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
 
         // Find the highest-version subdirectory (sort by name, take last)
         let mut versions: Vec<std::path::PathBuf> = match std::fs::read_dir(&id_path) {
-            Ok(v) => v.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect(),
+            Ok(v) => v
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect(),
             Err(_) => continue,
         };
-        versions.sort_by(|a, b| {
-            a.file_name().cmp(&b.file_name())
-        });
+        versions.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
         let version_dir = match versions.last() {
             Some(v) => v.clone(),
             None => continue,
@@ -56,9 +59,21 @@ pub fn parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
             Err(_) => continue,
         };
 
-        let name = manifest.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let version = manifest.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let description = manifest.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let name = manifest
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let version = manifest
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let description = manifest
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         // Use mtime of manifest.json as timestamp (0 if unavailable)
         let ts_ns = std::fs::metadata(&manifest_path)
@@ -69,11 +84,17 @@ pub fn parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
             .unwrap_or(0);
 
         let desc = format!("{name} v{version}");
-        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Extensions, &source, desc)
-            .with_attr("name", json!(name))
-            .with_attr("version", json!(version))
-            .with_attr("id", json!(ext_id))
-            .with_attr("description", json!(description));
+        let ev = BrowserEvent::new(
+            ts_ns,
+            BrowserFamily::Chromium,
+            ArtifactKind::Extensions,
+            &source,
+            desc,
+        )
+        .with_attr("name", json!(name))
+        .with_attr("version", json!(version))
+        .with_attr("id", json!(ext_id))
+        .with_attr("description", json!(description));
         events.push(ev);
     }
 
@@ -105,12 +126,17 @@ mod tests {
     #[test]
     fn parse_single_extension() {
         let dir = TempDir::new().unwrap();
-        create_extension(&dir, "abcdefghijk", "1.0.0", &json!({
-            "name": "My Extension",
-            "version": "1.0.0",
-            "description": "A test extension",
-            "permissions": ["tabs", "storage"]
-        }));
+        create_extension(
+            &dir,
+            "abcdefghijk",
+            "1.0.0",
+            &json!({
+                "name": "My Extension",
+                "version": "1.0.0",
+                "description": "A test extension",
+                "permissions": ["tabs", "storage"]
+            }),
+        );
         let events = parse_extensions(dir.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];
@@ -125,16 +151,26 @@ mod tests {
     fn parse_highest_version_only() {
         let dir = TempDir::new().unwrap();
         let id = "testextension";
-        create_extension(&dir, id, "1.0.0", &json!({
-            "name": "Old Version",
-            "version": "1.0.0",
-            "description": ""
-        }));
-        create_extension(&dir, id, "2.0.0", &json!({
-            "name": "New Version",
-            "version": "2.0.0",
-            "description": ""
-        }));
+        create_extension(
+            &dir,
+            id,
+            "1.0.0",
+            &json!({
+                "name": "Old Version",
+                "version": "1.0.0",
+                "description": ""
+            }),
+        );
+        create_extension(
+            &dir,
+            id,
+            "2.0.0",
+            &json!({
+                "name": "New Version",
+                "version": "2.0.0",
+                "description": ""
+            }),
+        );
         let events = parse_extensions(dir.path()).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].attrs["name"], json!("New Version"));

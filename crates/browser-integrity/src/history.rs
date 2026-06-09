@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::BrowserFamily;
 use browser_core::timestamp::webkit_micros_to_unix_nanos;
+use browser_core::BrowserFamily;
 use rusqlite::Connection;
 
 use crate::IntegrityIndicator;
@@ -15,7 +15,10 @@ use crate::IntegrityIndicator;
 /// - History clearing (empty tables with high auto-increment counters)
 /// - Visit ID gaps (deleted records leaving gaps in sequential IDs)
 /// - Timestamp non-monotonicity (manually edited or imported timestamps)
-pub fn check_history_integrity(path: &Path, browser: BrowserFamily) -> Result<Vec<IntegrityIndicator>> {
+pub fn check_history_integrity(
+    path: &Path,
+    browser: BrowserFamily,
+) -> Result<Vec<IntegrityIndicator>> {
     match browser {
         BrowserFamily::Chromium => check_chromium_history(path),
         BrowserFamily::Firefox => check_firefox_history(path),
@@ -255,9 +258,9 @@ fn check_chromium_timestamp_monotonicity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::BrowserFamily;
-    use browser_core::test_utils::sqlite::TestDb;
     use crate::IntegrityIndicator;
+    use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::BrowserFamily;
 
     fn chrome_history_schema() -> &'static str {
         // Use AUTOINCREMENT so SQLite manages sqlite_sequence automatically.
@@ -287,8 +290,14 @@ mod tests {
         db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (2, 2, 13000000001000000, 0, 0)", rusqlite::params![]);
 
         let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
-        let clearing: Vec<_> = result.iter().filter(|i| matches!(i, IntegrityIndicator::HistoryCleared { .. })).collect();
-        assert!(clearing.is_empty(), "clean db should have no clearing indicators");
+        let clearing: Vec<_> = result
+            .iter()
+            .filter(|i| matches!(i, IntegrityIndicator::HistoryCleared { .. }))
+            .collect();
+        assert!(
+            clearing.is_empty(),
+            "clean db should have no clearing indicators"
+        );
     }
 
     #[test]
@@ -297,11 +306,18 @@ mod tests {
         // Insert one URL then manipulate sqlite_sequence directly to simulate mass deletion.
         db.insert("INSERT INTO urls(id, url, title, visit_count, last_visit_time) VALUES (1, 'https://a.com', 'A', 1, 13000000000000000)", rusqlite::params![]);
         // Update the auto-increment counter to a much higher value to simulate prior mass deletion.
-        db.insert("UPDATE sqlite_sequence SET seq = 500 WHERE name = 'urls'", rusqlite::params![]);
+        db.insert(
+            "UPDATE sqlite_sequence SET seq = 500 WHERE name = 'urls'",
+            rusqlite::params![],
+        );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::AutoIncrementGap { .. })),
-            "should detect auto-increment gap indicating mass deletion");
+        assert!(
+            result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::AutoIncrementGap { .. })),
+            "should detect auto-increment gap indicating mass deletion"
+        );
     }
 
     #[test]
@@ -312,8 +328,12 @@ mod tests {
         db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (50, 1, 13000000001000000, 0, 0)", rusqlite::params![]);
 
         let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })),
-            "should detect visit ID gap from 1 to 50");
+        assert!(
+            result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })),
+            "should detect visit ID gap from 1 to 50"
+        );
     }
 
     #[test]
@@ -325,22 +345,36 @@ mod tests {
         db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (2, 2, 13000000000000000, 0, 0)", rusqlite::params![]);
 
         let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::TimestampNonMonotonic { .. })),
-            "should detect non-monotonic timestamps in visits");
+        assert!(
+            result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::TimestampNonMonotonic { .. })),
+            "should detect non-monotonic timestamps in visits"
+        );
     }
 
     #[test]
     fn empty_history_with_nonzero_autoinc_is_clearing() {
         let db = TestDb::new(chrome_history_schema());
         // Trigger sqlite_sequence creation by inserting and deleting a row.
-        db.insert("INSERT INTO urls(url, title) VALUES ('https://tmp.com', 'tmp')", rusqlite::params![]);
+        db.insert(
+            "INSERT INTO urls(url, title) VALUES ('https://tmp.com', 'tmp')",
+            rusqlite::params![],
+        );
         db.insert("DELETE FROM urls", rusqlite::params![]);
         // Now urls is empty but sqlite_sequence has seq=1; update it to simulate history clearing.
-        db.insert("UPDATE sqlite_sequence SET seq = 100 WHERE name = 'urls'", rusqlite::params![]);
+        db.insert(
+            "UPDATE sqlite_sequence SET seq = 100 WHERE name = 'urls'",
+            rusqlite::params![],
+        );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::HistoryCleared { .. })),
-            "empty db with high auto-increment should indicate clearing");
+        assert!(
+            result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::HistoryCleared { .. })),
+            "empty db with high auto-increment should indicate clearing"
+        );
     }
 
     fn firefox_history_schema() -> &'static str {
@@ -363,10 +397,22 @@ mod tests {
     #[test]
     fn firefox_history_clean_returns_empty() {
         let db = TestDb::new(firefox_history_schema());
-        db.insert("INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 1, 1700000000000000)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_places VALUES (2, 'https://b.com', 'B', 1, 1700000001000000)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000000000000, 1)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_historyvisits VALUES (2, 0, 2, 1700000001000000, 1)", rusqlite::params![]);
+        db.insert(
+            "INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 1, 1700000000000000)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_places VALUES (2, 'https://b.com', 'B', 1, 1700000001000000)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000000000000, 1)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits VALUES (2, 0, 2, 1700000001000000, 1)",
+            rusqlite::params![],
+        );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
         assert!(result.is_empty(), "clean Firefox db should have no issues");
@@ -375,24 +421,49 @@ mod tests {
     #[test]
     fn firefox_visit_id_gap_detected() {
         let db = TestDb::new(firefox_history_schema());
-        db.insert("INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 2, 1700000001000000)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000000000000, 1)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_historyvisits VALUES (100, 0, 1, 1700000001000000, 1)", rusqlite::params![]);
+        db.insert(
+            "INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 2, 1700000001000000)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000000000000, 1)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits VALUES (100, 0, 1, 1700000001000000, 1)",
+            rusqlite::params![],
+        );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })));
+        assert!(result
+            .iter()
+            .any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })));
     }
 
     #[test]
     fn firefox_timestamp_non_monotonic_detected() {
         let db = TestDb::new(firefox_history_schema());
-        db.insert("INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 1, 1700000000000000)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_places VALUES (2, 'https://b.com', 'B', 1, 1600000000000000)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000001000000, 1)", rusqlite::params![]);
-        db.insert("INSERT INTO moz_historyvisits VALUES (2, 0, 2, 1700000000000000, 1)", rusqlite::params![]);
+        db.insert(
+            "INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 1, 1700000000000000)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_places VALUES (2, 'https://b.com', 'B', 1, 1600000000000000)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits VALUES (1, 0, 1, 1700000001000000, 1)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits VALUES (2, 0, 2, 1700000000000000, 1)",
+            rusqlite::params![],
+        );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::TimestampNonMonotonic { .. })));
+        assert!(result
+            .iter()
+            .any(|i| matches!(i, IntegrityIndicator::TimestampNonMonotonic { .. })));
     }
 
     fn safari_history_schema() -> &'static str {
@@ -442,7 +513,8 @@ mod tests {
         );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Safari).expect("check");
-        let tombstones: Vec<_> = result.iter()
+        let tombstones: Vec<_> = result
+            .iter()
             .filter(|i| matches!(i, IntegrityIndicator::HistoryTombstoneFound { .. }))
             .collect();
         assert!(tombstones.is_empty());
@@ -461,7 +533,8 @@ mod tests {
         );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Safari).expect("check");
-        let tombstones: Vec<_> = result.iter()
+        let tombstones: Vec<_> = result
+            .iter()
             .filter(|i| matches!(i, IntegrityIndicator::HistoryTombstoneFound { .. }))
             .collect();
         assert_eq!(tombstones.len(), 2, "should detect 2 tombstoned URLs");
@@ -484,6 +557,8 @@ mod tests {
         );
 
         let result = check_history_integrity(db.path(), BrowserFamily::Safari).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })));
+        assert!(result
+            .iter()
+            .any(|i| matches!(i, IntegrityIndicator::VisitIdGap { .. })));
     }
 }

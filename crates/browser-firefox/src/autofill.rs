@@ -6,8 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_micros_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -35,14 +35,22 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
             Ok((fieldname, value, times_used, first_used_us, last_used_us))
         })?
         .filter_map(|r| r.ok())
-        .map(|(fieldname, value, times_used, first_used_us, _last_used_us)| {
-            let ts_ns = unix_micros_to_nanos(first_used_us);
-            let desc = format!("{fieldname}: {value}");
-            BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Autofill, &source, desc)
+        .map(
+            |(fieldname, value, times_used, first_used_us, _last_used_us)| {
+                let ts_ns = unix_micros_to_nanos(first_used_us);
+                let desc = format!("{fieldname}: {value}");
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Firefox,
+                    ArtifactKind::Autofill,
+                    &source,
+                    desc,
+                )
                 .with_attr("fieldname", json!(fieldname))
                 .with_attr("value", json!(value))
                 .with_attr("times_used", json!(times_used))
-        })
+            },
+        )
         .collect();
     Ok(events)
 }
@@ -50,8 +58,8 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::params;
     use serde_json::json;
 

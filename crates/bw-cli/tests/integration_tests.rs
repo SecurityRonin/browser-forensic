@@ -65,11 +65,19 @@ fn bw_timeline_chrome_history_csv_has_header() {
         .args(["timeline", "--format", "csv", path.to_str().unwrap()])
         .output()
         .unwrap();
-    assert!(output.status.success(), "bw timeline failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "bw timeline failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let first_line = stdout.lines().next().unwrap_or("");
-    assert!(first_line.contains("timestamp") && first_line.contains("browser") && first_line.contains("artifact"),
-        "CSV header not found in: {first_line}");
+    assert!(
+        first_line.contains("timestamp")
+            && first_line.contains("browser")
+            && first_line.contains("artifact"),
+        "CSV header not found in: {first_line}"
+    );
 }
 
 #[test]
@@ -107,10 +115,17 @@ fn bw_timeline_firefox_history_text() {
         .args(["timeline", path.to_str().unwrap()])
         .output()
         .unwrap();
-    assert!(output.status.success(), "bw timeline failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "bw timeline failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Text format includes '[' before timestamp
-    assert!(stdout.contains('['), "Expected '[' in text output: {stdout}");
+    assert!(
+        stdout.contains('['),
+        "Expected '[' in text output: {stdout}"
+    );
 }
 
 #[test]
@@ -121,7 +136,14 @@ fn bw_history_chrome_text_output() {
         .args(["history", path.to_str().unwrap()])
         .output()
         .unwrap();
-    assert!(output.status.success(), "bw history failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "bw history failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains('['), "Expected '[' in text output: {stdout}");
+    assert!(
+        stdout.contains('['),
+        "Expected '[' in text output: {stdout}"
+    );
 }

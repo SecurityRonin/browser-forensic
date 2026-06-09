@@ -39,18 +39,32 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
             let username: String = row.get(2)?;
             let date_created: i64 = row.get(3)?;
             let date_last_used: i64 = row.get(4)?;
-            Ok((origin_url, action_url, username, date_created, date_last_used))
+            Ok((
+                origin_url,
+                action_url,
+                username,
+                date_created,
+                date_last_used,
+            ))
         })?
         .filter_map(|r| r.ok())
-        .map(|(origin_url, action_url, username, date_created, date_last_used)| {
-            let ts_ns = webkit_micros_to_unix_nanos(date_created);
-            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::LoginData, &source, origin_url.clone())
+        .map(
+            |(origin_url, action_url, username, date_created, date_last_used)| {
+                let ts_ns = webkit_micros_to_unix_nanos(date_created);
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::LoginData,
+                    &source,
+                    origin_url.clone(),
+                )
                 .with_attr("origin_url", json!(origin_url))
                 .with_attr("action_url", json!(action_url))
                 .with_attr("username", json!(username))
                 .with_attr("date_last_used", json!(date_last_used))
                 .with_attr("password", json!("ENCRYPTED"))
-        })
+            },
+        )
         .collect();
     Ok(events)
 }
@@ -58,8 +72,8 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::params;
     use serde_json::json;
 

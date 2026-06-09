@@ -18,7 +18,9 @@ use browser_core::timestamp::core_data_secs_to_unix_nanos;
 /// Returns an error if the plist file cannot be opened or parsed.
 pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
     let value = plist::Value::from_file(path)?;
-    let root = value.as_dictionary().ok_or_else(|| anyhow!("plist root is not a dictionary"))?;
+    let root = value
+        .as_dictionary()
+        .ok_or_else(|| anyhow!("plist root is not a dictionary"))?;
     let history = root
         .get("DownloadHistory")
         .and_then(|v| v.as_array())
@@ -32,18 +34,22 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
             Some(d) => d,
             None => continue,
         };
-        let url = dict.get("DownloadEntryURL")
+        let url = dict
+            .get("DownloadEntryURL")
             .and_then(|v| v.as_string())
             .unwrap_or("")
             .to_string();
-        let dl_path = dict.get("DownloadEntryPath")
+        let dl_path = dict
+            .get("DownloadEntryPath")
             .and_then(|v| v.as_string())
             .unwrap_or("")
             .to_string();
-        let date_added = dict.get("DownloadEntryDateAddedKey")
+        let date_added = dict
+            .get("DownloadEntryDateAddedKey")
             .and_then(|v| v.as_real())
             .unwrap_or(0.0);
-        let total_bytes = dict.get("DownloadEntryProgressTotalToLoad")
+        let total_bytes = dict
+            .get("DownloadEntryProgressTotalToLoad")
             .and_then(|v| v.as_signed_integer())
             .unwrap_or(0);
 
@@ -54,10 +60,16 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
             .unwrap_or_else(|| dl_path.clone());
         let desc = format!("{filename} from {url}");
 
-        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::Downloads, &source, desc)
-            .with_attr("url", json!(url))
-            .with_attr("path", json!(dl_path))
-            .with_attr("total_bytes", json!(total_bytes));
+        let ev = BrowserEvent::new(
+            ts_ns,
+            BrowserFamily::Safari,
+            ArtifactKind::Downloads,
+            &source,
+            desc,
+        )
+        .with_attr("url", json!(url))
+        .with_attr("path", json!(dl_path))
+        .with_attr("total_bytes", json!(total_bytes));
         events.push(ev);
     }
 
@@ -78,10 +90,22 @@ mod tests {
         let mut download_array: Vec<Value> = Vec::new();
         for (url, path, date_added, total_bytes) in entries {
             let mut dict: BTreeMap<String, Value> = BTreeMap::new();
-            dict.insert("DownloadEntryURL".to_string(), Value::String(url.to_string()));
-            dict.insert("DownloadEntryPath".to_string(), Value::String(path.to_string()));
-            dict.insert("DownloadEntryDateAddedKey".to_string(), Value::Real(*date_added));
-            dict.insert("DownloadEntryProgressTotalToLoad".to_string(), Value::Integer((*total_bytes).into()));
+            dict.insert(
+                "DownloadEntryURL".to_string(),
+                Value::String(url.to_string()),
+            );
+            dict.insert(
+                "DownloadEntryPath".to_string(),
+                Value::String(path.to_string()),
+            );
+            dict.insert(
+                "DownloadEntryDateAddedKey".to_string(),
+                Value::Real(*date_added),
+            );
+            dict.insert(
+                "DownloadEntryProgressTotalToLoad".to_string(),
+                Value::Integer((*total_bytes).into()),
+            );
             download_array.push(Value::Dictionary(dict.into_iter().collect()));
         }
         let mut root: BTreeMap<String, Value> = BTreeMap::new();

@@ -6,8 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::{CarveResult, CarveStats, CarvedRecord, RecoveryMethod, RecoveryQuality};
 use forensicnomicon::sqlite::{
-    SQLITE_FREELIST_TRUNK_OFFSET, SQLITE_HEADER_SIZE, SQLITE_MAGIC,
-    SQLITE_PAGE_SIZE_OFFSET,
+    SQLITE_FREELIST_TRUNK_OFFSET, SQLITE_HEADER_SIZE, SQLITE_MAGIC, SQLITE_PAGE_SIZE_OFFSET,
 };
 
 pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
@@ -23,13 +22,22 @@ pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
     }
 
     let page_size = {
-        let raw = u16::from_be_bytes([data[SQLITE_PAGE_SIZE_OFFSET], data[SQLITE_PAGE_SIZE_OFFSET + 1]]) as usize;
-        if raw == 1 { 65536 } else { raw }
+        let raw = u16::from_be_bytes([
+            data[SQLITE_PAGE_SIZE_OFFSET],
+            data[SQLITE_PAGE_SIZE_OFFSET + 1],
+        ]) as usize;
+        if raw == 1 {
+            65536
+        } else {
+            raw
+        }
     };
 
     let freelist_trunk = u32::from_be_bytes([
-        data[SQLITE_FREELIST_TRUNK_OFFSET], data[SQLITE_FREELIST_TRUNK_OFFSET+1],
-        data[SQLITE_FREELIST_TRUNK_OFFSET+2], data[SQLITE_FREELIST_TRUNK_OFFSET+3],
+        data[SQLITE_FREELIST_TRUNK_OFFSET],
+        data[SQLITE_FREELIST_TRUNK_OFFSET + 1],
+        data[SQLITE_FREELIST_TRUNK_OFFSET + 2],
+        data[SQLITE_FREELIST_TRUNK_OFFSET + 3],
     ]) as usize;
 
     let total_pages = data.len() / page_size;
@@ -57,7 +65,11 @@ pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
         records.extend(recovered);
     }
 
-    Ok(CarveResult { records, integrity: Vec::new(), stats })
+    Ok(CarveResult {
+        records,
+        integrity: Vec::new(),
+        stats,
+    })
 }
 
 fn collect_free_pages(data: &[u8], first_trunk: usize, page_size: usize) -> Vec<usize> {
@@ -76,12 +88,18 @@ fn collect_free_pages(data: &[u8], first_trunk: usize, page_size: usize) -> Vec<
 
         for i in 0..leaf_count {
             let leaf_offset = 8 + i * 4;
-            if leaf_offset + 4 > page_size { break; }
+            if leaf_offset + 4 > page_size {
+                break;
+            }
             let leaf_page = u32::from_be_bytes([
-                trunk[leaf_offset], trunk[leaf_offset+1],
-                trunk[leaf_offset+2], trunk[leaf_offset+3],
+                trunk[leaf_offset],
+                trunk[leaf_offset + 1],
+                trunk[leaf_offset + 2],
+                trunk[leaf_offset + 3],
             ]) as usize;
-            if leaf_page > 0 { free_pages.push(leaf_page); }
+            if leaf_page > 0 {
+                free_pages.push(leaf_page);
+            }
         }
 
         trunk_page = next_trunk;
@@ -129,8 +147,8 @@ fn scan_page_for_urls(page_data: &[u8], page_offset: u64) -> Vec<CarvedRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use rusqlite::Connection;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn carve_empty_db_returns_empty() {
@@ -152,21 +170,30 @@ mod tests {
             let conn = Connection::open(f.path()).expect("open");
             conn.execute_batch(
                 "PRAGMA auto_vacuum = NONE;
-                 CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT);"
-            ).expect("create");
+                 CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT);",
+            )
+            .expect("create");
 
             for i in 0..200_i32 {
                 conn.execute(
                     "INSERT INTO urls VALUES (?1, ?2, ?3)",
-                    rusqlite::params![i, format!("https://example{i}.com/page/with/long/path/to/fill/space"), format!("Title {i}")],
-                ).expect("insert");
+                    rusqlite::params![
+                        i,
+                        format!("https://example{i}.com/page/with/long/path/to/fill/space"),
+                        format!("Title {i}")
+                    ],
+                )
+                .expect("insert");
             }
             conn.execute("DELETE FROM urls", []).expect("delete");
         }
 
         let result = carve_sqlite_free_pages(f.path()).expect("carve");
         assert!(result.stats.pages_scanned > 0, "should have scanned pages");
-        assert!(result.stats.free_pages_found > 0, "should have found free pages after deletion");
+        assert!(
+            result.stats.free_pages_found > 0,
+            "should have found free pages after deletion"
+        );
     }
 
     #[test]
@@ -184,7 +211,13 @@ mod tests {
                 .expect("create");
         }
         let result = carve_sqlite_free_pages(f.path()).expect("carve");
-        assert!(result.stats.bytes_scanned > 0, "should report bytes scanned");
-        assert!(result.stats.pages_scanned > 0, "should report pages scanned");
+        assert!(
+            result.stats.bytes_scanned > 0,
+            "should report bytes scanned"
+        );
+        assert!(
+            result.stats.pages_scanned > 0,
+            "should report pages scanned"
+        );
     }
 }

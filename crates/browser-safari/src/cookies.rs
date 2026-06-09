@@ -36,20 +36,36 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
             let expiry: f64 = row.get(5)?;
             let is_secure: bool = row.get::<_, i64>(6)? != 0;
             let is_httponly: bool = row.get::<_, i64>(7)? != 0;
-            Ok((name, domain, cookie_path, creation, expiry, is_secure, is_httponly))
+            Ok((
+                name,
+                domain,
+                cookie_path,
+                creation,
+                expiry,
+                is_secure,
+                is_httponly,
+            ))
         })?
         .filter_map(|r| r.ok())
-        .map(|(name, domain, cookie_path, creation, expiry, is_secure, is_httponly)| {
-            let ts_ns = core_data_secs_to_unix_nanos(creation);
-            let desc = format!("{domain} \u{2014} {name}");
-            BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::Cookies, &source, desc)
+        .map(
+            |(name, domain, cookie_path, creation, expiry, is_secure, is_httponly)| {
+                let ts_ns = core_data_secs_to_unix_nanos(creation);
+                let desc = format!("{domain} \u{2014} {name}");
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Safari,
+                    ArtifactKind::Cookies,
+                    &source,
+                    desc,
+                )
                 .with_attr("name", json!(name))
                 .with_attr("domain", json!(domain))
                 .with_attr("path", json!(cookie_path))
                 .with_attr("expiry", json!(expiry))
                 .with_attr("is_secure", json!(is_secure))
                 .with_attr("is_httponly", json!(is_httponly))
-        })
+            },
+        )
         .collect();
     Ok(events)
 }
@@ -57,9 +73,9 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
     use browser_core::timestamp::core_data_secs_to_unix_nanos;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::params;
     use serde_json::json;
 
@@ -107,6 +123,9 @@ mod tests {
         );
         let events = parse_cookies(db.path()).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].timestamp_ns, core_data_secs_to_unix_nanos(creation));
+        assert_eq!(
+            events[0].timestamp_ns,
+            core_data_secs_to_unix_nanos(creation)
+        );
     }
 }

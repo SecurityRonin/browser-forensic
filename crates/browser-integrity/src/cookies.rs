@@ -12,7 +12,10 @@ use crate::IntegrityIndicator;
 ///
 /// Detects cookies where creation timestamp > last_access timestamp,
 /// which is impossible under normal browser operation and indicates timestamp manipulation.
-pub fn check_cookie_integrity(path: &Path, browser: BrowserFamily) -> Result<Vec<IntegrityIndicator>> {
+pub fn check_cookie_integrity(
+    path: &Path,
+    browser: BrowserFamily,
+) -> Result<Vec<IntegrityIndicator>> {
     match browser {
         BrowserFamily::Chromium => check_chromium_cookies(path),
         BrowserFamily::Firefox => check_firefox_cookies(path),
@@ -25,10 +28,14 @@ fn check_chromium_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
     let mut indicators = Vec::new();
 
     let mut stmt = conn.prepare(
-        "SELECT host_key, creation_utc, last_access_utc FROM cookies WHERE last_access_utc > 0"
+        "SELECT host_key, creation_utc, last_access_utc FROM cookies WHERE last_access_utc > 0",
     )?;
     let rows = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
     })?;
 
     for row in rows.flatten() {
@@ -51,10 +58,14 @@ fn check_firefox_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
     let mut indicators = Vec::new();
 
     let mut stmt = conn.prepare(
-        "SELECT host, creationTime, lastAccessed FROM moz_cookies WHERE lastAccessed > 0"
+        "SELECT host, creationTime, lastAccessed FROM moz_cookies WHERE lastAccessed > 0",
     )?;
     let rows = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
     })?;
 
     for row in rows.flatten() {
@@ -75,9 +86,9 @@ fn check_firefox_cookies(path: &Path) -> Result<Vec<IntegrityIndicator>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::BrowserFamily;
-    use browser_core::test_utils::sqlite::TestDb;
     use crate::IntegrityIndicator;
+    use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::BrowserFamily;
 
     fn chrome_cookies_schema() -> &'static str {
         "CREATE TABLE cookies (
@@ -145,6 +156,8 @@ mod tests {
         );
 
         let result = check_cookie_integrity(db.path(), BrowserFamily::Firefox).expect("check");
-        assert!(result.iter().any(|i| matches!(i, IntegrityIndicator::CookieTimestampAnomaly { .. })));
+        assert!(result
+            .iter()
+            .any(|i| matches!(i, IntegrityIndicator::CookieTimestampAnomaly { .. })));
     }
 }

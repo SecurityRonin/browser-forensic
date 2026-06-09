@@ -41,9 +41,16 @@ fn integrity_on_cleared_history_reports_indicators() {
     drop(conn);
 
     let mut cmd = Command::cargo_bin("bw").expect("bw binary");
-    cmd.arg("integrity").arg(f.path()).arg("--format").arg("jsonl");
+    cmd.arg("integrity")
+        .arg(f.path())
+        .arg("--format")
+        .arg("jsonl");
     let output = cmd.output().expect("run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("HistoryCleared") || stdout.contains("integrity") || stdout.contains("AutoIncrementGap"),
-        "should report integrity findings for cleared history, got: {stdout}");
+    assert!(
+        stdout.contains("HistoryCleared")
+            || stdout.contains("integrity")
+            || stdout.contains("AutoIncrementGap"),
+        "should report integrity findings for cleared history, got: {stdout}"
+    );
 }

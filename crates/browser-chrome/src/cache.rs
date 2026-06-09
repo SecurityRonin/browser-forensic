@@ -67,8 +67,14 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
             continue;
         }
 
-        let ev = BrowserEvent::new(0, BrowserFamily::Chromium, ArtifactKind::Cache, &source, url.clone())
-            .with_attr("url", json!(url));
+        let ev = BrowserEvent::new(
+            0,
+            BrowserFamily::Chromium,
+            ArtifactKind::Cache,
+            &source,
+            url.clone(),
+        )
+        .with_attr("url", json!(url));
         events.push(ev);
     }
 

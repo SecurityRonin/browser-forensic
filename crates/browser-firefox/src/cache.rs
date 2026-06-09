@@ -50,13 +50,15 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
 
         // Find "http" in metadata
         let http_needle = b"http";
-        let http_pos = metadata.windows(http_needle.len())
+        let http_pos = metadata
+            .windows(http_needle.len())
             .position(|w| w == http_needle);
 
         if let Some(pos) = http_pos {
             let url_slice = &metadata[pos..];
             // Extract until null byte, newline, or end
-            let end = url_slice.iter()
+            let end = url_slice
+                .iter()
                 .position(|&b| b == b'\0' || b == b'\n')
                 .unwrap_or(url_slice.len());
             let url = match std::str::from_utf8(&url_slice[..end]) {
@@ -64,8 +66,14 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
                 Err(_) => continue,
             };
 
-            let ev = BrowserEvent::new(0, BrowserFamily::Firefox, ArtifactKind::Cache, &source, url.clone())
-                .with_attr("url", json!(url));
+            let ev = BrowserEvent::new(
+                0,
+                BrowserFamily::Firefox,
+                ArtifactKind::Cache,
+                &source,
+                url.clone(),
+            )
+            .with_attr("url", json!(url));
             events.push(ev);
         }
     }
@@ -107,7 +115,11 @@ mod tests {
     #[test]
     fn parse_ff_cache_extracts_url() {
         let dir = TempDir::new().unwrap();
-        create_ff_cache_file(&dir, "ABCDEF1234567890ABCDEF", "https://example.com/style.css");
+        create_ff_cache_file(
+            &dir,
+            "ABCDEF1234567890ABCDEF",
+            "https://example.com/style.css",
+        );
         let events = parse_cache(dir.path()).unwrap();
         assert_eq!(events.len(), 1);
         let ev = &events[0];

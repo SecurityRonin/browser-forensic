@@ -7,7 +7,8 @@ use crate::BrowserEvent;
 ///
 /// Only events that have a valid URL in `attrs["url"]` are considered.
 pub fn rare_domains(events: &[BrowserEvent], cap: usize) -> Vec<(String, usize)> {
-    let mut domain_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut domain_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
 
     for event in events {
         if let Some(url_val) = event.attrs.get("url") {
@@ -37,8 +38,14 @@ mod tests {
     use serde_json::json;
 
     fn make_history_event(url: &str) -> BrowserEvent {
-        BrowserEvent::new(0, BrowserFamily::Chromium, ArtifactKind::History, "source", url)
-            .with_attr("url", json!(url))
+        BrowserEvent::new(
+            0,
+            BrowserFamily::Chromium,
+            ArtifactKind::History,
+            "source",
+            url,
+        )
+        .with_attr("url", json!(url))
     }
 
     #[test]

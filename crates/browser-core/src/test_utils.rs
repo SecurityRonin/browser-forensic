@@ -34,7 +34,7 @@ pub mod sqlite {
 #[cfg(test)]
 mod tests {
     use super::sqlite::TestDb;
-    use rusqlite::{Connection, params};
+    use rusqlite::{params, Connection};
 
     #[test]
     fn test_db_creates_with_schema() {

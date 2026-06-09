@@ -23,9 +23,15 @@ pub fn parse_local_state(path: &Path) -> Result<Vec<BrowserEvent>> {
         .and_then(|ic| ic.as_object())
     {
         for (profile_dir, info) in info_cache {
-            let name = info.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
+            let name = info
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("Unknown");
             let user_name = info.get("user_name").and_then(|u| u.as_str()).unwrap_or("");
-            let active_time = info.get("active_time").and_then(|t| t.as_f64()).unwrap_or(0.0);
+            let active_time = info
+                .get("active_time")
+                .and_then(|t| t.as_f64())
+                .unwrap_or(0.0);
             let ts_ns = browser_core::timestamp::unix_secs_to_nanos(active_time as i64);
 
             let desc = if user_name.is_empty() {
@@ -35,11 +41,17 @@ pub fn parse_local_state(path: &Path) -> Result<Vec<BrowserEvent>> {
             };
 
             events.push(
-                BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Session, &source, desc)
-                    .with_attr("profile_dir", json!(profile_dir))
-                    .with_attr("profile_name", json!(name))
-                    .with_attr("user_name", json!(user_name))
-                    .with_attr("active_time", json!(active_time)),
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::Session,
+                    &source,
+                    desc,
+                )
+                .with_attr("profile_dir", json!(profile_dir))
+                .with_attr("profile_name", json!(name))
+                .with_attr("user_name", json!(user_name))
+                .with_attr("active_time", json!(active_time)),
             );
         }
     }
@@ -51,8 +63,8 @@ pub fn parse_local_state(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::ArtifactKind;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn parse_local_state_extracts_profiles() {

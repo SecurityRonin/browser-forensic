@@ -50,22 +50,38 @@ fn triage_chromium_profile_with_history_and_cookies() {
 
     // History events should be present
     assert!(!report.events.is_empty(), "should have parsed events");
-    assert!(report.events.iter().any(|e|
-        e.attrs.get("url").and_then(|v| v.as_str()) == Some("https://evidence.example.com")
-    ), "should contain the evidence URL");
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|e| e.attrs.get("url").and_then(|v| v.as_str())
+                == Some("https://evidence.example.com")),
+        "should contain the evidence URL"
+    );
 
     // Cookie events should also be present
-    assert!(report.events.iter().any(|e|
-        e.artifact == browser_core::ArtifactKind::Cookies
-    ), "should have cookie events from Cookies database");
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|e| e.artifact == browser_core::ArtifactKind::Cookies),
+        "should have cookie events from Cookies database"
+    );
 
     // Integrity: visit ID gap should be detected (visits 1 -> 10)
-    assert!(report.integrity.iter().any(|i|
-        matches!(i, browser_integrity::IntegrityIndicator::VisitIdGap { .. })
-    ), "should detect visit ID gap (1 -> 10)");
+    assert!(
+        report
+            .integrity
+            .iter()
+            .any(|i| matches!(i, browser_integrity::IntegrityIndicator::VisitIdGap { .. })),
+        "should detect visit ID gap (1 -> 10)"
+    );
 
     // Report should have a valid timestamp
-    assert!(report.generated_at_ns > 0, "report should have generation timestamp");
+    assert!(
+        report.generated_at_ns > 0,
+        "report should have generation timestamp"
+    );
 }
 
 #[test]
@@ -83,7 +99,10 @@ fn triage_firefox_profile_with_places() {
     }
 
     let report = triage_profile(dir.path(), BrowserFamily::Firefox).expect("triage");
-    assert!(!report.events.is_empty(), "should have Firefox history events");
+    assert!(
+        !report.events.is_empty(),
+        "should have Firefox history events"
+    );
 }
 
 #[test]

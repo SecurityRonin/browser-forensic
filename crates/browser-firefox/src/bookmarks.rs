@@ -6,8 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_micros_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -37,9 +37,15 @@ pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
         .map(|(title, url, date_added_us)| {
             let ts_ns = unix_micros_to_nanos(date_added_us);
             let title_str = title.clone().unwrap_or_default();
-            BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Bookmarks, &source, title_str.clone())
-                .with_attr("url", json!(url))
-                .with_attr("title", json!(title_str))
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Firefox,
+                ArtifactKind::Bookmarks,
+                &source,
+                title_str.clone(),
+            )
+            .with_attr("url", json!(url))
+            .with_attr("title", json!(title_str))
         })
         .collect();
     Ok(events)
@@ -48,8 +54,8 @@ pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -68,7 +74,11 @@ mod tests {
     fn insert_bookmark(db: &TestDb, title: &str, url: &str, date_added: i64, bm_type: i32) {
         let conn = Connection::open(db.path()).unwrap();
         let place_id = if bm_type == 1 {
-            conn.execute("INSERT INTO moz_places (url) VALUES (?1)", rusqlite::params![url]).unwrap();
+            conn.execute(
+                "INSERT INTO moz_places (url) VALUES (?1)",
+                rusqlite::params![url],
+            )
+            .unwrap();
             Some(conn.last_insert_rowid())
         } else {
             None
@@ -76,7 +86,8 @@ mod tests {
         conn.execute(
             "INSERT INTO moz_bookmarks (type, fk, title, dateAdded) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![bm_type, place_id, title, date_added],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]

@@ -15,8 +15,9 @@ fn carve_on_valid_db_succeeds() {
     let conn = Connection::open(f.path()).expect("open");
     conn.execute_batch(
         "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);
-         INSERT INTO urls VALUES (1, 'https://example.com');"
-    ).expect("setup");
+         INSERT INTO urls VALUES (1, 'https://example.com');",
+    )
+    .expect("setup");
     drop(conn);
 
     let mut cmd = Command::cargo_bin("bw").expect("bw binary");
@@ -28,7 +29,8 @@ fn carve_on_valid_db_succeeds() {
 fn carve_jsonl_output_is_valid_json() {
     let f = NamedTempFile::new().expect("tempfile");
     let conn = Connection::open(f.path()).expect("open");
-    conn.execute_batch("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);").expect("setup");
+    conn.execute_batch("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);")
+        .expect("setup");
     drop(conn);
 
     let mut cmd = Command::cargo_bin("bw").expect("bw binary");

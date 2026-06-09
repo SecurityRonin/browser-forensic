@@ -48,14 +48,9 @@ pub enum IntegrityIndicator {
         last_access_ns: i64,
     },
     /// WAL file exists alongside database — uncommitted changes or crash recovery needed.
-    WalPresent {
-        path: PathBuf,
-    },
+    WalPresent { path: PathBuf },
     /// SQLite PRAGMA integrity_check reported a problem.
-    SqliteIntegrityFailure {
-        path: PathBuf,
-        message: String,
-    },
+    SqliteIntegrityFailure { path: PathBuf, message: String },
     /// Safari history_tombstones table contains deleted URL records.
     HistoryTombstoneFound {
         path: PathBuf,
@@ -63,10 +58,7 @@ pub enum IntegrityIndicator {
         deleted_at_ns: i64,
     },
     /// Download record references a file that no longer exists on disk.
-    DownloadFileMissing {
-        path: PathBuf,
-        target_path: String,
-    },
+    DownloadFileMissing { path: PathBuf, target_path: String },
     /// Auto-increment counter much higher than max rowid (indicates mass deletion).
     AutoIncrementGap {
         path: PathBuf,
@@ -183,16 +175,14 @@ mod tests {
 
     #[test]
     fn crate_root_reexports_check_functions() {
-        use std::path::Path;
         use browser_core::BrowserFamily;
+        use std::path::Path;
         // Verify functions are accessible at crate root (not just in submodules)
-        let _: fn(&Path, BrowserFamily) -> anyhow::Result<Vec<IntegrityIndicator>>
-            = check_history_integrity;
-        let _: fn(&Path, BrowserFamily) -> anyhow::Result<Vec<IntegrityIndicator>>
-            = check_cookie_integrity;
-        let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>>
-            = check_database_integrity;
-        let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>>
-            = check_wal_state;
+        let _: fn(&Path, BrowserFamily) -> anyhow::Result<Vec<IntegrityIndicator>> =
+            check_history_integrity;
+        let _: fn(&Path, BrowserFamily) -> anyhow::Result<Vec<IntegrityIndicator>> =
+            check_cookie_integrity;
+        let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>> = check_database_integrity;
+        let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>> = check_wal_state;
     }
 }

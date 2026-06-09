@@ -8,8 +8,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_millis_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use serde_json::json;
 
 /// Parse a Firefox `logins.json` file.
@@ -32,16 +32,37 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
     let mut events = Vec::new();
 
     for login in logins {
-        let hostname = login.get("hostname").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let form_submit_url = login.get("formSubmitURL").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let username_field = login.get("usernameField").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let time_created_ms = login.get("timeCreated").and_then(|v| v.as_i64()).unwrap_or(0);
+        let hostname = login
+            .get("hostname")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let form_submit_url = login
+            .get("formSubmitURL")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let username_field = login
+            .get("usernameField")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let time_created_ms = login
+            .get("timeCreated")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
         let ts_ns = unix_millis_to_nanos(time_created_ms);
-        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::LoginData, &source, hostname.clone())
-            .with_attr("hostname", json!(hostname))
-            .with_attr("form_submit_url", json!(form_submit_url))
-            .with_attr("username_field", json!(username_field))
-            .with_attr("password", json!("ENCRYPTED"));
+        let ev = BrowserEvent::new(
+            ts_ns,
+            BrowserFamily::Firefox,
+            ArtifactKind::LoginData,
+            &source,
+            hostname.clone(),
+        )
+        .with_attr("hostname", json!(hostname))
+        .with_attr("form_submit_url", json!(form_submit_url))
+        .with_attr("username_field", json!(username_field))
+        .with_attr("password", json!("ENCRYPTED"));
         events.push(ev);
     }
 

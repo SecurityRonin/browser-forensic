@@ -30,13 +30,21 @@ pub fn recover_from_wal(db_path: &Path) -> Result<CarveResult> {
         return Ok(CarveResult {
             records: Vec::new(),
             integrity: Vec::new(),
-            stats: CarveStats { bytes_scanned: wal_data.len() as u64, ..Default::default() },
+            stats: CarveStats {
+                bytes_scanned: wal_data.len() as u64,
+                ..Default::default()
+            },
         });
     }
 
     let page_size = {
-        let raw = u32::from_be_bytes([wal_data[8], wal_data[9], wal_data[10], wal_data[11]]) as usize;
-        if raw == 0 { 4096 } else { raw }
+        let raw =
+            u32::from_be_bytes([wal_data[8], wal_data[9], wal_data[10], wal_data[11]]) as usize;
+        if raw == 0 {
+            4096
+        } else {
+            raw
+        }
     };
 
     let mut stats = CarveStats {
@@ -48,7 +56,8 @@ pub fn recover_from_wal(db_path: &Path) -> Result<CarveResult> {
     let mut offset = SQLITE_WAL_HEADER_SIZE;
     while offset + SQLITE_WAL_FRAME_HEADER_SIZE + page_size <= wal_data.len() {
         stats.pages_scanned += 1;
-        let page_data = &wal_data[offset + SQLITE_WAL_FRAME_HEADER_SIZE..offset + SQLITE_WAL_FRAME_HEADER_SIZE + page_size];
+        let page_data = &wal_data[offset + SQLITE_WAL_FRAME_HEADER_SIZE
+            ..offset + SQLITE_WAL_FRAME_HEADER_SIZE + page_size];
 
         let recovered = scan_wal_page_for_urls(page_data, offset as u64);
         stats.records_recovered += recovered.len();
@@ -57,7 +66,11 @@ pub fn recover_from_wal(db_path: &Path) -> Result<CarveResult> {
         offset += SQLITE_WAL_FRAME_HEADER_SIZE + page_size;
     }
 
-    Ok(CarveResult { records, integrity: Vec::new(), stats })
+    Ok(CarveResult {
+        records,
+        integrity: Vec::new(),
+        stats,
+    })
 }
 
 fn scan_wal_page_for_urls(page_data: &[u8], frame_offset: u64) -> Vec<CarvedRecord> {
@@ -99,8 +112,8 @@ fn scan_wal_page_for_urls(page_data: &[u8], frame_offset: u64) -> Vec<CarvedReco
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use rusqlite::Connection;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn recover_from_wal_no_wal_returns_empty() {
@@ -109,8 +122,9 @@ mod tests {
             let conn = Connection::open(f.path()).expect("open");
             conn.execute_batch(
                 "PRAGMA journal_mode = DELETE;
-                 CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);"
-            ).expect("create");
+                 CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);",
+            )
+            .expect("create");
         }
         let result = recover_from_wal(f.path()).expect("recover");
         assert!(result.records.is_empty());
@@ -131,8 +145,9 @@ mod tests {
             conn.execute_batch(
                 "PRAGMA journal_mode = WAL;
                  CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);
-                 INSERT INTO urls VALUES (1, 'https://wal-test.example.com');"
-            ).expect("setup");
+                 INSERT INTO urls VALUES (1, 'https://wal-test.example.com');",
+            )
+            .expect("setup");
         }
         let result = recover_from_wal(f.path()).expect("recover");
         assert!(result.stats.bytes_scanned >= 0);

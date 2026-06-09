@@ -42,12 +42,18 @@ mod tests {
     #[test]
     fn core_data_epoch_at_unix_offset_returns_negative_secs() {
         // 0.0 in Core Data = 2001-01-01 = 978307200 seconds after Unix epoch
-        assert_eq!(core_data_secs_to_unix_nanos(0.0), CORE_DATA_EPOCH_OFFSET_SECS * 1_000_000_000);
+        assert_eq!(
+            core_data_secs_to_unix_nanos(0.0),
+            CORE_DATA_EPOCH_OFFSET_SECS * 1_000_000_000
+        );
     }
 
     #[test]
     fn core_data_one_second_later() {
-        assert_eq!(core_data_secs_to_unix_nanos(1.0), (CORE_DATA_EPOCH_OFFSET_SECS + 1) * 1_000_000_000);
+        assert_eq!(
+            core_data_secs_to_unix_nanos(1.0),
+            (CORE_DATA_EPOCH_OFFSET_SECS + 1) * 1_000_000_000
+        );
     }
 
     #[test]

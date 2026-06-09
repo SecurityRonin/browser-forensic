@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_micros_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 

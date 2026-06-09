@@ -1,8 +1,8 @@
 //! Core types for browser forensic analysis.
 
 pub mod analyze;
-pub mod timestamp;
 pub mod test_utils;
+pub mod timestamp;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -23,8 +23,8 @@ impl std::fmt::Display for BrowserFamily {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Chromium => write!(f, "Chromium"),
-            Self::Firefox  => write!(f, "Firefox"),
-            Self::Safari   => write!(f, "Safari"),
+            Self::Firefox => write!(f, "Firefox"),
+            Self::Safari => write!(f, "Safari"),
         }
     }
 }
@@ -49,18 +49,18 @@ pub enum ArtifactKind {
 impl std::fmt::Display for ArtifactKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::History    => write!(f, "History"),
-            Self::Cookies    => write!(f, "Cookies"),
-            Self::Downloads  => write!(f, "Downloads"),
+            Self::History => write!(f, "History"),
+            Self::Cookies => write!(f, "Cookies"),
+            Self::Downloads => write!(f, "Downloads"),
             Self::Extensions => write!(f, "Extensions"),
-            Self::LoginData  => write!(f, "LoginData"),
-            Self::Cache      => write!(f, "Cache"),
-            Self::Bookmarks  => write!(f, "Bookmarks"),
-            Self::Autofill   => write!(f, "Autofill"),
-            Self::Session    => write!(f, "Session"),
-            Self::Integrity  => write!(f, "Integrity"),
-            Self::Carved     => write!(f, "Carved"),
-            Self::Memory     => write!(f, "Memory"),
+            Self::LoginData => write!(f, "LoginData"),
+            Self::Cache => write!(f, "Cache"),
+            Self::Bookmarks => write!(f, "Bookmarks"),
+            Self::Autofill => write!(f, "Autofill"),
+            Self::Session => write!(f, "Session"),
+            Self::Integrity => write!(f, "Integrity"),
+            Self::Carved => write!(f, "Carved"),
+            Self::Memory => write!(f, "Memory"),
         }
     }
 }
@@ -116,12 +116,16 @@ impl ForensicMeta {
     /// Returns `None` if the artifact is not in forensicnomicon's catalog.
     #[must_use]
     pub fn lookup(artifact_id: &str) -> Option<Self> {
-        let profile = forensicnomicon::profile::profile_for(artifact_id)?;
+        let desc = forensicnomicon::evidence::evidence_for(artifact_id)?;
         Some(Self {
             artifact_id: artifact_id.to_string(),
-            evidence_strength: Some(format!("{:?}", profile.evidence_strength)),
-            volatility: Some(format!("{:?}", profile.volatility)),
-            caveats: profile.evidence_caveats.iter().map(|c| c.to_string()).collect(),
+            evidence_strength: desc.evidence_strength.map(|s| format!("{s:?}")),
+            volatility: desc.volatility.map(|v| format!("{v:?}")),
+            caveats: desc
+                .evidence_caveats
+                .iter()
+                .map(|c| c.to_string())
+                .collect(),
         })
     }
 }
@@ -131,21 +135,28 @@ impl ForensicMeta {
 /// Returns `None` if the path does not match a known browser artifact.
 #[must_use]
 pub fn detect_browser(path: &Path) -> Option<BrowserFamily> {
-    let name     = path.file_name()?.to_string_lossy().to_lowercase();
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
     let path_str = path.to_string_lossy().to_lowercase();
 
     // Safari
     if path_str.contains("safari") {
-        let safari_files = ["history.db", "cookies.db", "downloads.plist", "bookmarks.plist"];
+        let safari_files = [
+            "history.db",
+            "cookies.db",
+            "downloads.plist",
+            "bookmarks.plist",
+        ];
         if safari_files.contains(&name.as_str()) {
             return Some(BrowserFamily::Safari);
         }
     }
 
     // Chromium family
-    let chromium_vendors = ["chrome", "chromium", "edge", "brave", "opera", "vivaldi", "arc"];
+    let chromium_vendors = [
+        "chrome", "chromium", "edge", "brave", "opera", "vivaldi", "arc",
+    ];
     let is_chromium_path = chromium_vendors.iter().any(|b| path_str.contains(b));
-    let chromium_files   = ["history", "cookies", "login data", "web data", "bookmarks"];
+    let chromium_files = ["history", "cookies", "login data", "web data", "bookmarks"];
     if chromium_files.contains(&name.as_str()) && is_chromium_path {
         return Some(BrowserFamily::Chromium);
     }
@@ -154,7 +165,12 @@ pub fn detect_browser(path: &Path) -> Option<BrowserFamily> {
     if name == "places.sqlite" || name == "formhistory.sqlite" {
         return Some(BrowserFamily::Firefox);
     }
-    let firefox_files = ["cookies.sqlite", "logins.json", "extensions.json", "sessionstore.jsonlz4"];
+    let firefox_files = [
+        "cookies.sqlite",
+        "logins.json",
+        "extensions.json",
+        "sessionstore.jsonlz4",
+    ];
     if firefox_files.contains(&name.as_str())
         && (path_str.contains("firefox") || path_str.contains("mozilla"))
     {
@@ -314,16 +330,28 @@ mod tests {
 
         for id in &artifact_ids {
             let meta = ForensicMeta::lookup(id);
-            assert!(meta.is_some(), "ForensicMeta::lookup({id}) should return Some");
+            assert!(
+                meta.is_some(),
+                "ForensicMeta::lookup({id}) should return Some"
+            );
         }
     }
 
     #[test]
     fn forensic_meta_evidence_strength_is_populated() {
         let meta = ForensicMeta::lookup("browser_chrome_downloads").expect("should exist");
-        assert!(meta.evidence_strength.is_some(), "evidence_strength should be Some");
+        assert!(
+            meta.evidence_strength.is_some(),
+            "evidence_strength should be Some"
+        );
         // Downloads are Strong evidence
-        let strength = meta.evidence_strength.as_deref().expect("should have value");
-        assert!(strength.contains("Strong"), "Downloads should be Strong evidence, got: {strength}");
+        let strength = meta
+            .evidence_strength
+            .as_deref()
+            .expect("should have value");
+        assert!(
+            strength.contains("Strong"),
+            "Downloads should be Strong evidence, got: {strength}"
+        );
     }
 }

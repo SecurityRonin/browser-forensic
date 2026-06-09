@@ -79,13 +79,28 @@ pub fn triage(home_dir: &Path) -> Result<TriageReport> {
 
         match profile.browser {
             BrowserFamily::Chromium => {
-                triage_chromium_profile(&profile.path, &mut events, &mut integrity_vec, &mut carved_vec);
+                triage_chromium_profile(
+                    &profile.path,
+                    &mut events,
+                    &mut integrity_vec,
+                    &mut carved_vec,
+                );
             }
             BrowserFamily::Firefox => {
-                triage_firefox_profile(&profile.path, &mut events, &mut integrity_vec, &mut carved_vec);
+                triage_firefox_profile(
+                    &profile.path,
+                    &mut events,
+                    &mut integrity_vec,
+                    &mut carved_vec,
+                );
             }
             BrowserFamily::Safari => {
-                triage_safari_profile(&profile.path, &mut events, &mut integrity_vec, &mut carved_vec);
+                triage_safari_profile(
+                    &profile.path,
+                    &mut events,
+                    &mut integrity_vec,
+                    &mut carved_vec,
+                );
             }
         }
 
@@ -116,7 +131,9 @@ fn triage_chromium_profile(
         if let Ok(mut evts) = browser_chrome::parse_history(&history_path) {
             events.append(&mut evts);
         }
-        if let Ok(mut ind) = browser_integrity::check_history_integrity(&history_path, BrowserFamily::Chromium) {
+        if let Ok(mut ind) =
+            browser_integrity::check_history_integrity(&history_path, BrowserFamily::Chromium)
+        {
             integrity.append(&mut ind);
         }
         if let Ok(mut ind) = browser_integrity::check_database_integrity(&history_path) {
@@ -132,7 +149,9 @@ fn triage_chromium_profile(
         if let Ok(mut evts) = browser_chrome::parse_cookies(&cookies_path) {
             events.append(&mut evts);
         }
-        if let Ok(mut ind) = browser_integrity::check_cookie_integrity(&cookies_path, BrowserFamily::Chromium) {
+        if let Ok(mut ind) =
+            browser_integrity::check_cookie_integrity(&cookies_path, BrowserFamily::Chromium)
+        {
             integrity.append(&mut ind);
         }
     }
@@ -156,7 +175,9 @@ fn triage_firefox_profile(
         if let Ok(mut evts) = browser_firefox::parse_history(&places_path) {
             events.append(&mut evts);
         }
-        if let Ok(mut ind) = browser_integrity::check_history_integrity(&places_path, BrowserFamily::Firefox) {
+        if let Ok(mut ind) =
+            browser_integrity::check_history_integrity(&places_path, BrowserFamily::Firefox)
+        {
             integrity.append(&mut ind);
         }
         if let Ok(mut ind) = browser_integrity::check_database_integrity(&places_path) {
@@ -172,7 +193,9 @@ fn triage_firefox_profile(
         if let Ok(mut evts) = browser_firefox::parse_cookies(&cookies_path) {
             events.append(&mut evts);
         }
-        if let Ok(mut ind) = browser_integrity::check_cookie_integrity(&cookies_path, BrowserFamily::Firefox) {
+        if let Ok(mut ind) =
+            browser_integrity::check_cookie_integrity(&cookies_path, BrowserFamily::Firefox)
+        {
             integrity.append(&mut ind);
         }
     }
@@ -189,7 +212,9 @@ fn triage_safari_profile(
         if let Ok(mut evts) = browser_safari::parse_history(&history_path) {
             events.append(&mut evts);
         }
-        if let Ok(mut ind) = browser_integrity::check_history_integrity(&history_path, BrowserFamily::Safari) {
+        if let Ok(mut ind) =
+            browser_integrity::check_history_integrity(&history_path, BrowserFamily::Safari)
+        {
             integrity.append(&mut ind);
         }
         if let Ok(mut ind) = browser_integrity::check_database_integrity(&history_path) {
@@ -236,7 +261,10 @@ mod tests {
         drop(conn);
 
         let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
-        assert!(!report.events.is_empty(), "should have parsed history events");
+        assert!(
+            !report.events.is_empty(),
+            "should have parsed history events"
+        );
         assert!(report.generated_at_ns > 0);
     }
 

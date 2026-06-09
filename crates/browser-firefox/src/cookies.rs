@@ -6,8 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_micros_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -38,13 +38,29 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
             let is_secure: bool = row.get::<_, i64>(5)? != 0;
             let is_httponly: bool = row.get::<_, i64>(6)? != 0;
             let samesite: i32 = row.get(7)?;
-            Ok((host, name, cookie_path, creation_us, expiry, is_secure, is_httponly, samesite))
+            Ok((
+                host,
+                name,
+                cookie_path,
+                creation_us,
+                expiry,
+                is_secure,
+                is_httponly,
+                samesite,
+            ))
         })?
         .filter_map(|r| r.ok())
-        .map(|(host, name, cookie_path, creation_us, expiry, is_secure, is_httponly, samesite)| {
-            let ts_ns = unix_micros_to_nanos(creation_us);
-            let desc = format!("{host} \u{2014} {name} (path={cookie_path})");
-            BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Cookies, &source, desc)
+        .map(
+            |(host, name, cookie_path, creation_us, expiry, is_secure, is_httponly, samesite)| {
+                let ts_ns = unix_micros_to_nanos(creation_us);
+                let desc = format!("{host} \u{2014} {name} (path={cookie_path})");
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Firefox,
+                    ArtifactKind::Cookies,
+                    &source,
+                    desc,
+                )
                 .with_attr("host", json!(host))
                 .with_attr("name", json!(name))
                 .with_attr("path", json!(cookie_path))
@@ -52,7 +68,8 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
                 .with_attr("is_secure", json!(is_secure))
                 .with_attr("is_httponly", json!(is_httponly))
                 .with_attr("samesite", json!(samesite))
-        })
+            },
+        )
         .collect();
     Ok(events)
 }
@@ -60,8 +77,8 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::params;
     use serde_json::json;
 

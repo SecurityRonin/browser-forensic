@@ -51,10 +51,16 @@ pub fn parse_topsites(path: &Path) -> Result<Vec<BrowserEvent>> {
         };
 
         events.push(
-            BrowserEvent::new(0, BrowserFamily::Safari, ArtifactKind::History, &source, desc)
-                .with_attr("url", json!(url))
-                .with_attr("title", json!(title))
-                .with_attr("source_type", json!("topsites")),
+            BrowserEvent::new(
+                0,
+                BrowserFamily::Safari,
+                ArtifactKind::History,
+                &source,
+                desc,
+            )
+            .with_attr("url", json!(url))
+            .with_attr("title", json!(title))
+            .with_attr("source_type", json!("topsites")),
         );
     }
 
@@ -65,8 +71,8 @@ pub fn parse_topsites(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_core::ArtifactKind;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn parse_topsites_from_xml_plist() {

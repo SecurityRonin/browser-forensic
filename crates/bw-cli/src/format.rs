@@ -31,10 +31,12 @@ pub fn format_timestamp_ns(ns: i64) -> String {
 /// Format a [`BrowserEvent`] as a human-readable text line.
 pub fn event_to_text(ev: &BrowserEvent) -> String {
     let ts = format_timestamp_ns(ev.timestamp_ns);
-    format!("[{ts}] {browser}/{artifact}: {desc}",
+    format!(
+        "[{ts}] {browser}/{artifact}: {desc}",
         browser = ev.browser,
         artifact = ev.artifact,
-        desc = ev.description)
+        desc = ev.description
+    )
 }
 
 /// Format a [`BrowserEvent`] as a JSONL (newline-delimited JSON) string.
@@ -47,12 +49,14 @@ pub fn event_to_csv_row(ev: &BrowserEvent) -> String {
     let ts = format_timestamp_ns(ev.timestamp_ns);
     let browser = ev.browser.to_string();
     let artifact = ev.artifact.to_string();
-    format!("{},{},{},{},{}",
+    format!(
+        "{},{},{},{},{}",
         csv_escape(&ts),
         csv_escape(&browser),
         csv_escape(&artifact),
         csv_escape(&ev.source),
-        csv_escape(&ev.description))
+        csv_escape(&ev.description)
+    )
 }
 
 #[cfg(test)]

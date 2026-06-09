@@ -16,7 +16,9 @@ use serde_json::json;
 /// Returns an error if the plist file cannot be opened or parsed.
 pub fn parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>> {
     let value = plist::Value::from_file(path)?;
-    let root = value.as_dictionary().ok_or_else(|| anyhow!("plist root is not a dictionary"))?;
+    let root = value
+        .as_dictionary()
+        .ok_or_else(|| anyhow!("plist root is not a dictionary"))?;
     let installed = root
         .get("Installed Extensions")
         .and_then(|v| v.as_array())
@@ -30,17 +32,25 @@ pub fn parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>> {
             Some(d) => d,
             None => continue,
         };
-        let bundle_name = dict.get("Bundle Directory Name")
+        let bundle_name = dict
+            .get("Bundle Directory Name")
             .and_then(|v| v.as_string())
             .unwrap_or("")
             .to_string();
-        let enabled = dict.get("Enabled")
+        let enabled = dict
+            .get("Enabled")
             .and_then(|v| v.as_boolean())
             .unwrap_or(false);
 
-        let ev = BrowserEvent::new(0, BrowserFamily::Safari, ArtifactKind::Extensions, &source, bundle_name.clone())
-            .with_attr("bundle_name", json!(bundle_name))
-            .with_attr("enabled", json!(enabled));
+        let ev = BrowserEvent::new(
+            0,
+            BrowserFamily::Safari,
+            ArtifactKind::Extensions,
+            &source,
+            bundle_name.clone(),
+        )
+        .with_attr("bundle_name", json!(bundle_name))
+        .with_attr("enabled", json!(enabled));
         events.push(ev);
     }
 
@@ -58,13 +68,22 @@ mod tests {
 
     fn create_extensions_plist(entries: &[(&str, bool)]) -> NamedTempFile {
         // entries: (bundle_dir_name, enabled)
-        let ext_array: Vec<Value> = entries.iter().map(|(bundle, enabled)| {
-            let mut d: BTreeMap<String, Value> = BTreeMap::new();
-            d.insert("Bundle Directory Name".to_string(), Value::String(bundle.to_string()));
-            d.insert("Enabled".to_string(), Value::Boolean(*enabled));
-            d.insert("Archive File Name".to_string(), Value::String(format!("{bundle}.safariextz")));
-            Value::Dictionary(d.into_iter().collect())
-        }).collect();
+        let ext_array: Vec<Value> = entries
+            .iter()
+            .map(|(bundle, enabled)| {
+                let mut d: BTreeMap<String, Value> = BTreeMap::new();
+                d.insert(
+                    "Bundle Directory Name".to_string(),
+                    Value::String(bundle.to_string()),
+                );
+                d.insert("Enabled".to_string(), Value::Boolean(*enabled));
+                d.insert(
+                    "Archive File Name".to_string(),
+                    Value::String(format!("{bundle}.safariextz")),
+                );
+                Value::Dictionary(d.into_iter().collect())
+            })
+            .collect();
 
         let mut root: BTreeMap<String, Value> = BTreeMap::new();
         root.insert("Installed Extensions".to_string(), Value::Array(ext_array));

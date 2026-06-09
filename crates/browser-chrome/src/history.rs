@@ -6,8 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::webkit_micros_to_unix_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -44,10 +44,16 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
             } else {
                 format!("[{visit_count} visits] {title} \u{2014} {url}")
             };
-            BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::History, &source, desc)
-                .with_attr("url", json!(url))
-                .with_attr("title", json!(title))
-                .with_attr("visit_count", json!(visit_count))
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::History,
+                &source,
+                desc,
+            )
+            .with_attr("url", json!(url))
+            .with_attr("title", json!(title))
+            .with_attr("visit_count", json!(visit_count))
         })
         .collect();
     Ok(events)
@@ -80,7 +86,12 @@ mod tests {
         let db = TestDb::new(SCHEMA);
         db.insert(
             "INSERT INTO urls (url, title, visit_count, last_visit_time) VALUES (?1, ?2, ?3, ?4)",
-            params!["https://example.com", "Example", 3_i64, 13_327_626_000_000_000_i64],
+            params![
+                "https://example.com",
+                "Example",
+                3_i64,
+                13_327_626_000_000_000_i64
+            ],
         );
         let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 1);
@@ -94,7 +105,10 @@ mod tests {
     fn webkit_epoch_conversion() {
         // (13_327_626_000_000_000 - 11_644_473_600_000_000) * 1000
         // = 1_683_152_400_000_000_000
-        assert_eq!(webkit_micros_to_unix_nanos(13_327_626_000_000_000), 1_683_152_400_000_000_000);
+        assert_eq!(
+            webkit_micros_to_unix_nanos(13_327_626_000_000_000),
+            1_683_152_400_000_000_000
+        );
     }
 
     #[test]
@@ -106,7 +120,12 @@ mod tests {
         );
         db.insert(
             "INSERT INTO urls (url, title, visit_count, last_visit_time) VALUES (?1, ?2, ?3, ?4)",
-            params!["https://real.example", "Real", 2_i64, 13_327_626_000_000_000_i64],
+            params![
+                "https://real.example",
+                "Real",
+                2_i64,
+                13_327_626_000_000_000_i64
+            ],
         );
         let events = parse_history(db.path()).unwrap();
         assert_eq!(events.len(), 1);

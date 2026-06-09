@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::core_data_secs_to_unix_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use rusqlite::Connection;
 use serde_json::json;
 
@@ -38,9 +38,15 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
         .map(|(url, visit_count, visit_time)| {
             let ts_ns = core_data_secs_to_unix_nanos(visit_time);
             let desc = format!("[{visit_count} visits] {url}");
-            BrowserEvent::new(ts_ns, BrowserFamily::Safari, ArtifactKind::History, &source, desc)
-                .with_attr("url", json!(url))
-                .with_attr("visit_count", json!(visit_count))
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Safari,
+                ArtifactKind::History,
+                &source,
+                desc,
+            )
+            .with_attr("url", json!(url))
+            .with_attr("visit_count", json!(visit_count))
         })
         .collect();
     Ok(events)
@@ -49,9 +55,9 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use browser_core::{ArtifactKind, BrowserFamily};
     use browser_core::test_utils::sqlite::TestDb;
     use browser_core::timestamp::core_data_secs_to_unix_nanos;
+    use browser_core::{ArtifactKind, BrowserFamily};
     use rusqlite::Connection;
 
     const SCHEMA: &str = "CREATE TABLE history_items (
@@ -70,12 +76,14 @@ mod tests {
         conn.execute(
             "INSERT INTO history_items (url, visit_count) VALUES (?1, ?2)",
             rusqlite::params![url, visit_count],
-        ).unwrap();
+        )
+        .unwrap();
         let item_id = conn.last_insert_rowid();
         conn.execute(
             "INSERT INTO history_visits (history_item, visit_time) VALUES (?1, ?2)",
             rusqlite::params![item_id, visit_time],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]
@@ -87,7 +95,10 @@ mod tests {
     #[test]
     fn safari_epoch_known_value() {
         // 700_000_000 + 978_307_200 = 1_678_307_200 seconds
-        assert_eq!(core_data_secs_to_unix_nanos(700_000_000.0), 1_678_307_200_000_000_000);
+        assert_eq!(
+            core_data_secs_to_unix_nanos(700_000_000.0),
+            1_678_307_200_000_000_000
+        );
     }
 
     #[test]

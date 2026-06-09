@@ -28,24 +28,33 @@ fn walk_safari_bookmarks(node: &Value, source: &str, events: &mut Vec<BrowserEve
         Some(d) => d,
         None => return,
     };
-    let bm_type = dict.get("WebBookmarkType")
+    let bm_type = dict
+        .get("WebBookmarkType")
         .and_then(|v| v.as_string())
         .unwrap_or("");
 
     if bm_type == "WebBookmarkTypeLeaf" {
-        let url = dict.get("URLString")
+        let url = dict
+            .get("URLString")
             .and_then(|v| v.as_string())
             .unwrap_or("")
             .to_string();
-        let title = dict.get("URIDictionary")
+        let title = dict
+            .get("URIDictionary")
             .and_then(|v| v.as_dictionary())
             .and_then(|d| d.get("title"))
             .and_then(|v| v.as_string())
             .unwrap_or("")
             .to_string();
-        let ev = BrowserEvent::new(0, BrowserFamily::Safari, ArtifactKind::Bookmarks, source, title.clone())
-            .with_attr("url", json!(url))
-            .with_attr("title", json!(title));
+        let ev = BrowserEvent::new(
+            0,
+            BrowserFamily::Safari,
+            ArtifactKind::Bookmarks,
+            source,
+            title.clone(),
+        )
+        .with_attr("url", json!(url))
+        .with_attr("title", json!(title));
         events.push(ev);
     } else if bm_type == "WebBookmarkTypeList" {
         if let Some(children) = dict.get("Children").and_then(|v| v.as_array()) {
@@ -66,17 +75,26 @@ mod tests {
 
     fn leaf(url: &str, title: &str) -> Value {
         let mut d: BTreeMap<String, Value> = BTreeMap::new();
-        d.insert("WebBookmarkType".to_string(), Value::String("WebBookmarkTypeLeaf".to_string()));
+        d.insert(
+            "WebBookmarkType".to_string(),
+            Value::String("WebBookmarkTypeLeaf".to_string()),
+        );
         d.insert("URLString".to_string(), Value::String(url.to_string()));
         let mut uri_dict: BTreeMap<String, Value> = BTreeMap::new();
         uri_dict.insert("title".to_string(), Value::String(title.to_string()));
-        d.insert("URIDictionary".to_string(), Value::Dictionary(uri_dict.into_iter().collect()));
+        d.insert(
+            "URIDictionary".to_string(),
+            Value::Dictionary(uri_dict.into_iter().collect()),
+        );
         Value::Dictionary(d.into_iter().collect())
     }
 
     fn folder(children: Vec<Value>) -> Value {
         let mut d: BTreeMap<String, Value> = BTreeMap::new();
-        d.insert("WebBookmarkType".to_string(), Value::String("WebBookmarkTypeList".to_string()));
+        d.insert(
+            "WebBookmarkType".to_string(),
+            Value::String("WebBookmarkTypeList".to_string()),
+        );
         d.insert("Children".to_string(), Value::Array(children));
         Value::Dictionary(d.into_iter().collect())
     }

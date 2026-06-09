@@ -20,7 +20,9 @@ pub fn scan_bytes_for_urls(data: &[u8]) -> Vec<BrowserEvent> {
             let candidate = &search[start..];
             // A URL ends at whitespace or common delimiters.
             let end = candidate
-                .find(|c: char| c.is_ascii_whitespace() || c == '"' || c == '\'' || c == '<' || c == '>')
+                .find(|c: char| {
+                    c.is_ascii_whitespace() || c == '"' || c == '\'' || c == '<' || c == '>'
+                })
                 .unwrap_or(candidate.len());
             let raw = &candidate[..end];
             if let Ok(parsed) = Url::parse(raw) {
@@ -55,9 +57,7 @@ pub fn scan_bytes_for_cookies(data: &[u8]) -> Vec<BrowserEvent> {
     while let Some(start) = search.find(MARKER) {
         let rest = &search[start + MARKER.len()..];
         // Cookie value ends at CRLF, LF, or end of string.
-        let end = rest
-            .find(['\r', '\n'])
-            .unwrap_or(rest.len());
+        let end = rest.find(['\r', '\n']).unwrap_or(rest.len());
         let cookie_value = rest[..end].trim().to_string();
         if !cookie_value.is_empty() {
             let ev = BrowserEvent::new(

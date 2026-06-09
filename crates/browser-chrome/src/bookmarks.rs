@@ -38,16 +38,31 @@ pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
 fn walk_bookmarks(node: &serde_json::Value, source: &str, events: &mut Vec<BrowserEvent>) {
     let node_type = node.get("type").and_then(|t| t.as_str()).unwrap_or("");
     if node_type == "url" {
-        let url = node.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
-        let name = node.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-        let date_added = node.get("date_added")
+        let url = node
+            .get("url")
+            .and_then(|u| u.as_str())
+            .unwrap_or("")
+            .to_string();
+        let name = node
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+        let date_added = node
+            .get("date_added")
             .and_then(|d| d.as_str())
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(0);
         let ts_ns = webkit_micros_to_unix_nanos(date_added);
-        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Bookmarks, source, name.clone())
-            .with_attr("url", json!(url))
-            .with_attr("name", json!(name));
+        let ev = BrowserEvent::new(
+            ts_ns,
+            BrowserFamily::Chromium,
+            ArtifactKind::Bookmarks,
+            source,
+            name.clone(),
+        )
+        .with_attr("url", json!(url))
+        .with_attr("name", json!(name));
         events.push(ev);
     } else if node_type == "folder" {
         if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
@@ -148,6 +163,9 @@ mod tests {
         let f = create_bookmarks_file(&content);
         let events = parse_bookmarks(f.path()).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].timestamp_ns, webkit_micros_to_unix_nanos(date_added));
+        assert_eq!(
+            events[0].timestamp_ns,
+            webkit_micros_to_unix_nanos(date_added)
+        );
     }
 }

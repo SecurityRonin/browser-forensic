@@ -20,7 +20,8 @@ fn triage_on_empty_home_succeeds() {
 #[test]
 fn triage_with_chrome_profile_finds_events() {
     let home = TempDir::new().expect("tempdir");
-    let chrome_default = home.path()
+    let chrome_default = home
+        .path()
         .join("Library/Application Support/Google/Chrome/Default");
     fs::create_dir_all(&chrome_default).expect("mkdir");
 
@@ -34,7 +35,11 @@ fn triage_with_chrome_profile_finds_events() {
     drop(conn);
 
     let mut cmd = Command::cargo_bin("bw").expect("bw binary");
-    cmd.arg("triage").arg("--home").arg(home.path()).arg("--format").arg("jsonl");
+    cmd.arg("triage")
+        .arg("--home")
+        .arg(home.path())
+        .arg("--format")
+        .arg("jsonl");
     let output = cmd.output().expect("run");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty(), "triage should produce output");

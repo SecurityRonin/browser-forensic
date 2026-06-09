@@ -6,8 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use browser_core::timestamp::unix_millis_to_nanos;
+use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use serde_json::json;
 
 /// Parse a Firefox `extensions.json` file.
@@ -28,22 +28,38 @@ pub fn parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>> {
     let mut events = Vec::new();
 
     for addon in addons {
-        let id = addon.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let version = addon.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let name = addon.get("defaultLocale")
+        let id = addon
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let version = addon
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let name = addon
+            .get("defaultLocale")
             .and_then(|dl| dl.get("name"))
             .and_then(|n| n.as_str())
             .unwrap_or("")
             .to_string();
-        let install_date_ms = addon.get("installDate")
+        let install_date_ms = addon
+            .get("installDate")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let ts_ns = unix_millis_to_nanos(install_date_ms);
         let desc = format!("{name} v{version}");
-        let ev = BrowserEvent::new(ts_ns, BrowserFamily::Firefox, ArtifactKind::Extensions, &source, desc)
-            .with_attr("id", json!(id))
-            .with_attr("name", json!(name))
-            .with_attr("version", json!(version));
+        let ev = BrowserEvent::new(
+            ts_ns,
+            BrowserFamily::Firefox,
+            ArtifactKind::Extensions,
+            &source,
+            desc,
+        )
+        .with_attr("id", json!(id))
+        .with_attr("name", json!(name))
+        .with_attr("version", json!(version));
         events.push(ev);
     }
 
