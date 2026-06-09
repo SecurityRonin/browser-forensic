@@ -38,7 +38,11 @@ fn gg_requires_two_keystrokes_and_cancels_on_other_key() {
     assert_eq!(km.handle(ch('g')), None);
     assert_eq!(km.handle(ch('j')), Some(Action::Down), "pending g cleared");
     assert_eq!(km.handle(ch('g')), None);
-    assert_eq!(km.handle(ch('g')), Some(Action::Top), "fresh gg works again");
+    assert_eq!(
+        km.handle(ch('g')),
+        Some(Action::Top),
+        "fresh gg works again"
+    );
 }
 
 #[test]

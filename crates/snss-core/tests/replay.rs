@@ -81,8 +81,10 @@ fn synthetic_current_defaults_to_last_entry_without_selected() {
 
 #[test]
 fn synthetic_last_active_decodes_to_a_sane_time() {
-    let bytes =
-        build::snss(&[(6, build::nav(1, 0, "https://t", "t")), (21, build::last_active(1, T_2026))]);
+    let bytes = build::snss(&[
+        (6, build::nav(1, 0, "https://t", "t")),
+        (21, build::last_active(1, T_2026)),
+    ]);
     let stream = read_records(&bytes[..]).unwrap();
     let r = replay(&stream, Dialect::Session);
     let secs = r.windows[0]
@@ -92,14 +94,23 @@ fn synthetic_last_active_decodes_to_a_sane_time() {
         .unwrap()
         .as_secs();
     // Windows-epoch -> Unix conversion must land in a plausible range (2024-2033).
-    assert!((1_700_000_000..2_000_000_000).contains(&secs), "got unix secs {secs}");
+    assert!(
+        (1_700_000_000..2_000_000_000).contains(&secs),
+        "got unix secs {secs}"
+    );
 }
 
 #[test]
 fn real_session_replay_matches_ground_truth() {
-    let Some(stream) = open_fixture_or_skip("Session_real") else { return };
+    let Some(stream) = open_fixture_or_skip("Session_real") else {
+        return;
+    };
     let r = replay(&stream, Dialect::Session);
-    assert!(r.warnings.is_empty(), "zero bad navigations: {:?}", r.warnings);
+    assert!(
+        r.warnings.is_empty(),
+        "zero bad navigations: {:?}",
+        r.warnings
+    );
     assert_eq!(r.windows.len(), 1, "one current window");
 
     let tabs: Vec<&Tab> = r.windows.iter().flat_map(|w| &w.tabs).collect();
@@ -121,7 +132,9 @@ fn real_session_replay_matches_ground_truth() {
 
 #[test]
 fn real_tabs_replay_lists_closed_tabs() {
-    let Some(stream) = open_fixture_or_skip("Tabs_real") else { return };
+    let Some(stream) = open_fixture_or_skip("Tabs_real") else {
+        return;
+    };
     let r = replay(&stream, Dialect::Tabs);
     let tabs: Vec<&Tab> = r.windows.iter().flat_map(|w| &w.tabs).collect();
     assert_eq!(tabs.len(), 35, "distinct closed tabs");

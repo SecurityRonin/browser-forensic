@@ -5,18 +5,28 @@ use ratatui::{backend::TestBackend, Terminal};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 
 fn nav(i: i32, url: &str) -> Nav {
-    Nav { index: i, url: url.to_string(), title: format!("title {i}") }
+    Nav {
+        index: i,
+        url: url.to_string(),
+        title: format!("title {i}"),
+    }
 }
 fn tab(id: i32, entries: usize) -> Tab {
     Tab {
         id,
         pinned: false,
         current: 0,
-        history: (0..entries as i32).map(|i| nav(i, &format!("https://{id}/{i}"))).collect(),
+        history: (0..entries as i32)
+            .map(|i| nav(i, &format!("https://{id}/{i}")))
+            .collect(),
     }
 }
 fn window(id: i32, tabs: Vec<Tab>) -> Window {
-    Window { id, tabs, last_active: None }
+    Window {
+        id,
+        tabs,
+        last_active: None,
+    }
 }
 
 fn sample() -> Vec<Source> {
@@ -24,7 +34,10 @@ fn sample() -> Vec<Source> {
         Source {
             kind: SourceKind::Current,
             path: "Session_1".into(),
-            windows: vec![window(10, vec![tab(100, 3), tab(101, 1)]), window(11, vec![tab(102, 2)])],
+            windows: vec![
+                window(10, vec![tab(100, 3), tab(101, 1)]),
+                window(11, vec![tab(102, 2)]),
+            ],
         },
         Source {
             kind: SourceKind::RecentlyClosed,
@@ -161,7 +174,11 @@ fn next_and_prev_window_jump_and_rescope() {
     app.update(Action::Down); // select second tab of window 10
     app.update(Action::NextWindow);
     assert_eq!(app.current_window().unwrap().id, 11);
-    assert_eq!(app.selected_index(), 0, "tab selection resets for the new window");
+    assert_eq!(
+        app.selected_index(),
+        0,
+        "tab selection resets for the new window"
+    );
     app.update(Action::PrevWindow);
     assert_eq!(app.current_window().unwrap().id, 10);
 }
@@ -177,7 +194,10 @@ fn buffer_text(app: &App) -> String {
 fn render_shows_source_label_and_a_url() {
     let app = App::new(sample());
     let text = buffer_text(&app);
-    assert!(text.contains("Current Session"), "left pane shows the source label");
+    assert!(
+        text.contains("Current Session"),
+        "left pane shows the source label"
+    );
 }
 
 #[test]
@@ -186,7 +206,10 @@ fn render_after_descending_shows_tab_url() {
     app.update(Action::Descend); // windows
     app.update(Action::Descend); // tabs
     let text = buffer_text(&app);
-    assert!(text.contains("https://100/0"), "preview shows a tab url, got:\n{text}");
+    assert!(
+        text.contains("https://100/0"),
+        "preview shows a tab url, got:\n{text}"
+    );
 }
 
 /// End-to-end against the real profile when present: discovery → replay → render

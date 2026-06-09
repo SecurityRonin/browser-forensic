@@ -12,10 +12,17 @@ use browser_core::{BrowserEvent, BrowserFamily};
 use crate::context::{Record, RecordKind};
 
 fn attr_str(ev: &BrowserEvent, key: &str) -> String {
-    ev.attrs.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    ev.attrs
+        .get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 fn attr_bool(ev: &BrowserEvent, key: &str) -> bool {
-    ev.attrs.get(key).and_then(serde_json::Value::as_bool).unwrap_or(false)
+    ev.attrs
+        .get(key)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 /// Build [`Record`]s from a Chromium `History` DB (the `visits` table).
@@ -37,8 +44,15 @@ pub fn records_from_history(path: &Path) -> Result<Vec<Record>> {
 
 /// Build [`Record`]s from a Chromium SNSS session/tabs file.
 pub fn records_from_session(path: &Path) -> Result<Vec<Record>> {
-    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    let kind = if name.contains("Tabs") { RecordKind::ClosedTab } else { RecordKind::OpenTab };
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let kind = if name.contains("Tabs") {
+        RecordKind::ClosedTab
+    } else {
+        RecordKind::OpenTab
+    };
     Ok(browser_chrome::parse_session(path)?
         .iter()
         .map(|ev| Record {
@@ -167,7 +181,12 @@ mod tests {
     #[test]
     fn records_from_session_maps_open_tabs() {
         let dir = tempfile::tempdir().unwrap();
-        let p = write_session(dir.path(), "Session_1", 6, nav_payload(10, "https://tab.example", "Tab"));
+        let p = write_session(
+            dir.path(),
+            "Session_1",
+            6,
+            nav_payload(10, "https://tab.example", "Tab"),
+        );
         let recs = records_from_session(&p).unwrap();
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].kind, RecordKind::OpenTab);

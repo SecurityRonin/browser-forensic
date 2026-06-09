@@ -59,19 +59,29 @@ pub struct Allowlist {
 
 impl Allowlist {
     pub fn new(domains: impl IntoIterator<Item = String>) -> Self {
-        Self { domains: domains.into_iter().map(|d| d.to_lowercase()).collect(), all: false }
+        Self {
+            domains: domains.into_iter().map(|d| d.to_lowercase()).collect(),
+            all: false,
+        }
     }
     pub fn allow_all() -> Self {
-        Self { domains: Vec::new(), all: true }
+        Self {
+            domains: Vec::new(),
+            all: true,
+        }
     }
     /// Whether the URL's host is covered by an allowed domain (eTLD+1 suffix).
     pub fn permits(&self, url: &str) -> bool {
         if self.all {
             return true;
         }
-        let Some(host) = host_of(url) else { return false };
+        let Some(host) = host_of(url) else {
+            return false;
+        };
         let host = host.to_lowercase();
-        self.domains.iter().any(|d| host == *d || host.ends_with(&format!(".{d}")))
+        self.domains
+            .iter()
+            .any(|d| host == *d || host.ends_with(&format!(".{d}")))
     }
 }
 
@@ -151,7 +161,9 @@ pub fn browsing_context(
     cap: usize,
     allow: &Allowlist,
 ) -> BrowsingContext {
-    let window_ns = i64::from(minutes).saturating_mul(60).saturating_mul(1_000_000_000);
+    let window_ns = i64::from(minutes)
+        .saturating_mul(60)
+        .saturating_mul(1_000_000_000);
     let cutoff = now_ns.saturating_sub(window_ns);
 
     let mut out = BrowsingContext {
@@ -256,7 +268,10 @@ mod tests {
         let a = Allowlist::new(["github.com".to_string()]);
         assert!(a.permits("https://github.com/x"));
         assert!(a.permits("https://api.github.com/y"));
-        assert!(!a.permits("https://evil.com/github.com"), "host is evil.com");
+        assert!(
+            !a.permits("https://evil.com/github.com"),
+            "host is evil.com"
+        );
         assert!(!a.permits("https://notgithub.com"));
         assert!(!Allowlist::new(std::iter::empty()).permits("https://github.com"));
         assert!(Allowlist::allow_all().permits("https://anything.example"));
@@ -267,19 +282,44 @@ mod tests {
         let now = 1_000_000_000_000_000_000_i64;
         let min_ns = 60_000_000_000_i64;
         let records = vec![
-            rec("https://github.com/a?token=X", "Repo a@b.com", now - min_ns, false, false),
+            rec(
+                "https://github.com/a?token=X",
+                "Repo a@b.com",
+                now - min_ns,
+                false,
+                false,
+            ),
             rec("https://github.com/hop", "Hop", now - min_ns, true, false), // redirect hop -> dropped
             rec("https://other.com/x", "Other", now - min_ns, false, false), // not allow-listed
-            rec("https://github.com/old", "Old", now - 100 * min_ns, false, false), // out of window
+            rec(
+                "https://github.com/old",
+                "Old",
+                now - 100 * min_ns,
+                false,
+                false,
+            ), // out of window
         ];
         let allow = Allowlist::new(["github.com".to_string()]);
         let r = browsing_context(&records, now, 5, 10, &allow);
 
-        assert_eq!(r.recent_visits.len(), 1, "only the in-window, allow-listed, non-redirect visit");
-        assert_eq!(r.recent_visits[0].url, "https://github.com/a", "query string stripped");
-        assert!(r.recent_visits[0].title.contains("[redacted-email]"), "email masked");
+        assert_eq!(
+            r.recent_visits.len(),
+            1,
+            "only the in-window, allow-listed, non-redirect visit"
+        );
+        assert_eq!(
+            r.recent_visits[0].url, "https://github.com/a",
+            "query string stripped"
+        );
+        assert!(
+            r.recent_visits[0].title.contains("[redacted-email]"),
+            "email masked"
+        );
         assert!(r.recent_visits[0].untrusted_evidence);
-        assert_eq!(r.omitted_by_policy_count, 1, "other.com omitted by allow-list");
+        assert_eq!(
+            r.omitted_by_policy_count, 1,
+            "other.com omitted by allow-list"
+        );
         assert!(r.open_tabs.is_empty(), "no tabs in this input");
     }
 
@@ -290,14 +330,32 @@ mod tests {
         let now = 1_000_000_000_000_000_000_i64;
         let min_ns = 60_000_000_000_i64;
         let records = vec![
-            tab("https://open.example", RecordKind::OpenTab, now - 9999 * min_ns), // ancient
-            tab("https://closed.example", RecordKind::ClosedTab, now - 9999 * min_ns),
-            rec("https://visit.example", "v", now - 100 * min_ns, false, false), // old history -> dropped
+            tab(
+                "https://open.example",
+                RecordKind::OpenTab,
+                now - 9999 * min_ns,
+            ), // ancient
+            tab(
+                "https://closed.example",
+                RecordKind::ClosedTab,
+                now - 9999 * min_ns,
+            ),
+            rec(
+                "https://visit.example",
+                "v",
+                now - 100 * min_ns,
+                false,
+                false,
+            ), // old history -> dropped
             rec("https://recent.example", "v", now - min_ns, false, false), // in-window history
         ];
         let r = browsing_context(&records, now, 5, 10, &Allowlist::allow_all());
 
-        assert_eq!(r.open_tabs.len(), 1, "open tab kept despite ancient last-active");
+        assert_eq!(
+            r.open_tabs.len(),
+            1,
+            "open tab kept despite ancient last-active"
+        );
         assert_eq!(r.open_tabs[0].url, "https://open.example");
         assert_eq!(r.recently_closed.len(), 1, "closed tab kept (snapshot)");
         assert_eq!(r.recent_visits.len(), 1, "only the in-window visit");
@@ -308,14 +366,21 @@ mod tests {
     fn each_section_caps_and_orders_newest_first() {
         let now = 10_000_i64;
         let allow = Allowlist::allow_all();
-        let mut records: Vec<Record> =
-            (0..5).map(|i| rec(&format!("https://v{i}.com/"), "t", i, false, false)).collect();
+        let mut records: Vec<Record> = (0..5)
+            .map(|i| rec(&format!("https://v{i}.com/"), "t", i, false, false))
+            .collect();
         records.extend((0..5).map(|i| tab(&format!("https://t{i}.com/"), RecordKind::OpenTab, i)));
         let r = browsing_context(&records, now, u32::MAX, 2, &allow);
         assert_eq!(r.recent_visits.len(), 2, "visits capped to 2");
         assert_eq!(r.open_tabs.len(), 2, "open tabs capped to 2");
-        assert!(r.recent_visits[0].time_ns >= r.recent_visits[1].time_ns, "newest first");
-        assert!(r.open_tabs[0].time_ns >= r.open_tabs[1].time_ns, "newest first");
+        assert!(
+            r.recent_visits[0].time_ns >= r.recent_visits[1].time_ns,
+            "newest first"
+        );
+        assert!(
+            r.open_tabs[0].time_ns >= r.open_tabs[1].time_ns,
+            "newest first"
+        );
     }
 
     #[test]
@@ -331,6 +396,9 @@ mod tests {
 
         let miss = did_user_visit(&records, "secret", &allow);
         assert_eq!(miss.items.len(), 0);
-        assert_eq!(miss.omitted_by_policy_count, 1, "matched but not allow-listed");
+        assert_eq!(
+            miss.omitted_by_policy_count, 1,
+            "matched but not allow-listed"
+        );
     }
 }

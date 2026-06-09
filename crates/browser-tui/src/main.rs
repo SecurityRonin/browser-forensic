@@ -64,7 +64,9 @@ fn glob_input(terminal: &mut ratatui::DefaultTerminal, app: &mut App, tag: bool)
         let verb = if tag { "tag" } else { "untag" };
         app.status = format!(" {verb} glob: {pattern}");
         terminal.draw(|f| draw(f, app))?;
-        let Event::Key(key) = event::read()? else { continue };
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
         if key.kind != KeyEventKind::Press {
             continue;
         }
@@ -110,7 +112,9 @@ fn perform(effect: Effect, app: &mut App) {
         Effect::Export(export) => {
             let md = format!("{}.md", export.name);
             let json = format!("{}.json", export.name);
-            app.status = match fs::write(&md, &export.markdown).and_then(|()| fs::write(&json, &export.json)) {
+            app.status = match fs::write(&md, &export.markdown)
+                .and_then(|()| fs::write(&json, &export.json))
+            {
                 Ok(()) => format!("exported {md} and {json}"),
                 Err(e) => format!("export failed: {e}"),
             };
@@ -137,7 +141,9 @@ fn search_input(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::R
     let mut query = String::new();
     loop {
         terminal.draw(|f| draw(f, app))?;
-        let Event::Key(key) = event::read()? else { continue };
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
         if key.kind != KeyEventKind::Press {
             continue;
         }

@@ -25,7 +25,10 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
     let bytes = std::fs::read(path)?;
     let stream = snss::read_records(&bytes[..]).map_err(|e| anyhow!("SNSS decode: {e}"))?;
 
-    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
     let dialect = if name.starts_with("Tabs") {
         snss::Dialect::Tabs
     } else {
@@ -42,16 +45,28 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
             .map(|d| d.as_nanos() as i64)
             .unwrap_or(0);
         for tab in &window.tabs {
-            let Some(nav) = tab.history.get(tab.current) else { continue };
-            let desc = if nav.title.is_empty() { nav.url.clone() } else { nav.title.clone() };
+            let Some(nav) = tab.history.get(tab.current) else {
+                continue;
+            };
+            let desc = if nav.title.is_empty() {
+                nav.url.clone()
+            } else {
+                nav.title.clone()
+            };
             events.push(
-                BrowserEvent::new(ts_ns, BrowserFamily::Chromium, ArtifactKind::Session, &source, desc)
-                    .with_attr("url", json!(nav.url))
-                    .with_attr("title", json!(nav.title))
-                    .with_attr("tab_id", json!(tab.id))
-                    .with_attr("window_id", json!(window.id))
-                    .with_attr("pinned", json!(tab.pinned))
-                    .with_attr("index", json!(nav.index)),
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::Session,
+                    &source,
+                    desc,
+                )
+                .with_attr("url", json!(nav.url))
+                .with_attr("title", json!(nav.title))
+                .with_attr("tab_id", json!(tab.id))
+                .with_attr("window_id", json!(window.id))
+                .with_attr("pinned", json!(tab.pinned))
+                .with_attr("index", json!(nav.index)),
             );
         }
     }
@@ -127,8 +142,10 @@ mod tests {
         assert!(events.iter().all(|e| e.browser == BrowserFamily::Chromium));
         assert!(events.iter().all(|e| e.artifact == ArtifactKind::Session));
         assert!(events.iter().all(|e| e.attrs.contains_key("tab_id")));
-        let urls: Vec<String> =
-            events.iter().map(|e| e.attrs["url"].as_str().unwrap().to_string()).collect();
+        let urls: Vec<String> = events
+            .iter()
+            .map(|e| e.attrs["url"].as_str().unwrap().to_string())
+            .collect();
         assert!(urls.contains(&"https://a.example".to_string()));
         assert!(urls.contains(&"https://b.example".to_string()));
     }

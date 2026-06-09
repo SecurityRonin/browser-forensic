@@ -48,9 +48,9 @@ fn truncated_field_errors_without_panicking() {
     // Valid header + tab_id + index, then a url length that overruns the buffer.
     let mut p = Vec::new();
     let body: Vec<u8> = [
-        &1i32.to_le_bytes()[..],     // tab_id
-        &0i32.to_le_bytes()[..],     // index
-        &999i32.to_le_bytes()[..],   // url_len far beyond what's present
+        &1i32.to_le_bytes()[..],   // tab_id
+        &0i32.to_le_bytes()[..],   // index
+        &999i32.to_le_bytes()[..], // url_len far beyond what's present
     ]
     .concat();
     p.extend_from_slice(&(body.len() as u32).to_le_bytes());
@@ -62,22 +62,36 @@ fn truncated_field_errors_without_panicking() {
 /// zero parse failures, and the counts match the histogram nav totals.
 #[test]
 fn tabs_navigation_decodes_with_zero_failures() {
-    let Some(stream) = open_fixture_or_skip("Tabs_real") else { return };
-    let navs: Vec<Result<NavCommand, PickleError>> =
-        stream.records.iter().filter(|r| r.id == 1).map(|r| decode_navigation(&r.payload)).collect();
+    let Some(stream) = open_fixture_or_skip("Tabs_real") else {
+        return;
+    };
+    let navs: Vec<Result<NavCommand, PickleError>> = stream
+        .records
+        .iter()
+        .filter(|r| r.id == 1)
+        .map(|r| decode_navigation(&r.payload))
+        .collect();
 
     assert_eq!(navs.len(), 51, "nav-command count (cmd 1)");
-    assert!(navs.iter().all(|r| r.is_ok()), "zero parse failures: {:?}",
-        navs.iter().filter(|r| r.is_err()).collect::<Vec<_>>());
+    assert!(
+        navs.iter().all(|r| r.is_ok()),
+        "zero parse failures: {:?}",
+        navs.iter().filter(|r| r.is_err()).collect::<Vec<_>>()
+    );
 
     let ok: Vec<NavCommand> = navs.into_iter().map(Result::unwrap).collect();
-    assert!(ok.iter().any(|n| n.url.starts_with("https://")), "real https URLs present");
+    assert!(
+        ok.iter().any(|n| n.url.starts_with("https://")),
+        "real https URLs present"
+    );
     assert!(ok.iter().all(|n| !n.url.is_empty()), "every nav has a URL");
 }
 
 #[test]
 fn session_navigation_decodes_with_zero_failures() {
-    let Some(stream) = open_fixture_or_skip("Session_real") else { return };
+    let Some(stream) = open_fixture_or_skip("Session_real") else {
+        return;
+    };
     let nav_count = stream.records.iter().filter(|r| r.id == 6).count();
     assert_eq!(nav_count, 1826, "nav-command count (cmd 6)");
 
@@ -87,18 +101,26 @@ fn session_navigation_decodes_with_zero_failures() {
         .filter(|r| r.id == 6)
         .filter_map(|r| decode_navigation(&r.payload).err())
         .collect();
-    assert!(failures.is_empty(), "zero parse failures, got: {failures:?}");
+    assert!(
+        failures.is_empty(),
+        "zero parse failures, got: {failures:?}"
+    );
 }
 
 /// The Apps dialect uses the same Session-style cmd 6 navigation encoding.
 #[test]
 fn apps_navigation_decodes_with_zero_failures() {
-    let Some(stream) = open_fixture_or_skip("Apps_real") else { return };
+    let Some(stream) = open_fixture_or_skip("Apps_real") else {
+        return;
+    };
     let failures: Vec<PickleError> = stream
         .records
         .iter()
         .filter(|r| r.id == 6)
         .filter_map(|r| decode_navigation(&r.payload).err())
         .collect();
-    assert!(failures.is_empty(), "zero parse failures, got: {failures:?}");
+    assert!(
+        failures.is_empty(),
+        "zero parse failures, got: {failures:?}"
+    );
 }

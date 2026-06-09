@@ -9,11 +9,19 @@ fn tab1(id: i32, url: &str) -> Tab {
         id,
         pinned: false,
         current: 0,
-        history: vec![Nav { index: 0, url: url.to_string(), title: format!("t{id}") }],
+        history: vec![Nav {
+            index: 0,
+            url: url.to_string(),
+            title: format!("t{id}"),
+        }],
     }
 }
 fn win(id: i32, tabs: Vec<Tab>) -> Window {
-    Window { id, tabs, last_active: None }
+    Window {
+        id,
+        tabs,
+        last_active: None,
+    }
 }
 
 fn sources() -> Vec<Source> {
@@ -22,8 +30,17 @@ fn sources() -> Vec<Source> {
             kind: SourceKind::Current,
             path: "S".into(),
             windows: vec![
-                win(1, vec![tab1(10, "https://github.com/h4x0r"), tab1(11, "https://example.com")]),
-                win(2, vec![tab1(12, "https://github.com/rust-lang/rust/issues")]),
+                win(
+                    1,
+                    vec![
+                        tab1(10, "https://github.com/h4x0r"),
+                        tab1(11, "https://example.com"),
+                    ],
+                ),
+                win(
+                    2,
+                    vec![tab1(12, "https://github.com/rust-lang/rust/issues")],
+                ),
             ],
         },
         Source {
@@ -71,7 +88,10 @@ fn glob_anchors_with_prefix_and_suffix() {
     let mut app = App::new(sources());
     app.tag_by_glob("https://github.com/*/issues");
     assert_eq!(app.tag_count(), 1, "only the .../issues tab");
-    assert_eq!(app.tagged_urls(), vec!["https://github.com/rust-lang/rust/issues"]);
+    assert_eq!(
+        app.tagged_urls(),
+        vec!["https://github.com/rust-lang/rust/issues"]
+    );
 }
 
 #[test]

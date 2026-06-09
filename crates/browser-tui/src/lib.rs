@@ -432,7 +432,12 @@ impl App {
 
     /// Begin an empty incremental search; [`App::set_query`] feeds it text.
     pub fn begin_search(&mut self, dir: Direction) {
-        self.search = Some(SearchState { query: String::new(), dir, matches: Vec::new(), current: 0 });
+        self.search = Some(SearchState {
+            query: String::new(),
+            dir,
+            matches: Vec::new(),
+            current: 0,
+        });
     }
 
     /// Set the live query: recompute matches across all sources and jump to the
@@ -445,7 +450,12 @@ impl App {
             Direction::Backward if !matches.is_empty() => matches.len() - 1,
             _ => 0,
         };
-        self.search = Some(SearchState { query: query.to_string(), dir, matches, current });
+        self.search = Some(SearchState {
+            query: query.to_string(),
+            dir,
+            matches,
+            current,
+        });
         self.jump_to_current_match();
     }
 
@@ -461,7 +471,10 @@ impl App {
 
     /// Search for the hostname of the URL under the cursor (`*`).
     pub fn search_hostname(&mut self) {
-        let Some(url) = self.current_tab().and_then(|t| t.history.get(t.current)).map(|n| n.url.clone())
+        let Some(url) = self
+            .current_tab()
+            .and_then(|t| t.history.get(t.current))
+            .map(|n| n.url.clone())
         else {
             return;
         };
@@ -498,7 +511,8 @@ impl App {
 
     /// "title\nurl" for the entry under the cursor (for `Y`).
     fn title_and_url(&self) -> Option<String> {
-        self.entry_under_cursor().map(|n| format!("{}\n{}", n.title, n.url))
+        self.entry_under_cursor()
+            .map(|n| format!("{}\n{}", n.title, n.url))
     }
 
     /// The active sort mode.
@@ -536,9 +550,9 @@ impl App {
     fn sort_tabs_by<K: Ord>(&mut self, key: impl Fn(&Nav) -> K) {
         for source in &mut self.sources {
             for window in &mut source.windows {
-                window.tabs.sort_by_key(|t| {
-                    t.history.get(t.current).map(&key)
-                });
+                window
+                    .tabs
+                    .sort_by_key(|t| t.history.get(t.current).map(&key));
             }
         }
     }
@@ -636,8 +650,12 @@ impl App {
         let mut md = format!("# Tagged tabs ({})\n\n", self.tags.len());
         let mut json_tabs = Vec::new();
         for &path in &self.tags {
-            let Some(tab) = self.tab_at(path) else { continue };
-            let Some(nav) = tab.history.get(tab.current) else { continue };
+            let Some(tab) = self.tab_at(path) else {
+                continue;
+            };
+            let Some(nav) = tab.history.get(tab.current) else {
+                continue;
+            };
             md.push_str(&format!("- [{}]({})\n", nav.title, nav.url));
             json_tabs.push(format!(
                 "{{\"id\":{},\"url\":{},\"title\":{}}}",
@@ -647,7 +665,11 @@ impl App {
             ));
         }
         let json = format!("{{\"tagged\":[{}]}}", json_tabs.join(","));
-        Export { name: format!("tagged-{}", self.tags.len()), markdown: md, json }
+        Export {
+            name: format!("tagged-{}", self.tags.len()),
+            markdown: md,
+            json,
+        }
     }
 
     /// Collect matching tab locations in document order.
@@ -675,7 +697,9 @@ impl App {
 
     /// Move the current-match cursor by `delta` (wrapping) and jump to it.
     fn step_match(&mut self, delta: isize) {
-        let Some(search) = self.search.as_mut() else { return };
+        let Some(search) = self.search.as_mut() else {
+            return;
+        };
         let n = search.matches.len();
         if n == 0 {
             return;
@@ -687,8 +711,12 @@ impl App {
 
     /// Point the navigation cursor at the current match's tab (depth = tab level).
     fn jump_to_current_match(&mut self) {
-        let Some(search) = self.search.as_ref() else { return };
-        let Some(&(si, wi, ti)) = search.matches.get(search.current) else { return };
+        let Some(search) = self.search.as_ref() else {
+            return;
+        };
+        let Some(&(si, wi, ti)) = search.matches.get(search.current) else {
+            return;
+        };
         self.selection = [si, wi, ti, 0];
         self.depth = 2;
     }
@@ -705,7 +733,10 @@ impl App {
 
     /// 1-based index of the current match, if any matches exist.
     pub fn current_match(&self) -> Option<usize> {
-        self.search.as_ref().filter(|s| !s.matches.is_empty()).map(|s| s.current + 1)
+        self.search
+            .as_ref()
+            .filter(|s| !s.matches.is_empty())
+            .map(|s| s.current + 1)
     }
 
     // --- View model (consumed by the renderer) ------------------------------
@@ -714,8 +745,14 @@ impl App {
     pub fn left_title(&self) -> String {
         match self.depth {
             0 => "Sources".to_string(),
-            1 => format!("Windows · {}", self.current_source().map_or("", |s| s.kind.label())),
-            2 => format!("Tabs · Window {}", self.current_window().map_or(0, |w| w.id)),
+            1 => format!(
+                "Windows · {}",
+                self.current_source().map_or("", |s| s.kind.label())
+            ),
+            2 => format!(
+                "Tabs · Window {}",
+                self.current_window().map_or(0, |w| w.id)
+            ),
             _ => format!("History · Tab {}", self.current_tab().map_or(0, |t| t.id)),
         }
     }
@@ -744,7 +781,8 @@ impl App {
                         .iter()
                         .enumerate()
                         .map(|(ti, t)| {
-                            let tag = if self.is_tagged((self.selection[0], self.selection[1], ti)) {
+                            let tag = if self.is_tagged((self.selection[0], self.selection[1], ti))
+                            {
                                 '✓'
                             } else {
                                 ' '
@@ -796,7 +834,9 @@ impl App {
         if self.depth < 2 {
             return Vec::new();
         }
-        let Some(tab) = self.current_tab() else { return Vec::new() };
+        let Some(tab) = self.current_tab() else {
+            return Vec::new();
+        };
         let entry = if self.depth == MAX_DEPTH {
             self.current_nav()
         } else {
@@ -805,15 +845,23 @@ impl App {
         vec![
             format!("URL    {}", entry.map_or("", |n| n.url.as_str())),
             format!("Title  {}", entry.map_or("", |n| n.title.as_str())),
-            format!("Tab id {} · pinned: {}", tab.id, if tab.pinned { "yes" } else { "no" }),
+            format!(
+                "Tab id {} · pinned: {}",
+                tab.id,
+                if tab.pinned { "yes" } else { "no" }
+            ),
         ]
     }
 
     /// Totals for the title bar: (windows, tabs) across all sources.
     pub fn totals(&self) -> (usize, usize) {
         let windows: usize = self.sources.iter().map(|s| s.windows.len()).sum();
-        let tabs: usize =
-            self.sources.iter().flat_map(|s| &s.windows).map(|w| w.tabs.len()).sum();
+        let tabs: usize = self
+            .sources
+            .iter()
+            .flat_map(|s| &s.windows)
+            .map(|w| w.tabs.len())
+            .sum();
         (windows, tabs)
     }
 }
@@ -843,12 +891,21 @@ fn export_tab(kind: SourceKind, window_id: i32, tab: &Tab) -> Export {
         tab.current,
         entries.join(",")
     );
-    Export { name: format!("tab-{}", tab.id), markdown: md, json }
+    Export {
+        name: format!("tab-{}", tab.id),
+        markdown: md,
+        json,
+    }
 }
 
 /// Render a whole window (its tabs' current entries) to Markdown + JSON.
 fn export_window(kind: SourceKind, window: &Window) -> Export {
-    let mut md = format!("# Window {} ({})\n\n{} tab(s)\n\n", window.id, kind.label(), window.tabs.len());
+    let mut md = format!(
+        "# Window {} ({})\n\n{} tab(s)\n\n",
+        window.id,
+        kind.label(),
+        window.tabs.len()
+    );
     let mut tabs_json = Vec::new();
     for tab in &window.tabs {
         let cur = tab.history.get(tab.current);
@@ -870,12 +927,21 @@ fn export_window(kind: SourceKind, window: &Window) -> Export {
         window.id,
         tabs_json.join(",")
     );
-    Export { name: format!("window-{}", window.id), markdown: md, json }
+    Export {
+        name: format!("window-{}", window.id),
+        markdown: md,
+        json,
+    }
 }
 
 /// One navigation entry as a JSON object.
 fn json_nav(n: &Nav) -> String {
-    format!("{{\"index\":{},\"url\":{},\"title\":{}}}", n.index, js(&n.url), js(&n.title))
+    format!(
+        "{{\"index\":{},\"url\":{},\"title\":{}}}",
+        n.index,
+        js(&n.url),
+        js(&n.title)
+    )
 }
 
 /// Serialize a string as a JSON string literal (with surrounding quotes),
@@ -937,7 +1003,9 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 /// `?`, or `#`. Returns `None` for schemes without an authority (e.g. `about:`).
 fn host_of(url: &str) -> Option<&str> {
     let after_scheme = url.split_once("://")?.1;
-    let end = after_scheme.find(['/', '?', '#']).unwrap_or(after_scheme.len());
+    let end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
     let host = &after_scheme[..end];
     (!host.is_empty()).then_some(host)
 }

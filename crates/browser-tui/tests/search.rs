@@ -9,7 +9,11 @@ fn tabn(id: i32, url: &str, title: &str) -> Tab {
         id,
         pinned: false,
         current: 0,
-        history: vec![Nav { index: 0, url: url.to_string(), title: title.to_string() }],
+        history: vec![Nav {
+            index: 0,
+            url: url.to_string(),
+            title: title.to_string(),
+        }],
     }
 }
 
@@ -132,5 +136,8 @@ fn keymap_maps_search_keys() {
     assert_eq!(km.handle(key('n')), Some(Action::NextMatch));
     assert_eq!(km.handle(key('N')), Some(Action::PrevMatch));
     assert_eq!(km.handle(key('*')), Some(Action::SearchHostname));
-    assert_eq!(km.handle(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)), Some(Action::ClearSearch));
+    assert_eq!(
+        km.handle(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        Some(Action::ClearSearch)
+    );
 }

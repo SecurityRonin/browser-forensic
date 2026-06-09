@@ -29,11 +29,19 @@ pub fn dispatch(req: &Value, records: &[Record], allow: &Allowlist, now_ns: i64)
         "tools/list" => Some(result(id, json!({"tools": tool_schemas()}))),
         "tools/call" => {
             let params = req.get("params");
-            let name = params.and_then(|p| p.get("name")).and_then(Value::as_str).unwrap_or("");
-            let args =
-                params.and_then(|p| p.get("arguments")).cloned().unwrap_or_else(|| json!({}));
+            let name = params
+                .and_then(|p| p.get("name"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let args = params
+                .and_then(|p| p.get("arguments"))
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             match call_tool(name, &args, records, allow, now_ns) {
-                Ok(text) => Some(result(id, json!({"content": [{"type": "text", "text": text}]}))),
+                Ok(text) => Some(result(
+                    id,
+                    json!({"content": [{"type": "text", "text": text}]}),
+                )),
                 Err(msg) => Some(error(id, -32602, &msg)),
             }
         }
@@ -64,13 +72,19 @@ fn call_tool(
                 .and_then(Value::as_u64)
                 .unwrap_or(15)
                 .min(u64::from(MAX_MINUTES)) as u32;
-            let cap =
-                args.get("cap").and_then(Value::as_u64).unwrap_or(20).min(MAX_CAP as u64) as usize;
+            let cap = args
+                .get("cap")
+                .and_then(Value::as_u64)
+                .unwrap_or(20)
+                .min(MAX_CAP as u64) as usize;
             let r = browsing_context(records, now_ns, minutes, cap, allow);
             serde_json::to_string(&r).map_err(|e| e.to_string())
         }
         "did_user_visit" => {
-            let query = args.get("query").and_then(Value::as_str).ok_or("missing 'query'")?;
+            let query = args
+                .get("query")
+                .and_then(Value::as_str)
+                .ok_or("missing 'query'")?;
             let r = did_user_visit(records, query, allow);
             serde_json::to_string(&r).map_err(|e| e.to_string())
         }
@@ -156,11 +170,19 @@ mod tests {
         let records = vec![rec("https://github.com/a?token=SECRET", 100)];
         let req = json!({"jsonrpc":"2.0","id":3,"method":"tools/call",
             "params":{"name":"browsing_context","arguments":{"minutes":60,"cap":10}}});
-        let resp =
-            dispatch(&req, &records, &Allowlist::new(["github.com".to_string()]), 100).unwrap();
+        let resp = dispatch(
+            &req,
+            &records,
+            &Allowlist::new(["github.com".to_string()]),
+            100,
+        )
+        .unwrap();
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(parsed["recent_visits"][0]["url"], "https://github.com/a", "query stripped");
+        assert_eq!(
+            parsed["recent_visits"][0]["url"], "https://github.com/a",
+            "query stripped"
+        );
         assert_eq!(parsed["recent_visits"][0]["untrusted_evidence"], true);
     }
 

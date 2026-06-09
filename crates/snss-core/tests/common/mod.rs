@@ -16,7 +16,9 @@ use std::path::PathBuf;
 use snss::{read_records, RecordStream};
 
 pub fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 /// Read a real fixture, or return `None` with a visible skip notice if it is not

@@ -17,7 +17,10 @@ use serde_json::Value;
 fn main() -> io::Result<()> {
     let allow = load_allowlist();
     let records = reader::collect_default().unwrap_or_default();
-    eprintln!("browsing-state-mcp: {} record(s) loaded; ready on stdio.", records.len());
+    eprintln!(
+        "browsing-state-mcp: {} record(s) loaded; ready on stdio.",
+        records.len()
+    );
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -30,7 +33,11 @@ fn main() -> io::Result<()> {
             continue; // ignore malformed lines
         };
         if let Some(resp) = server::dispatch(&req, &records, &allow, now_ns()) {
-            writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap_or_default())?;
+            writeln!(
+                stdout,
+                "{}",
+                serde_json::to_string(&resp).unwrap_or_default()
+            )?;
             stdout.flush()?;
         }
     }
@@ -42,12 +49,17 @@ fn load_allowlist() -> Allowlist {
     match std::env::var("BROWSING_STATE_ALLOWLIST") {
         Ok(v) if v.trim() == "*" => Allowlist::allow_all(),
         Ok(v) => Allowlist::new(
-            v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
         ),
         Err(_) => Allowlist::new(std::iter::empty()),
     }
 }
 
 fn now_ns() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as i64)
+        .unwrap_or(0)
 }

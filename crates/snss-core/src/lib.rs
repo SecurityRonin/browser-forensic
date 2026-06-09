@@ -79,7 +79,10 @@ impl std::fmt::Display for SnssError {
                 write!(f, "not an SNSS file: expected magic {MAGIC:?}, got {got:?}")
             }
             SnssError::UnsupportedVersion(v) => {
-                write!(f, "unsupported SNSS version {v} (only {SUPPORTED_VERSION} is supported)")
+                write!(
+                    f,
+                    "unsupported SNSS version {v} (only {SUPPORTED_VERSION} is supported)"
+                )
             }
             SnssError::Io(e) => write!(f, "I/O error reading SNSS header: {e}"),
         }
@@ -161,7 +164,11 @@ pub fn read_records<R: Read>(mut reader: R) -> Result<RecordStream, SnssError> {
         off = body + size;
     }
 
-    Ok(RecordStream { version, records, warnings })
+    Ok(RecordStream {
+        version,
+        records,
+        warnings,
+    })
 }
 
 // ----------------------------------------------------------------------------
@@ -204,7 +211,10 @@ impl std::fmt::Display for PickleError {
         match self {
             PickleError::TooShort => write!(f, "payload too short for a Pickle header"),
             PickleError::BadHeader { declared, actual } => {
-                write!(f, "Pickle declares {declared} payload bytes but only {actual} present")
+                write!(
+                    f,
+                    "Pickle declares {declared} payload bytes but only {actual} present"
+                )
             }
             PickleError::Overrun => write!(f, "a Pickle field runs past the end of the payload"),
             PickleError::BadLength(n) => write!(f, "negative Pickle length prefix: {n}"),
@@ -231,7 +241,12 @@ pub fn decode_navigation(payload: &[u8]) -> Result<NavCommand, PickleError> {
     let index = p.read_i32()?;
     let url = p.read_string()?;
     let title = p.read_string16()?;
-    Ok(NavCommand { tab_id, index, url, title })
+    Ok(NavCommand {
+        tab_id,
+        index,
+        url,
+        title,
+    })
 }
 
 /// A cursor over a Chromium `Pickle`: a 4-byte LE length header followed by
@@ -256,7 +271,10 @@ impl<'a> Pickle<'a> {
         if declared > actual {
             return Err(PickleError::BadHeader { declared, actual });
         }
-        Ok(Pickle { data: payload, cursor: 4 })
+        Ok(Pickle {
+            data: payload,
+            cursor: 4,
+        })
     }
 
     /// Advance the cursor to the next 4-byte boundary (Chromium aligns every
@@ -297,7 +315,10 @@ impl<'a> Pickle<'a> {
     fn read_string16(&mut self) -> Result<String, PickleError> {
         let units = self.read_len()?;
         let nbytes = units.checked_mul(2).ok_or(PickleError::Overrun)?;
-        let end = self.cursor.checked_add(nbytes).ok_or(PickleError::Overrun)?;
+        let end = self
+            .cursor
+            .checked_add(nbytes)
+            .ok_or(PickleError::Overrun)?;
         if end > self.data.len() {
             return Err(PickleError::Overrun);
         }
@@ -437,7 +458,11 @@ pub fn replay(stream: &RecordStream, dialect: Dialect) -> Replayed {
                 Ok(n) => {
                     histories.entry(n.tab_id).or_default().insert(
                         n.index,
-                        Nav { index: n.index, url: n.url, title: n.title },
+                        Nav {
+                            index: n.index,
+                            url: n.url,
+                            title: n.title,
+                        },
                     );
                 }
                 Err(error) => warnings.push(Warning::BadNavigation { record: i, error }),
@@ -488,7 +513,10 @@ pub fn replay(stream: &RecordStream, dialect: Dialect) -> Replayed {
             continue;
         }
         let current = match tab_selected.get(&tab_id) {
-            Some(sel) => history.iter().position(|n| n.index == *sel).unwrap_or(history.len() - 1),
+            Some(sel) => history
+                .iter()
+                .position(|n| n.index == *sel)
+                .unwrap_or(history.len() - 1),
             None => history.len() - 1,
         };
         let tab = Tab {
@@ -513,7 +541,11 @@ pub fn replay(stream: &RecordStream, dialect: Dialect) -> Replayed {
                 .filter_map(|t| tab_time.get(&t.id).copied())
                 .max()
                 .and_then(windows_micros_to_system_time);
-            Window { id, tabs, last_active }
+            Window {
+                id,
+                tabs,
+                last_active,
+            }
         })
         .collect();
 
@@ -640,11 +672,16 @@ impl SessionStore {
         let mut by_family: HashMap<&str, Vec<(u64, PathBuf)>> = HashMap::new();
         for entry in std::fs::read_dir(dir)? {
             let path = entry?.path();
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             for family in ["Session", "Tabs", "Apps"] {
                 if let Some(suffix) = name.strip_prefix(family).and_then(|s| s.strip_prefix('_')) {
                     let rank = suffix.parse::<u64>().unwrap_or(0);
-                    by_family.entry(family).or_default().push((rank, path.clone()));
+                    by_family
+                        .entry(family)
+                        .or_default()
+                        .push((rank, path.clone()));
                 }
             }
         }
@@ -707,14 +744,21 @@ fn decode_source(kind: SourceKind, path: &Path) -> Result<(Source, Vec<Warning>)
     let mut warnings = stream.warnings.clone();
     let replayed = replay(&stream, kind.dialect());
     warnings.extend(replayed.warnings);
-    let source = Source { kind, path: path.to_path_buf(), windows: replayed.windows };
+    let source = Source {
+        kind,
+        path: path.to_path_buf(),
+        windows: replayed.windows,
+    };
     Ok((source, warnings))
 }
 
 /// Resolve the default macOS Brave `Sessions` directory from `$HOME`.
 fn default_sessions_dir() -> Result<PathBuf, SnssError> {
     let home = std::env::var_os("HOME").ok_or_else(|| {
-        SnssError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is not set"))
+        SnssError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "HOME is not set",
+        ))
     })?;
     Ok(PathBuf::from(home)
         .join("Library/Application Support/BraveSoftware/Brave-Browser/Default/Sessions"))

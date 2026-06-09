@@ -16,7 +16,10 @@ pub fn redact_url(url: &str) -> String {
 /// Mask emails and long token-like substrings in free text (titles, search
 /// terms). Whitespace is normalized to single spaces.
 pub fn mask_secrets(text: &str) -> String {
-    text.split_whitespace().map(mask_token).collect::<Vec<_>>().join(" ")
+    text.split_whitespace()
+        .map(mask_token)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Minimum length for a bare token to be treated as a possible secret.
@@ -45,7 +48,9 @@ fn is_email(token: &str) -> bool {
 /// A long run of token characters (hex/base64/key material) with no spaces.
 fn is_secret_like(token: &str) -> bool {
     token.len() >= TOKEN_MIN_LEN
-        && token.chars().all(|c| c.is_ascii_alphanumeric() || "+/=_-.".contains(c))
+        && token
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+/=_-.".contains(c))
         && token.chars().any(|c| c.is_ascii_digit())
 }
 
@@ -68,7 +73,10 @@ mod tests {
 
     #[test]
     fn redact_url_strips_bare_fragment() {
-        assert_eq!(redact_url("https://site.com/p#section"), "https://site.com/p");
+        assert_eq!(
+            redact_url("https://site.com/p#section"),
+            "https://site.com/p"
+        );
     }
 
     #[test]

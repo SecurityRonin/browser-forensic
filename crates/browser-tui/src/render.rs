@@ -24,7 +24,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let (windows, tabs) = app.totals();
     let title = format!(" Brave Sessions  ·  {windows} win · {tabs} tabs");
-    frame.render_widget(Paragraph::new(title).style(Style::default().add_modifier(Modifier::BOLD)), rows[0]);
+    frame.render_widget(
+        Paragraph::new(title).style(Style::default().add_modifier(Modifier::BOLD)),
+        rows[0],
+    );
 
     let panes = Layout::default()
         .direction(Direction::Horizontal)
@@ -36,7 +39,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let mut left_state = ListState::default();
     left_state.select(Some(app.selected_index()));
     let left = List::new(left_items)
-        .block(pane_block(app.left_title(), app.active_pane() == Pane::Left))
+        .block(pane_block(
+            app.left_title(),
+            app.active_pane() == Pane::Left,
+        ))
         .highlight_symbol("» ")
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(left, panes[0], &mut left_state);
@@ -48,23 +54,33 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([Constraint::Min(1), Constraint::Length(detail_height(app))])
         .split(panes[1]);
     let right_items: Vec<ListItem> = right_rows.into_iter().map(ListItem::new).collect();
-    let right = List::new(right_items)
-        .block(pane_block(right_title, app.active_pane() == Pane::Right));
+    let right =
+        List::new(right_items).block(pane_block(right_title, app.active_pane() == Pane::Right));
     frame.render_widget(right, right_inner[0]);
 
     let detail = app.detail_lines().join("\n");
     if !detail.is_empty() {
-        frame.render_widget(Paragraph::new(detail).block(Block::default().borders(Borders::ALL)), right_inner[1]);
+        frame.render_widget(
+            Paragraph::new(detail).block(Block::default().borders(Borders::ALL)),
+            right_inner[1],
+        );
     }
 
     // Status line: live search feedback, else the transient status message.
     let status = match app.search_query() {
         Some(q) => match app.current_match() {
-            Some(i) => format!(" /{q}    {i}/{} matches  ·  n/N to cycle", app.match_count()),
+            Some(i) => format!(
+                " /{q}    {i}/{} matches  ·  n/N to cycle",
+                app.match_count()
+            ),
             None => format!(" /{q}    no matches"),
         },
         None if app.tag_count() > 0 => {
-            format!(" {}    {} tagged · y/e act on tags", app.status, app.tag_count())
+            format!(
+                " {}    {} tagged · y/e act on tags",
+                app.status,
+                app.tag_count()
+            )
         }
         None => app.status.clone(),
     };
@@ -82,7 +98,10 @@ fn pane_block(title: String, active: bool) -> Block<'static> {
     } else {
         Style::default()
     };
-    Block::default().borders(Borders::ALL).title(title).border_style(style)
+    Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(style)
 }
 
 fn detail_height(app: &App) -> u16 {

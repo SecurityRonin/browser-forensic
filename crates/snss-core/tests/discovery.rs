@@ -22,17 +22,29 @@ fn tmp_subdir(name: &str) -> PathBuf {
 fn open_dir_classifies_and_orders_sources() {
     let dir = tmp_subdir("discovery_basic");
     // Higher numeric suffix == newer (Brave's Windows-epoch filename stamp).
-    fs::write(dir.join("Session_100"), build::snss(&[(6, build::nav(1, 0, "https://old", "o"))]))
-        .unwrap();
     fs::write(
-        dir.join("Session_200"),
-        build::snss(&[(0, build::pair(9, 1)), (6, build::nav(1, 0, "https://new", "n"))]),
+        dir.join("Session_100"),
+        build::snss(&[(6, build::nav(1, 0, "https://old", "o"))]),
     )
     .unwrap();
-    fs::write(dir.join("Tabs_50"), build::snss(&[(1, build::nav(5, 0, "https://closed", "c"))]))
-        .unwrap();
-    fs::write(dir.join("Apps_10"), build::snss(&[(6, build::nav(2, 0, "https://app", "a"))]))
-        .unwrap();
+    fs::write(
+        dir.join("Session_200"),
+        build::snss(&[
+            (0, build::pair(9, 1)),
+            (6, build::nav(1, 0, "https://new", "n")),
+        ]),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("Tabs_50"),
+        build::snss(&[(1, build::nav(5, 0, "https://closed", "c"))]),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("Apps_10"),
+        build::snss(&[(6, build::nav(2, 0, "https://app", "a"))]),
+    )
+    .unwrap();
 
     let store = SessionStore::open_dir(&dir).expect("opens");
     assert!(store.warnings().is_empty(), "{:?}", store.warnings());
@@ -40,7 +52,12 @@ fn open_dir_classifies_and_orders_sources() {
     let kinds: Vec<SourceKind> = store.sources().iter().map(|s| s.kind).collect();
     assert_eq!(
         kinds,
-        vec![SourceKind::Current, SourceKind::Last, SourceKind::RecentlyClosed, SourceKind::Apps]
+        vec![
+            SourceKind::Current,
+            SourceKind::Last,
+            SourceKind::RecentlyClosed,
+            SourceKind::Apps
+        ]
     );
 
     // Newest Session_* (200) is Current and contains the "new" navigation.
@@ -69,16 +86,25 @@ fn open_dir_empty_directory_yields_no_sources() {
 fn open_dir_skips_unreadable_file_with_a_warning() {
     let dir = tmp_subdir("discovery_bad");
     // Newest is valid (Current); the older Session file is garbage (Last slot).
-    fs::write(dir.join("Session_200"), build::snss(&[(6, build::nav(1, 0, "https://ok", "k"))]))
-        .unwrap();
+    fs::write(
+        dir.join("Session_200"),
+        build::snss(&[(6, build::nav(1, 0, "https://ok", "k"))]),
+    )
+    .unwrap();
     fs::write(dir.join("Session_100"), b"NOT-AN-SNSS-FILE").unwrap();
 
     let store = SessionStore::open_dir(&dir).expect("opens despite one bad file");
     // The good source is still usable.
-    assert!(store.sources().iter().any(|s| s.kind == SourceKind::Current));
+    assert!(store
+        .sources()
+        .iter()
+        .any(|s| s.kind == SourceKind::Current));
     // The bad one is surfaced, not silently dropped.
     assert!(
-        store.warnings().iter().any(|w| matches!(w, Warning::UnreadableSource { .. })),
+        store
+            .warnings()
+            .iter()
+            .any(|w| matches!(w, Warning::UnreadableSource { .. })),
         "expected an UnreadableSource warning, got {:?}",
         store.warnings()
     );
@@ -99,5 +125,8 @@ fn open_default_profile_loads_real_data_when_present() {
         eprintln!("SKIP: default profile has no session files");
         return;
     }
-    assert!(store.sources().iter().any(|s| s.kind == SourceKind::Current));
+    assert!(store
+        .sources()
+        .iter()
+        .any(|s| s.kind == SourceKind::Current));
 }

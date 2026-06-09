@@ -5,19 +5,35 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 
 fn nav(url: &str, title: &str) -> Nav {
-    Nav { index: 0, url: url.to_string(), title: title.to_string() }
+    Nav {
+        index: 0,
+        url: url.to_string(),
+        title: title.to_string(),
+    }
 }
 fn tab1(id: i32, url: &str, title: &str) -> Tab {
-    Tab { id, pinned: false, current: 0, history: vec![nav(url, title)] }
+    Tab {
+        id,
+        pinned: false,
+        current: 0,
+        history: vec![nav(url, title)],
+    }
 }
 fn win(id: i32, tabs: Vec<Tab>) -> Window {
-    Window { id, tabs, last_active: None }
+    Window {
+        id,
+        tabs,
+        last_active: None,
+    }
 }
 fn one_tab_app() -> App {
     let sources = vec![Source {
         kind: SourceKind::Current,
         path: "S".into(),
-        windows: vec![win(1, vec![tab1(10, "https://example.com/x", "Example \"quoted\"")])],
+        windows: vec![win(
+            1,
+            vec![tab1(10, "https://example.com/x", "Example \"quoted\"")],
+        )],
     }];
     let mut app = App::new(sources);
     app.update(Action::Descend); // windows
@@ -32,7 +48,10 @@ fn key(c: char) -> KeyEvent {
 #[test]
 fn open_yields_open_url_effect() {
     let mut app = one_tab_app();
-    assert_eq!(app.update(Action::Open), Some(Effect::OpenUrl("https://example.com/x".into())));
+    assert_eq!(
+        app.update(Action::Open),
+        Some(Effect::OpenUrl("https://example.com/x".into()))
+    );
 }
 
 #[test]
@@ -55,7 +74,9 @@ fn yank_url_and_title_url() {
     );
     assert_eq!(
         app.update(Action::YankTitleUrl),
-        Some(Effect::CopyToClipboard("Example \"quoted\"\nhttps://example.com/x".into()))
+        Some(Effect::CopyToClipboard(
+            "Example \"quoted\"\nhttps://example.com/x".into()
+        ))
     );
 }
 
@@ -97,8 +118,16 @@ fn sort_by_tab_count_orders_windows() {
         app.update(Action::Sort);
     }
     app.update(Action::Descend); // into windows, now sorted
-    let counts: Vec<usize> = app.sources()[0].windows.iter().map(|w| w.tabs.len()).collect();
-    assert_eq!(counts, vec![3, 2, 1], "windows ordered by descending tab count");
+    let counts: Vec<usize> = app.sources()[0]
+        .windows
+        .iter()
+        .map(|w| w.tabs.len())
+        .collect();
+    assert_eq!(
+        counts,
+        vec![3, 2, 1],
+        "windows ordered by descending tab count"
+    );
 }
 
 #[test]
@@ -134,10 +163,17 @@ fn export_tab_produces_markdown_and_valid_json() {
         panic!("expected an export effect");
     };
     assert_eq!(export.name, "tab-10");
-    assert!(export.markdown.contains("https://example.com/x"), "md has url");
+    assert!(
+        export.markdown.contains("https://example.com/x"),
+        "md has url"
+    );
     assert!(export.markdown.contains("Tab 10"), "md names the tab");
     // The quote in the title must be JSON-escaped, keeping the JSON valid.
-    assert!(export.json.contains("\\\"quoted\\\""), "json escapes quotes: {}", export.json);
+    assert!(
+        export.json.contains("\\\"quoted\\\""),
+        "json escapes quotes: {}",
+        export.json
+    );
     assert!(export.json.contains("\"url\":\"https://example.com/x\""));
 }
 
@@ -150,7 +186,16 @@ fn keymap_maps_action_keys() {
     assert_eq!(km.handle(key('e')), Some(Action::Export));
     assert_eq!(km.handle(key('r')), Some(Action::Reload));
     assert_eq!(km.handle(key('s')), Some(Action::Sort));
-    assert_eq!(km.handle(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE)), Some(Action::Open));
-    assert_eq!(km.handle(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)), Some(Action::YankUrl));
-    assert_eq!(km.handle(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)), Some(Action::Export));
+    assert_eq!(
+        km.handle(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE)),
+        Some(Action::Open)
+    );
+    assert_eq!(
+        km.handle(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)),
+        Some(Action::YankUrl)
+    );
+    assert_eq!(
+        km.handle(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
+        Some(Action::Export)
+    );
 }
