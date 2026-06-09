@@ -22,12 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Checkout forensicnomicon
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          repository: SecurityRonin/forensicnomicon
-          path: ../forensicnomicon
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -54,10 +48,4 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Checkout forensicnomicon
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          repository: SecurityRonin/forensicnomicon
-          path: ../forensicnomicon
-
-      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947ee53b6a2c5ab001ef # v2
+      - uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
