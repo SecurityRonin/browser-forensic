@@ -1,4 +1,4 @@
-//! `bravesess` entry point: load the default Brave profile and run the TUI.
+//! `br4n6` entry point: load the default Brave profile and run the TUI.
 
 use std::io;
 
@@ -7,18 +7,18 @@ use std::fs;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use snss::SessionStore;
 
-use bravesess::{draw, Action, App, Effect, Keymap};
+use br4n6::{draw, Action, App, Effect, Keymap};
 
 fn main() -> io::Result<()> {
     let store = match SessionStore::open_default_profile() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("bravesess: {e}");
+            eprintln!("br4n6: {e}");
             return Ok(());
         }
     };
     if store.sources().is_empty() {
-        eprintln!("bravesess: no Brave session files found.");
+        eprintln!("br4n6: no Brave session files found.");
         return Ok(());
     }
 

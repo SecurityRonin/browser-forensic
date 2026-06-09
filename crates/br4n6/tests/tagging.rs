@@ -1,6 +1,6 @@
 //! Milestone 8 — tagging and bulk yank/export.
 
-use bravesess::{Action, App, Effect, Keymap};
+use br4n6::{Action, App, Effect, Keymap};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 

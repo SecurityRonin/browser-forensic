@@ -1,5 +1,5 @@
 [package]
-name = "bravesess"
+name = "br4n6"
 version = "0.1.0"
 description = "Midnight-Commander-style, vi-keyed terminal browser for Chromium/Brave on-disk sessions"
 edition.workspace = true
@@ -7,11 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "bravesess"
+name = "br4n6"
 path = "src/lib.rs"
 
 [[bin]]
-name = "bravesess"
+name = "br4n6"
 path = "src/main.rs"
 
 [dependencies]

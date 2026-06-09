@@ -1,6 +1,6 @@
 //! Milestone 6 — incremental search across all sources.
 
-use bravesess::{Action, App, Direction, Keymap};
+use br4n6::{Action, App, Direction, Keymap};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 

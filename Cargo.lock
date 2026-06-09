@@ -202,7 +202,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "bravesess"
+name = "br4n6"
 version = "0.1.0"
 dependencies = [
  "arboard",
