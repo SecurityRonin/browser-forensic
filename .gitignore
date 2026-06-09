@@ -10,3 +10,6 @@ crates/snss-core/tests/fixtures/*
 !crates/snss-core/tests/fixtures/.gitkeep
 
 .DS_Store
+
+# Agent worktrees / local session state
+.claude/
