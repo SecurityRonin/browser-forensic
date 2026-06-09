@@ -1,11 +1,16 @@
-# Browser History / State Browser + MCP — Scoped Build Plan
+# Browser State & History Viewer + MCP — Scoped Build Plan
+
+> **State ≠ History.** *State* is a browser's session at one moment (open windows/tabs);
+> *History* is the time-ordered record of visits. This tool views both, distinctly — it does
+> not conflate them (cf. Issen's `[H]` State→History functor: a State is one snapshot, a
+> History is the cohort over time).
 
 *Lands inside `~/src/browser-forensic`. Built from the cross-browser research (Chromium,
 Firefox, Safari, mobile, encryption) and constrained to a hard no-secrets boundary.*
 
 ## Executive Summary
 
-`brave-browser-sessions` becomes the **history / state browser** of the `browser-forensic`
+`brave-browser-sessions` becomes the **state & history viewer** of the `browser-forensic`
 fleet: a read-only, cross-browser viewer (TUI) plus an **MCP server**. As a *forensic* tool
 the library and TUI read **everything** — history, browser state, **and secrets** (cookies,
 Login Data/passwords, autofill, and DPAPI/Keychain/NSS-decrypted values) — because tokens,
