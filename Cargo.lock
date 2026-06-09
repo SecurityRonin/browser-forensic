@@ -335,10 +335,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "browser-chrome",
+ "browser-core",
  "browser-discovery",
+ "dirs",
  "serde",
  "serde_json",
  "snss-core",
+ "tempfile",
 ]
 
 [[package]]

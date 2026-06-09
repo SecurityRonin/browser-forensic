@@ -18,9 +18,14 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+dirs = { workspace = true }
+browser-core = { path = "../browser-core" }
 browser-chrome = { path = "../browser-chrome" }
 browser-discovery = { path = "../browser-discovery" }
 snss-core = { path = "../snss-core" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

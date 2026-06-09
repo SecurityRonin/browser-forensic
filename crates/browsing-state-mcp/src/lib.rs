@@ -8,5 +8,6 @@
 //!    leaves the process, because history text itself carries tokens and PII.
 
 pub mod context;
+pub mod reader;
 pub mod redact;
 pub mod server;
