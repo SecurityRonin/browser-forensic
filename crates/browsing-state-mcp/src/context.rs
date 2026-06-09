@@ -51,16 +51,39 @@ pub struct Allowlist {
 
 impl Allowlist {
     pub fn new(domains: impl IntoIterator<Item = String>) -> Self {
-        let _ = &domains;
-        todo!("implemented in the GREEN step")
+        Self { domains: domains.into_iter().map(|d| d.to_lowercase()).collect(), all: false }
     }
     pub fn allow_all() -> Self {
-        todo!("implemented in the GREEN step")
+        Self { domains: Vec::new(), all: true }
     }
     /// Whether the URL's host is covered by an allowed domain (eTLD+1 suffix).
     pub fn permits(&self, url: &str) -> bool {
-        let _ = url;
-        todo!("implemented in the GREEN step")
+        if self.all {
+            return true;
+        }
+        let Some(host) = host_of(url) else { return false };
+        let host = host.to_lowercase();
+        self.domains.iter().any(|d| host == *d || host.ends_with(&format!(".{d}")))
+    }
+}
+
+/// Extract the host (text between `://` and the next `/`, `?`, or `#`).
+fn host_of(url: &str) -> Option<&str> {
+    let after = url.split_once("://")?.1;
+    let end = after.find(['/', '?', '#']).unwrap_or(after.len());
+    let host = &after[..end];
+    (!host.is_empty()).then_some(host)
+}
+
+fn to_item(r: &Record) -> ContextItem {
+    ContextItem {
+        url: redact_url(&r.url),
+        title: mask_secrets(&r.title),
+        kind: r.kind.label().to_string(),
+        time_ns: r.time_ns,
+        browser: r.browser.clone(),
+        source: r.source.to_string(),
+        untrusted_evidence: true,
     }
 }
 
@@ -93,14 +116,55 @@ pub fn browsing_context(
     cap: usize,
     allow: &Allowlist,
 ) -> ContextResult {
-    let _ = (records, now_ns, minutes, cap, allow);
-    todo!("implemented in the GREEN step")
+    let window_ns = i64::from(minutes).saturating_mul(60).saturating_mul(1_000_000_000);
+    let cutoff = now_ns.saturating_sub(window_ns);
+
+    let mut omitted = 0usize;
+    let mut items: Vec<ContextItem> = Vec::new();
+    for r in records {
+        if r.time_ns < cutoff {
+            continue; // outside the time window
+        }
+        if r.is_redirect && !r.chain_end {
+            continue; // intermediate redirect hop — collapsed, not an omission
+        }
+        if !allow.permits(&r.url) {
+            omitted += 1;
+            continue;
+        }
+        items.push(to_item(r));
+    }
+    items.sort_by(|a, b| b.time_ns.cmp(&a.time_ns)); // newest first
+    items.truncate(cap);
+
+    ContextResult {
+        items,
+        omitted_by_policy_count: omitted,
+        timeline_basis: "history.visits + snss (redirect-collapsed, allow-listed)".to_string(),
+    }
 }
 
 /// Allow-listed records whose URL contains `query` (case-insensitive), redacted.
 pub fn did_user_visit(records: &[Record], query: &str, allow: &Allowlist) -> ContextResult {
-    let _ = (records, query, allow);
-    todo!("implemented in the GREEN step")
+    let needle = query.to_lowercase();
+    let mut omitted = 0usize;
+    let mut items: Vec<ContextItem> = Vec::new();
+    for r in records {
+        if !r.url.to_lowercase().contains(&needle) {
+            continue; // not a match
+        }
+        if !allow.permits(&r.url) {
+            omitted += 1;
+            continue;
+        }
+        items.push(to_item(r));
+    }
+    items.sort_by(|a, b| b.time_ns.cmp(&a.time_ns));
+    ContextResult {
+        items,
+        omitted_by_policy_count: omitted,
+        timeline_basis: "history (allow-listed url match)".to_string(),
+    }
 }
 
 #[cfg(test)]
