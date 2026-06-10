@@ -65,9 +65,17 @@ jobs:
 
       - run: cargo install cargo-llvm-cov --locked
 
-      # Regression backstop at 86% lines (actual ~88%). The uncovered remainder is
-      # the interactive TUI render/event loop (browser-tui/src/tui.rs), the MCP and
-      # CLI binary `main()` glue, and a handful of defensive guards — exercised by
-      # the integration tests but not line-covered, and not worth contriving unit
-      # tests for. Raise this number as coverage improves; never lower it silently.
-      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 89
+      # Regression backstop at 89.4% lines (actual 89.47%). The uncovered remainder
+      # is now ONLY the irreducible imperative shell of the three binaries, after the
+      # Humble-Object pass pulled every decision into unit-tested lib fns:
+      #   * browser-tui/src/tui.rs — the terminal.draw / event::read render+event loop
+      #     and the open/clipboard/fs side effects (key→Action, state transitions,
+      #     view-model, and effect-outcome→status formatting are all in browser_tui lib);
+      #   * browsing-state-mcp/src/main.rs — the stdin/stdout JSON-RPC loop (routing in
+      #     server::dispatch, env policy in context::parse_allowlist, both lib-tested);
+      #   * bw-cli/src/main.rs — clap parsing, parser I/O, and the println! loops
+      #     (carve-stat merge, triage summary, filename inference are in the bw_cli lib).
+      # These call draw/read/transport/print directly and cannot be unit-tested without
+      # mocking the terminal/stdio; the integration tests exercise them end-to-end.
+      # Raise this number as coverage improves; never lower it silently.
+      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 89.4
