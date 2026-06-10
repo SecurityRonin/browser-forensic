@@ -1,4 +1,5 @@
-//! Milestone 2 — Pickle decode of UpdateTabNavigation payloads.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+//! Milestone 2 — Pickle decode of `UpdateTabNavigation` payloads.
 //!
 //! Two layers of validation:
 //!   * **Synthetic golden** (committed, no personal data) pins the exact field
@@ -74,7 +75,7 @@ fn tabs_navigation_decodes_with_zero_failures() {
 
     assert_eq!(navs.len(), 51, "nav-command count (cmd 1)");
     assert!(
-        navs.iter().all(|r| r.is_ok()),
+        navs.iter().all(std::result::Result::is_ok),
         "zero parse failures: {:?}",
         navs.iter().filter(|r| r.is_err()).collect::<Vec<_>>()
     );

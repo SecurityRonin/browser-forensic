@@ -10,7 +10,7 @@ use crate::IntegrityIndicator;
 
 /// Check a browser cookie database for timestamp anomalies.
 ///
-/// Detects cookies where creation timestamp > last_access timestamp,
+/// Detects cookies where creation timestamp > `last_access` timestamp,
 /// which is impossible under normal browser operation and indicates timestamp manipulation.
 pub fn check_cookie_integrity(
     path: &Path,

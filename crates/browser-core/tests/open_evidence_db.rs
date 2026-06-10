@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Contract tests for the read-only, WAL-safe evidence SQLite opener.
 //!
 //! These prove that `browser_core::sqlite::open_evidence_db`:

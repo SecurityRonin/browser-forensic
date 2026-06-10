@@ -38,7 +38,7 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
             let date_last_used: i64 = row.get(4)?;
             Ok((name, value, count, date_created, date_last_used))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(|(name, value, count, date_created, date_last_used)| {
             // NOTE: date_created is Unix epoch SECONDS, not WebKit microseconds
             let ts_ns = unix_secs_to_nanos(date_created);

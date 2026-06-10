@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! `browser_tui` — the TUI layer over [`snss`]. The pure application state lives in
 //! [`App`] (a testable reducer over [`Action`]s); rendering is a thin function and
 //! all side effects are returned as [`Effect`]s for the main loop to execute.
@@ -620,7 +621,7 @@ impl App {
         self.sources.get(si)?.windows.get(wi)?.tabs.get(ti)
     }
 
-    /// URLs of all tagged tabs, in document order (BTreeSet iterates sorted).
+    /// URLs of all tagged tabs, in document order (`BTreeSet` iterates sorted).
     pub fn tagged_urls(&self) -> Vec<String> {
         self.tags
             .iter()

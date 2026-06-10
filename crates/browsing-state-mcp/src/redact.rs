@@ -1,13 +1,13 @@
 //! PII redaction — the MCP's second wall.
 //!
-//! History evidence is not automatically safe: URLs carry OAuth codes, password-
+//! History evidence is not automatically safe: URLs carry `OAuth` codes, password-
 //! reset tokens, and API keys (usually in the query string), and titles/search
 //! terms carry emails and secrets. These functions strip and mask that material
 //! before it reaches an AI. Heuristic by design (defense-in-depth); the primary
 //! guarantee is that secret *readers* are never called.
 
-/// Strip the query string and fragment from a URL — where reset tokens, OAuth
-/// codes, and API keys overwhelmingly live. Keeps scheme://host/path.
+/// Strip the query string and fragment from a URL — where reset tokens, `OAuth`
+/// codes, and API keys overwhelmingly live. Keeps <scheme://host/path>.
 pub fn redact_url(url: &str) -> String {
     let end = url.find(['?', '#']).unwrap_or(url.len());
     url[..end].to_string()

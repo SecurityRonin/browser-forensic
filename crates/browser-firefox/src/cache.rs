@@ -23,7 +23,7 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
         Err(_) => return Ok(events),
     };
 
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         let file_path = entry.path();
         if !file_path.is_file() {
             continue;
@@ -39,8 +39,10 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
             continue;
         }
 
-        // Last 4 bytes = metadata offset (big-endian u32)
-        let metadata_offset = u32::from_be_bytes(data[file_len - 4..].try_into().unwrap()) as usize;
+        // Last 4 bytes = metadata offset (big-endian u32). The slice is exactly
+        // 4 bytes (guaranteed by the `file_len < 4` guard above); fallback never fires.
+        let metadata_offset =
+            u32::from_be_bytes(data[file_len - 4..].try_into().unwrap_or([0u8; 4])) as usize;
 
         if metadata_offset >= file_len - 4 {
             continue;

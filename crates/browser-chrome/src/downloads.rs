@@ -46,14 +46,13 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
                 url,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(
             |(start_time, target_path, total_bytes, state, danger_type, url)| {
                 let ts_ns = webkit_micros_to_unix_nanos(start_time);
                 let filename = std::path::Path::new(&target_path)
                     .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| target_path.clone());
+                    .map_or_else(|| target_path.clone(), |n| n.to_string_lossy().into_owned());
                 let desc = format!("{filename} ({total_bytes} bytes)");
                 let url_val = url.unwrap_or_default();
                 BrowserEvent::new(

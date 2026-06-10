@@ -56,7 +56,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
                 samesite,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(
             |(
                 creation_utc,

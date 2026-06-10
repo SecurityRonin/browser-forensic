@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Firefox/Gecko browser artifact parsers.
 
 pub mod autofill;

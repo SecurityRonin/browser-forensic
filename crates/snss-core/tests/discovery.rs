@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Source discovery — glob a Sessions directory into typed sources.
 //!
 //! Synthetic SNSS files in cargo's per-binary temp dir give deterministic,
@@ -114,12 +115,11 @@ fn open_dir_skips_unreadable_file_with_a_warning() {
 /// finds at least a Current source with content.
 #[test]
 fn open_default_profile_loads_real_data_when_present() {
-    let store = match SessionStore::open_default_profile() {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!("SKIP: no default Brave profile on this machine");
-            return;
-        }
+    let store = if let Ok(s) = SessionStore::open_default_profile() {
+        s
+    } else {
+        eprintln!("SKIP: no default Brave profile on this machine");
+        return;
     };
     if store.sources().is_empty() {
         eprintln!("SKIP: default profile has no session files");

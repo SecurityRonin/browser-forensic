@@ -24,8 +24,7 @@ pub fn format_timestamp_ns(ns: i64) -> String {
     let secs = ns / 1_000_000_000;
     let nanos = u32::try_from(ns % 1_000_000_000).unwrap_or(0);
     DateTime::<Utc>::from_timestamp(secs, nanos)
-        .map(|d| d.to_rfc3339())
-        .unwrap_or_else(|| "invalid".to_string())
+        .map_or_else(|| "invalid".to_string(), |d| d.to_rfc3339())
 }
 
 /// Format a [`BrowserEvent`] as a human-readable text line.

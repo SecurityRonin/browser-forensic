@@ -1,4 +1,4 @@
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Browser memory scanning — extract browser artifacts from raw byte buffers.
 
 use browser_core::{ArtifactKind, BrowserEvent, BrowserFamily};

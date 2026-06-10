@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration tests for `bw` CLI — end-to-end coverage.
 
 use assert_cmd::Command;
@@ -6,7 +7,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Create a minimal Chrome History SQLite file with one URL.
-/// Returns the TempDir (to keep it alive) and the path to the History file.
+/// Returns the `TempDir` (to keep it alive) and the path to the History file.
 fn create_chrome_history() -> (TempDir, PathBuf) {
     let dir = TempDir::new().unwrap();
     // Create a path that looks like a Chrome profile

@@ -34,7 +34,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
             let last_visit_us: i64 = row.get(3)?;
             Ok((url, title, visit_count, last_visit_us))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(|(url, title, visit_count, last_visit_us)| {
             let ts_ns = unix_micros_to_nanos(last_visit_us);
             let title_str = title.unwrap_or_default();

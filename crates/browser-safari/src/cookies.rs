@@ -47,7 +47,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
                 is_httponly,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(
             |(name, domain, cookie_path, creation, expiry, is_secure, is_httponly)| {
                 let ts_ns = core_data_secs_to_unix_nanos(creation);

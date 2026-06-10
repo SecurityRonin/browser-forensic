@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 // Each integration-test binary compiles this module separately and uses a
 // different subset of helpers, so unused-in-one-binary is expected.
 #![allow(dead_code)]
@@ -26,15 +27,14 @@ pub fn fixture_path(name: &str) -> PathBuf {
 /// and how to populate it.
 pub fn open_fixture_or_skip(name: &str) -> Option<RecordStream> {
     let path = fixture_path(name);
-    match File::open(&path) {
-        Ok(f) => Some(read_records(BufReader::new(f)).expect("valid SNSS header")),
-        Err(_) => {
-            eprintln!(
-                "SKIP: fixture {name} absent at {} — run scripts/copy-fixtures.sh to populate",
-                path.display()
-            );
-            None
-        }
+    if let Ok(f) = File::open(&path) {
+        Some(read_records(BufReader::new(f)).expect("valid SNSS header"))
+    } else {
+        eprintln!(
+            "SKIP: fixture {name} absent at {} — run scripts/copy-fixtures.sh to populate",
+            path.display()
+        );
+        None
     }
 }
 
@@ -43,8 +43,8 @@ pub fn open_fixture_or_skip(name: &str) -> Option<RecordStream> {
 // real-fixture tests remain the authoritative check against Chromium's output.
 #[allow(dead_code)] // each test file uses a subset
 pub mod build {
-    /// A Chromium Pickle UpdateTabNavigation payload: 4-byte LE length header,
-    /// then 4-byte-aligned tab_id, index, UTF-8 url, UTF-16-LE title.
+    /// A Chromium Pickle `UpdateTabNavigation` payload: 4-byte LE length header,
+    /// then 4-byte-aligned `tab_id`, index, UTF-8 url, UTF-16-LE title.
     pub fn nav(tab_id: i32, index: i32, url: &str, title: &str) -> Vec<u8> {
         let mut body = Vec::new();
         body.extend_from_slice(&tab_id.to_le_bytes());
@@ -63,22 +63,22 @@ pub mod build {
         out
     }
 
-    /// A raw two-i32 POD payload (SetTabWindow, TabIndexInWindow, SelectedNav…).
+    /// A raw two-i32 POD payload (`SetTabWindow`, `TabIndexInWindow`, `SelectedNav`…).
     pub fn pair(a: i32, b: i32) -> Vec<u8> {
         let mut v = a.to_le_bytes().to_vec();
         v.extend_from_slice(&b.to_le_bytes());
         v
     }
 
-    /// A SetPinnedState POD payload: `{tab_id: i32, pinned: bool}` padded to 8.
+    /// A `SetPinnedState` POD payload: `{tab_id: i32, pinned: bool}` padded to 8.
     pub fn pinned(tab_id: i32, pinned: bool) -> Vec<u8> {
         let mut v = tab_id.to_le_bytes().to_vec();
-        v.push(pinned as u8);
+        v.push(u8::from(pinned));
         v.extend_from_slice(&[0, 0, 0]); // pad to 8 as Chromium does
         v
     }
 
-    /// A LastActiveTime POD payload: `{tab_id: i32, _pad: i32, time: i64}`.
+    /// A `LastActiveTime` POD payload: `{tab_id: i32, _pad: i32, time: i64}`.
     pub fn last_active(tab_id: i32, win_micros: i64) -> Vec<u8> {
         let mut v = tab_id.to_le_bytes().to_vec();
         v.extend_from_slice(&0i32.to_le_bytes());

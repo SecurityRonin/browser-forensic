@@ -86,8 +86,7 @@ fn scan_wal_page_for_urls(page_data: &[u8], frame_offset: u64) -> Vec<CarvedReco
         let end = page_data[i..]
             .iter()
             .position(|&b| !(0x20..=0x7e).contains(&b))
-            .map(|pos| i + pos)
-            .unwrap_or(page_data.len());
+            .map_or(page_data.len(), |pos| i + pos);
 
         if end > i + 10 {
             if let Ok(url) = std::str::from_utf8(&page_data[i..end]) {

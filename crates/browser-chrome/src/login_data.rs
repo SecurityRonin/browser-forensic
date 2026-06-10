@@ -48,7 +48,7 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
                 date_last_used,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(
             |(origin_url, action_url, username, date_created, date_last_used)| {
                 let ts_ns = webkit_micros_to_unix_nanos(date_created);

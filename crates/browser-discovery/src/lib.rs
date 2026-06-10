@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Auto-detection of browser profiles on the local filesystem.
 
 use std::path::{Path, PathBuf};

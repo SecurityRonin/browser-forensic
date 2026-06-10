@@ -16,7 +16,7 @@ pub fn check_database_integrity(path: &Path) -> Result<Vec<IntegrityIndicator>> 
     let mut stmt = conn.prepare("PRAGMA integrity_check")?;
     let rows: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     let mut indicators = Vec::new();

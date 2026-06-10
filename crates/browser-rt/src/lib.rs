@@ -1,5 +1,5 @@
-#![deny(clippy::unwrap_used)]
-//! RapidTriage orchestration for browser forensics.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+//! `RapidTriage` orchestration for browser forensics.
 
 use std::path::Path;
 

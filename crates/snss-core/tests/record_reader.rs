@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Milestone 1 — record-reader validation against **real, copied** Brave files.
 //!
 //! The expected command histograms below were derived by an independent decoder

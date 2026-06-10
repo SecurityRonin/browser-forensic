@@ -1,7 +1,7 @@
 //! Chromium-family browser cache parser (best-effort).
 //!
 //! Walks the `Cache/` directory and attempts to extract URLs from
-//! SimpleCache EOF records.
+//! `SimpleCache` EOF records.
 
 use std::path::Path;
 
@@ -23,7 +23,7 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
         Err(_) => return Ok(events),
     };
 
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         let file_path = entry.path();
         // Only walk immediate files, not subdirectories
         if !file_path.is_file() {
@@ -44,8 +44,11 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
         let eof_start = file_len - 24;
         let eof_record = &data[eof_start..];
 
-        // Bytes 8-12 of EOF record = key_size as u32 LE
-        let key_size = u32::from_le_bytes(eof_record[8..12].try_into().unwrap()) as usize;
+        // Bytes 8-12 of EOF record = key_size as u32 LE. `eof_record` is the
+        // trailing 24 bytes (guaranteed by the `file_len < 24` guard above), so
+        // `[8..12]` is always exactly 4 bytes; the fallback never fires.
+        let key_size =
+            u32::from_le_bytes(eof_record[8..12].try_into().unwrap_or([0u8; 4])) as usize;
 
         if key_size == 0 || key_size > 8192 {
             continue;

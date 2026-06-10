@@ -36,7 +36,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
             let webkit_time: i64 = row.get(3)?;
             Ok((url, title, visit_count, webkit_time))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|(_, _, _, webkit_time)| *webkit_time > 0)
         .map(|(url, title, visit_count, webkit_time)| {
             let ts_ns = webkit_micros_to_unix_nanos(webkit_time);

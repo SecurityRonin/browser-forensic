@@ -34,7 +34,7 @@ pub fn parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>> {
             let date_added_us: i64 = row.get(2)?;
             Ok((title, url, date_added_us))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(|(title, url, date_added_us)| {
             let ts_ns = unix_micros_to_nanos(date_added_us);
             let title_str = title.clone().unwrap_or_default();

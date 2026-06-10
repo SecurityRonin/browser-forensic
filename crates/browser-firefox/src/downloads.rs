@@ -35,7 +35,7 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
             let date_added_us: i64 = row.get(2)?;
             Ok((url, dest_path, date_added_us))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(|(url, dest_path, date_added_us)| {
             let ts_ns = unix_micros_to_nanos(date_added_us);
             let dest = dest_path.clone().unwrap_or_default();

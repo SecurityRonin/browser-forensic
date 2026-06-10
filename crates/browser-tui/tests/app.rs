@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Milestone 4 — the App navigation reducer and a render smoke test.
 
 use browser_tui::{draw, Action, App, Pane};
@@ -187,7 +188,10 @@ fn buffer_text(app: &App) -> String {
     let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
     term.draw(|f| draw(f, app)).unwrap();
     let buf = term.backend().buffer().clone();
-    buf.content().iter().map(|c| c.symbol()).collect()
+    buf.content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect()
 }
 
 #[test]

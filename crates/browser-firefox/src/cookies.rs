@@ -50,7 +50,7 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
                 samesite,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(
             |(host, name, cookie_path, creation_us, expiry, is_secure, is_httponly, samesite)| {
                 let ts_ns = unix_micros_to_nanos(creation_us);

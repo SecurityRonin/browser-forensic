@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Milestone 7 — actions: open, yank, export, reload, sort.
 
 use browser_tui::{Action, App, Effect, Keymap, SortMode};

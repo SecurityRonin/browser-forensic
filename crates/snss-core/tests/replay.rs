@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Milestone 3 — replay the command log into a Window/Tab/Nav tree.
 //!
 //! Synthetic streams pin the tree-building, dedup, current-entry and pinned logic

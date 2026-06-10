@@ -1,3 +1,11 @@
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::no_effect_underscore_binding
+    )
+)]
 //! Core types for browser forensic analysis.
 
 pub mod analyze;
@@ -125,7 +133,7 @@ impl ForensicMeta {
             caveats: desc
                 .evidence_caveats
                 .iter()
-                .map(|c| c.to_string())
+                .map(|c| (*c).to_string())
                 .collect(),
         })
     }

@@ -35,7 +35,7 @@ pub fn parse_history(path: &Path) -> Result<Vec<BrowserEvent>> {
             let visit_time: f64 = row.get(2)?;
             Ok((url, visit_count, visit_time))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(|(url, visit_count, visit_time)| {
             let ts_ns = core_data_secs_to_unix_nanos(visit_time);
             let desc = format!("[{visit_count} visits] {url}");

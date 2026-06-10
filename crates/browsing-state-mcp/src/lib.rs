@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! `browsing-state-mcp` — an MCP server that exposes browser **history and state**
 //! (visits, open/closed tabs, searches) to AI agents.
 //!

@@ -1,4 +1,11 @@
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::no_effect_underscore_binding
+    )
+)]
 //! Browser artifact carving and recovery.
 //!
 //! Recovers deleted browser data from SQLite free pages, WAL files,

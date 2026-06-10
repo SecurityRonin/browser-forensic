@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Safari browser artifact parsers.
 
 pub mod bookmarks;

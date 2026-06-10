@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! `browsing-state-mcp` server: a newline-delimited JSON-RPC MCP server over
 //! stdio. All request routing lives in the unit-tested
 //! [`browsing_state_mcp::server::dispatch`]; this file only owns I/O.

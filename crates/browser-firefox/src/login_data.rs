@@ -49,7 +49,7 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
             .to_string();
         let time_created_ms = login
             .get("timeCreated")
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(0);
         let ts_ns = unix_millis_to_nanos(time_created_ms);
         let ev = BrowserEvent::new(

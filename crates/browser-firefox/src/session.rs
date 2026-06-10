@@ -42,7 +42,7 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
                 for tab in tabs {
                     let last_accessed_ms = tab
                         .get("lastAccessed")
-                        .and_then(|v| v.as_i64())
+                        .and_then(serde_json::Value::as_i64)
                         .unwrap_or(0);
                     let ts_ns = unix_millis_to_nanos(last_accessed_ms);
 

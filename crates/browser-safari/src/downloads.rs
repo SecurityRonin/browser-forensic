@@ -46,18 +46,17 @@ pub fn parse_downloads(path: &Path) -> Result<Vec<BrowserEvent>> {
             .to_string();
         let date_added = dict
             .get("DownloadEntryDateAddedKey")
-            .and_then(|v| v.as_real())
+            .and_then(plist::Value::as_real)
             .unwrap_or(0.0);
         let total_bytes = dict
             .get("DownloadEntryProgressTotalToLoad")
-            .and_then(|v| v.as_signed_integer())
+            .and_then(plist::Value::as_signed_integer)
             .unwrap_or(0);
 
         let ts_ns = core_data_secs_to_unix_nanos(date_added);
         let filename = std::path::Path::new(&dl_path)
             .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| dl_path.clone());
+            .map_or_else(|| dl_path.clone(), |n| n.to_string_lossy().into_owned());
         let desc = format!("{filename} from {url}");
 
         let ev = BrowserEvent::new(
@@ -92,11 +91,11 @@ mod tests {
             let mut dict: BTreeMap<String, Value> = BTreeMap::new();
             dict.insert(
                 "DownloadEntryURL".to_string(),
-                Value::String(url.to_string()),
+                Value::String((*url).to_string()),
             );
             dict.insert(
                 "DownloadEntryPath".to_string(),
-                Value::String(path.to_string()),
+                Value::String((*path).to_string()),
             );
             dict.insert(
                 "DownloadEntryDateAddedKey".to_string(),

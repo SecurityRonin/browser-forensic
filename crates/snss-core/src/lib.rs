@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! `snss` — a read-only decoder for Chromium/Brave SNSS session files.
 //!
 //! The crate is a pure decoder: it reads bytes and returns a typed model. It has
@@ -126,11 +127,13 @@ pub fn read_records<R: Read>(mut reader: R) -> Result<RecordStream, SnssError> {
         got[..n].copy_from_slice(&buf[..n]);
         return Err(SnssError::BadMagic(got));
     }
-    let magic: [u8; 4] = buf[0..4].try_into().expect("4 bytes");
+    // `buf.len() >= 8` is guaranteed above, so both slices are exactly 4 bytes;
+    // the fallbacks are unreachable defence-in-depth, not behavior changes.
+    let magic: [u8; 4] = buf[0..4].try_into().unwrap_or([0u8; 4]);
     if magic != MAGIC {
         return Err(SnssError::BadMagic(magic));
     }
-    let version = i32::from_le_bytes(buf[4..8].try_into().expect("4 bytes"));
+    let version = i32::from_le_bytes(buf[4..8].try_into().unwrap_or([0u8; 4]));
     if version != SUPPORTED_VERSION {
         return Err(SnssError::UnsupportedVersion(version));
     }
@@ -266,7 +269,8 @@ impl<'a> Pickle<'a> {
         if payload.len() < 4 {
             return Err(PickleError::TooShort);
         }
-        let declared = u32::from_le_bytes(payload[0..4].try_into().expect("4 bytes")) as usize;
+        // `payload.len() >= 4` guaranteed above; the slice is exactly 4 bytes.
+        let declared = u32::from_le_bytes(payload[0..4].try_into().unwrap_or([0u8; 4])) as usize;
         let actual = payload.len() - 4;
         if declared > actual {
             return Err(PickleError::BadHeader { declared, actual });
@@ -291,7 +295,8 @@ impl<'a> Pickle<'a> {
         if end > self.data.len() {
             return Err(PickleError::Overrun);
         }
-        let v = i32::from_le_bytes(self.data[self.cursor..end].try_into().expect("4 bytes"));
+        // `end - self.cursor == 4` and `end <= len` guaranteed above.
+        let v = i32::from_le_bytes(self.data[self.cursor..end].try_into().unwrap_or([0u8; 4]));
         self.cursor = end; // i32 reads are inherently 4-aligned
         Ok(v)
     }
@@ -691,7 +696,7 @@ impl SessionStore {
 
         // Assign kinds: newest Session = Current, next = Last; newest Tabs =
         // Recently-Closed; newest Apps = Apps. Order is fixed for the UI.
-        let sessions = by_family.get("Session").map(Vec::as_slice).unwrap_or(&[]);
+        let sessions = by_family.get("Session").map_or(&[][..], Vec::as_slice);
         let mut plan: Vec<(SourceKind, &PathBuf)> = Vec::new();
         if let Some((_, p)) = sessions.first() {
             plan.push((SourceKind::Current, p));

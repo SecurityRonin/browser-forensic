@@ -30,7 +30,7 @@ pub fn parse_local_state(path: &Path) -> Result<Vec<BrowserEvent>> {
             let user_name = info.get("user_name").and_then(|u| u.as_str()).unwrap_or("");
             let active_time = info
                 .get("active_time")
-                .and_then(|t| t.as_f64())
+                .and_then(serde_json::Value::as_f64)
                 .unwrap_or(0.0);
             let ts_ns = browser_core::timestamp::unix_secs_to_nanos(active_time as i64);
 

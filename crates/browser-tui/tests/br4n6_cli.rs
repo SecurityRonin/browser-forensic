@@ -299,7 +299,7 @@ fn br4n6_browsers_discovers_chromium_profile() {
 // ── Firefox fixtures ─────────────────────────────────────────────────────────
 
 /// Build a Firefox `places.sqlite` with `moz_places` + `moz_historyvisits`.
-/// `last_visit_date` is PRTime (microseconds since the Unix epoch). Returns the
+/// `last_visit_date` is `PRTime` (microseconds since the Unix epoch). Returns the
 /// profile dir + `places.sqlite` path.
 fn create_firefox_places() -> (TempDir, PathBuf) {
     let dir = TempDir::new().unwrap();

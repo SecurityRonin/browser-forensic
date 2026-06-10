@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Milestone 8 — tagging and bulk yank/export.
 
 use browser_tui::{Action, App, Effect, Keymap};

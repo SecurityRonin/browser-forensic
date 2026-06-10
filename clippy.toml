@@ -1,0 +1,15 @@
+# Allow unwrap()/expect() inside test functions and #[cfg(test)] modules.
+# Production code keeps clippy::unwrap_used/expect_used = deny (see workspace
+# Cargo.toml); tests legitimately unwrap to fail loudly, so this is the
+# upstream-recommended exception rather than scattering #[allow] across every
+# test module.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+
+# Browser product/format/structure names that look like code identifiers to
+# clippy::doc_markdown. Keeps doc comments prose-clean without backtick-wrapping
+# every acronym.
+doc-valid-idents = [
+    "SQLite", "WebKit", "mozLz4", "SNSS", "LevelDB", "IndexedDB",
+    "macOS", "iOS", "URL", "JSON", "UTF-8", "WAL", "VLQ", "SHA-256", "MD5",
+]

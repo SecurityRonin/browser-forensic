@@ -23,7 +23,7 @@ pub fn parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
         Err(_) => return Ok(events),
     };
 
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         let id_path = entry.path();
         if !id_path.is_dir() {
             continue;
@@ -36,7 +36,7 @@ pub fn parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
         // Find the highest-version subdirectory (sort by name, take last)
         let mut versions: Vec<std::path::PathBuf> = match std::fs::read_dir(&id_path) {
             Ok(v) => v
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .map(|e| e.path())
                 .filter(|p| p.is_dir())
                 .collect(),
@@ -80,8 +80,7 @@ pub fn parse_extensions(extensions_dir: &Path) -> Result<Vec<BrowserEvent>> {
             .ok()
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_nanos() as i64)
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_nanos() as i64);
 
         let desc = format!("{name} v{version}");
         let ev = BrowserEvent::new(

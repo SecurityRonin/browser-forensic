@@ -46,7 +46,7 @@ pub fn parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>> {
             .to_string();
         let install_date_ms = addon
             .get("installDate")
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(0);
         let ts_ns = unix_millis_to_nanos(install_date_ms);
         let desc = format!("{name} v{version}");

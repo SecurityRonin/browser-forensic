@@ -54,7 +54,7 @@ fn check_safari_tombstones(
     let mut stmt = conn.prepare("SELECT url FROM history_tombstones")?;
     let urls: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     for url in urls {
@@ -75,7 +75,7 @@ fn check_safari_visit_id_gaps(
     let mut stmt = conn.prepare("SELECT id FROM history_visits ORDER BY id ASC")?;
     let ids: Vec<i64> = stmt
         .query_map([], |row| row.get::<_, i64>(0))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     for window in ids.windows(2) {
@@ -110,7 +110,7 @@ fn check_firefox_visit_id_gaps(
     let mut stmt = conn.prepare("SELECT id FROM moz_historyvisits ORDER BY id ASC")?;
     let ids: Vec<i64> = stmt
         .query_map([], |row| row.get::<_, i64>(0))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     for window in ids.windows(2) {
@@ -136,7 +136,7 @@ fn check_firefox_timestamp_monotonicity(
     let mut stmt = conn.prepare("SELECT id, visit_date FROM moz_historyvisits ORDER BY id ASC")?;
     let rows: Vec<(i64, i64)> = stmt
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     for window in rows.windows(2) {
@@ -212,7 +212,7 @@ fn check_chromium_visit_id_gaps(
     let mut stmt = conn.prepare("SELECT id FROM visits ORDER BY id ASC")?;
     let ids: Vec<i64> = stmt
         .query_map([], |row| row.get::<_, i64>(0))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     for window in ids.windows(2) {
@@ -239,7 +239,7 @@ fn check_chromium_timestamp_monotonicity(
     let mut stmt = conn.prepare("SELECT id, visit_time FROM visits ORDER BY id ASC")?;
     let rows: Vec<(i64, i64)> = stmt
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     for window in rows.windows(2) {

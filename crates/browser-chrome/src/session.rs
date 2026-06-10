@@ -42,8 +42,7 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
         let ts_ns = window
             .last_active
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_nanos() as i64)
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_nanos() as i64);
         for tab in &window.tabs {
             let Some(nav) = tab.history.get(tab.current) else {
                 continue;
@@ -86,8 +85,8 @@ mod tests {
         }
     }
 
-    /// Encode an UpdateTabNavigation Pickle payload (4-byte LE length header +
-    /// 4-byte-aligned tab_id, index, UTF-8 url, UTF-16-LE title).
+    /// Encode an `UpdateTabNavigation` Pickle payload (4-byte LE length header +
+    /// 4-byte-aligned `tab_id`, index, UTF-8 url, UTF-16-LE title).
     fn nav_payload(tab_id: i32, index: i32, url: &str, title: &str) -> Vec<u8> {
         let mut body = Vec::new();
         body.extend_from_slice(&tab_id.to_le_bytes());

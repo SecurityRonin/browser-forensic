@@ -1,4 +1,9 @@
 /// SQLite helpers for use in tests across the workspace.
+///
+/// This is test-support scaffolding (a `pub mod` so other crates' `#[cfg(test)]`
+/// modules can build fixture databases). It is not part of the production parsing
+/// surface, so it opts out of the panic lints: setup failures here must fail loudly.
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub mod sqlite {
     use rusqlite::Connection;
     use std::path::Path;

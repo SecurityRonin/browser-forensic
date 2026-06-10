@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Milestone 5 — the vi/F-key keymap (a stateful Key → Action mapping).
 
 use browser_tui::{Action, Keymap};

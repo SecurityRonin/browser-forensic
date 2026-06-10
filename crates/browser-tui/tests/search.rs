@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Milestone 6 — incremental search across all sources.
 
 use browser_tui::{Action, App, Direction, Keymap};

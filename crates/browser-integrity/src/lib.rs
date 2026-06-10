@@ -1,4 +1,4 @@
-#![deny(clippy::unwrap_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Browser integrity detection — detects anomalies indicating
 //! tampering, clearing, or corruption in browser artifacts.
 
@@ -40,7 +40,7 @@ pub enum IntegrityIndicator {
         prev_ts_ns: i64,
         this_ts_ns: i64,
     },
-    /// Cookie creation timestamp is after last_access (impossible naturally).
+    /// Cookie creation timestamp is after `last_access` (impossible naturally).
     CookieTimestampAnomaly {
         path: PathBuf,
         host: String,
@@ -49,9 +49,9 @@ pub enum IntegrityIndicator {
     },
     /// WAL file exists alongside database — uncommitted changes or crash recovery needed.
     WalPresent { path: PathBuf },
-    /// SQLite PRAGMA integrity_check reported a problem.
+    /// SQLite PRAGMA `integrity_check` reported a problem.
     SqliteIntegrityFailure { path: PathBuf, message: String },
-    /// Safari history_tombstones table contains deleted URL records.
+    /// Safari `history_tombstones` table contains deleted URL records.
     HistoryTombstoneFound {
         path: PathBuf,
         url: String,

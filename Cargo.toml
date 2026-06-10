@@ -47,4 +47,39 @@ unused_imports = "warn"
 unused_variables = "warn"
 
 [workspace.lints.clippy]
-all = "warn"
+# Paranoid Gatekeeper: these crates parse untrusted, attacker-controllable
+# browser artifacts (SQLite pages, SNSS sessions, mozLz4 blobs). The bar is
+# never panic, never read out of bounds, never trust a length field.
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+# Panic-free production code: no unwrap/expect outside tests.
+unwrap_used = { level = "deny", priority = 0 }
+expect_used = { level = "deny", priority = 0 }
+# Pragmatic allows — stylistic pedantic lints that fight the domain.
+module_name_repetitions = { level = "allow", priority = 1 }
+must_use_candidate = { level = "allow", priority = 1 }
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
+cast_possible_wrap = { level = "allow", priority = 1 }
+cast_sign_loss = { level = "allow", priority = 1 }
+cast_precision_loss = { level = "allow", priority = 1 }
+# Subjective style lints (matches the memory-forensic / vhdx allow set) — not
+# safety-relevant; left to author discretion rather than churned fleet-wide.
+unreadable_literal = { level = "allow", priority = 1 }
+similar_names = { level = "allow", priority = 1 }
+doc_markdown = { level = "allow", priority = 1 }
+needless_pass_by_value = { level = "allow", priority = 1 }
+items_after_statements = { level = "allow", priority = 1 }
+# `match { Ok(x)=>x, Err(_)=>return/continue }` vs `let Ok(x)=.. else {..}` is a
+# style preference; the existing match form is clear and behavior-identical.
+manual_let_else = { level = "allow", priority = 1 }
+# `s.push_str(&format!(..))` vs `write!(s, ..)` — writing to a String is
+# infallible, so the former is the clearer idiom here.
+format_push_string = { level = "allow", priority = 1 }
+# CLI subcommand handlers and the integrity-check family keep a uniform
+# `-> Result<()>` signature so the dispatcher calls them identically, even
+# where one handler currently never errors.
+unnecessary_wraps = { level = "allow", priority = 1 }

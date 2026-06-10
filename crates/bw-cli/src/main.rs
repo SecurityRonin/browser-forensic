@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! `bw` — browser forensic CLI.
 
 mod format;
@@ -140,15 +141,14 @@ fn run_artifact(args: ArtifactArgs, artifact: ArtifactType) -> Result<()> {
     // Detect browser from path
     let family = detect_browser(path).or_else(|| infer_browser_from_filename(path));
 
-    let family = match family {
-        Some(f) => f,
-        None => {
-            eprintln!(
-                "error: cannot determine browser from path: {}",
-                path.display()
-            );
-            std::process::exit(1);
-        }
+    let family = if let Some(f) = family {
+        f
+    } else {
+        eprintln!(
+            "error: cannot determine browser from path: {}",
+            path.display()
+        );
+        std::process::exit(1);
     };
 
     let mut events = match (&family, &artifact) {

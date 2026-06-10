@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! `br4n6` — the dual-mode (CLI + TUI) browser state-and-history front-end.
 //!
 //! Chromium MVP (WS-D): discover browsers, dump history visits (redirect-collapsed,

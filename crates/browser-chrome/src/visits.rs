@@ -89,7 +89,7 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
                 title,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|(visit_time, ..)| *visit_time > 0)
         .map(
             |(visit_time, transition, visit_duration, from_visit, url, title)| {
@@ -140,8 +140,16 @@ pub fn collapse_redirects(visits: Vec<BrowserEvent>) -> Vec<BrowserEvent> {
     visits
         .into_iter()
         .filter(|e| {
-            let is_redirect = e.attrs.get("is_redirect").and_then(|v| v.as_bool()) == Some(true);
-            let chain_end = e.attrs.get("chain_end").and_then(|v| v.as_bool()) == Some(true);
+            let is_redirect = e
+                .attrs
+                .get("is_redirect")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true);
+            let chain_end = e
+                .attrs
+                .get("chain_end")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true);
             // A mid-chain redirect hop: a redirect that is not the chain's landing.
             let is_mid_chain_hop = is_redirect && !chain_end;
             // Drop only those hops; keep starts, landings, and plain visits.
@@ -249,7 +257,7 @@ mod tests {
 
     /// Build a redirect chain `typed → 2× server-redirect hop → landing` plus a
     /// standalone typed visit, then assert [`collapse_redirects`] drops only the
-    /// intermediate hops (redirect && !chain_end) and keeps everything else.
+    /// intermediate hops (redirect && !`chain_end`) and keeps everything else.
     #[test]
     fn collapse_redirects_drops_intermediate_hops_keeps_landings() {
         let db = TestDb::new(SCHEMA);

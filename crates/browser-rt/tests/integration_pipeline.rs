@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Integration test: full triage pipeline.
 
 use browser_core::BrowserFamily;

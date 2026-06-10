@@ -39,7 +39,7 @@ pub fn parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>> {
             .to_string();
         let enabled = dict
             .get("Enabled")
-            .and_then(|v| v.as_boolean())
+            .and_then(plist::Value::as_boolean)
             .unwrap_or(false);
 
         let ev = BrowserEvent::new(
@@ -74,7 +74,7 @@ mod tests {
                 let mut d: BTreeMap<String, Value> = BTreeMap::new();
                 d.insert(
                     "Bundle Directory Name".to_string(),
-                    Value::String(bundle.to_string()),
+                    Value::String((*bundle).to_string()),
                 );
                 d.insert("Enabled".to_string(), Value::Boolean(*enabled));
                 d.insert(

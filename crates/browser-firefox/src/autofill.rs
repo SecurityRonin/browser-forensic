@@ -35,7 +35,7 @@ pub fn parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>> {
             let last_used_us: i64 = row.get(4)?;
             Ok((fieldname, value, times_used, first_used_us, last_used_us))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .map(
             |(fieldname, value, times_used, first_used_us, _last_used_us)| {
                 let ts_ns = unix_micros_to_nanos(first_used_us);
