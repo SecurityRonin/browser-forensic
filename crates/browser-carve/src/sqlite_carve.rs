@@ -219,4 +219,23 @@ mod tests {
             "should report pages scanned"
         );
     }
+
+    #[test]
+    fn carve_zero_page_size_does_not_panic() {
+        // A crafted file with valid SQLite magic but a page-size field of 0x0000.
+        // Real SQLite never writes this, but an attacker-controlled artifact can,
+        // and `data.len() / page_size` must not divide by zero.
+        use std::io::Write;
+        let mut header = vec![0u8; SQLITE_HEADER_SIZE];
+        header[..SQLITE_MAGIC.len()].copy_from_slice(SQLITE_MAGIC);
+        header[SQLITE_PAGE_SIZE_OFFSET] = 0;
+        header[SQLITE_PAGE_SIZE_OFFSET + 1] = 0;
+        let f = NamedTempFile::new().expect("tempfile");
+        {
+            let mut fh = std::fs::File::create(f.path()).expect("create");
+            fh.write_all(&header).expect("write");
+        }
+        // Must return cleanly (Ok or Err), never panic.
+        let _ = carve_sqlite_free_pages(f.path());
+    }
 }
