@@ -70,4 +70,4 @@ jobs:
       # CLI binary `main()` glue, and a handful of defensive guards — exercised by
       # the integration tests but not line-covered, and not worth contriving unit
       # tests for. Raise this number as coverage improves; never lower it silently.
-      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 86
+      - run: cargo llvm-cov --workspace --summary-only --fail-under-lines 89
