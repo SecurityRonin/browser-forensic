@@ -1,0 +1,69 @@
+name: Fuzz
+
+# PR/push: a short smoke pass per target (must-not-panic). Scheduled: a longer
+# time-boxed run of every target with crash artifacts uploaded.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Fuzz smoke (build + brief run)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+      - run: cargo install cargo-fuzz --locked
+      - run: cargo fuzz build
+      - name: Smoke-fuzz every target (30s each)
+        run: |
+          for t in fuzz_snss_records fuzz_snss_navigation fuzz_firefox_session \
+                   fuzz_carve_sqlite fuzz_sqlite_history fuzz_integrity fuzz_forensic; do
+            echo "::group::$t"
+            cargo fuzz run "$t" -- -max_total_time=30 -rss_limit_mb=4096
+            echo "::endgroup::"
+          done
+
+  deep:
+    name: Fuzz ${{ matrix.target }} (10 min)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_snss_records
+          - fuzz_snss_navigation
+          - fuzz_firefox_session
+          - fuzz_carve_sqlite
+          - fuzz_sqlite_history
+          - fuzz_integrity
+          - fuzz_forensic
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+      - run: cargo install cargo-fuzz --locked
+      - name: Fuzz ${{ matrix.target }} (10 min)
+        run: cargo fuzz run "${{ matrix.target }}" -- -max_total_time=600 -rss_limit_mb=4096
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

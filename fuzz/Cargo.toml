@@ -1,0 +1,66 @@
+[package]
+name = "browser-fuzz"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tempfile = "3"
+snss-core = { path = "../crates/snss-core" }
+browser-firefox = { path = "../crates/browser-firefox" }
+browser-chrome = { path = "../crates/browser-chrome" }
+browser-safari = { path = "../crates/browser-safari" }
+browser-carve = { path = "../crates/browser-carve" }
+browser-integrity = { path = "../crates/browser-integrity" }
+browser-rt = { path = "../crates/browser-rt" }
+browser-core = { path = "../crates/browser-core" }
+
+# One target per parsed structure. Each invariant is "must not panic".
+
+[[bin]]
+name = "fuzz_snss_records"
+path = "fuzz_targets/fuzz_snss_records.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_snss_navigation"
+path = "fuzz_targets/fuzz_snss_navigation.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_firefox_session"
+path = "fuzz_targets/fuzz_firefox_session.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_carve_sqlite"
+path = "fuzz_targets/fuzz_carve_sqlite.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_sqlite_history"
+path = "fuzz_targets/fuzz_sqlite_history.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_integrity"
+path = "fuzz_targets/fuzz_integrity.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_forensic"
+path = "fuzz_targets/fuzz_forensic.rs"
+test = false
+doc = false
