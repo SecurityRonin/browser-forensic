@@ -193,7 +193,10 @@ mod tests {
             RecoveryQuality::Partial
         ));
         let carved = &result.records[0].fields["url"];
-        assert_eq!(carved, &serde_json::json!(std::str::from_utf8(url).unwrap()));
+        assert_eq!(
+            carved,
+            &serde_json::json!(std::str::from_utf8(url).unwrap())
+        );
     }
 
     #[test]
