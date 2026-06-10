@@ -13,8 +13,8 @@ use crossterm::event::{self, Event, KeyEventKind};
 use snss::SessionStore;
 
 use browser_tui::{
-    apply_input_key, clipboard_status, draw, export_status, glob_status, open_status, reload_status,
-    tagged_status, Action, App, Effect, InputStep, Keymap,
+    apply_input_key, clipboard_status, draw, export_status, glob_status, open_status,
+    reload_status, tagged_status, Action, App, Effect, InputStep, Keymap,
 };
 
 /// Open a [`SessionStore`] from an explicit `Sessions` directory or the default

@@ -14,21 +14,30 @@ use crossterm::event::KeyCode;
 #[test]
 fn typing_a_char_edits_the_buffer() {
     let mut buf = String::from("ab");
-    assert_eq!(apply_input_key(&mut buf, KeyCode::Char('c')), InputStep::Edited);
+    assert_eq!(
+        apply_input_key(&mut buf, KeyCode::Char('c')),
+        InputStep::Edited
+    );
     assert_eq!(buf, "abc");
 }
 
 #[test]
 fn backspace_pops_the_last_char() {
     let mut buf = String::from("abc");
-    assert_eq!(apply_input_key(&mut buf, KeyCode::Backspace), InputStep::Edited);
+    assert_eq!(
+        apply_input_key(&mut buf, KeyCode::Backspace),
+        InputStep::Edited
+    );
     assert_eq!(buf, "ab");
 }
 
 #[test]
 fn backspace_on_empty_buffer_is_a_no_op_edit() {
     let mut buf = String::new();
-    assert_eq!(apply_input_key(&mut buf, KeyCode::Backspace), InputStep::Edited);
+    assert_eq!(
+        apply_input_key(&mut buf, KeyCode::Backspace),
+        InputStep::Edited
+    );
     assert_eq!(buf, "");
 }
 
@@ -76,7 +85,10 @@ fn clipboard_status_reports_success_and_failure() {
 #[test]
 fn export_status_reports_both_filenames() {
     let ok: Result<(), String> = Ok(());
-    assert_eq!(export_status("tab-7", ok), "exported tab-7.md and tab-7.json");
+    assert_eq!(
+        export_status("tab-7", ok),
+        "exported tab-7.md and tab-7.json"
+    );
     assert_eq!(
         export_status("tab-7", Err("disk full".to_string())),
         "export failed: disk full"
