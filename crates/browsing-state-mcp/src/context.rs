@@ -85,6 +85,22 @@ impl Allowlist {
     }
 }
 
+/// Parse the `BROWSING_STATE_ALLOWLIST` value into an [`Allowlist`]. `None`
+/// (unset) and an empty/blank list both permit **nothing** — the secure default;
+/// `*` permits everything; otherwise each comma-separated, non-blank entry is an
+/// allowed domain. The env read itself stays in `main`; this is the pure policy.
+pub fn parse_allowlist(value: Option<&str>) -> Allowlist {
+    match value {
+        Some(v) if v.trim() == "*" => Allowlist::allow_all(),
+        Some(v) => Allowlist::new(
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+        ),
+        None => Allowlist::new(std::iter::empty()),
+    }
+}
+
 /// Extract the host (text between `://` and the next `/`, `?`, or `#`).
 fn host_of(url: &str) -> Option<&str> {
     let after = url.split_once("://")?.1;

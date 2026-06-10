@@ -11,7 +11,7 @@
 use std::io::{self, BufRead, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use browsing_state_mcp::context::Allowlist;
+use browsing_state_mcp::context::{parse_allowlist, Allowlist};
 use browsing_state_mcp::{reader, server};
 use serde_json::Value;
 
@@ -45,17 +45,11 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-/// Build the allow-list from `BROWSING_STATE_ALLOWLIST`. Unset → permit nothing.
+/// Build the allow-list from `BROWSING_STATE_ALLOWLIST`. The env read lives here;
+/// the parse/policy decision is the pure [`parse_allowlist`]. Unset → permit nothing.
 fn load_allowlist() -> Allowlist {
-    match std::env::var("BROWSING_STATE_ALLOWLIST") {
-        Ok(v) if v.trim() == "*" => Allowlist::allow_all(),
-        Ok(v) => Allowlist::new(
-            v.split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty()),
-        ),
-        Err(_) => Allowlist::new(std::iter::empty()),
-    }
+    let value = std::env::var("BROWSING_STATE_ALLOWLIST").ok();
+    parse_allowlist(value.as_deref())
 }
 
 fn now_ns() -> i64 {
