@@ -54,7 +54,8 @@ fn other_keys_are_ignored_without_editing() {
 
 #[test]
 fn open_status_reports_success_and_failure() {
-    assert_eq!(open_status("https://x", Ok(())), "opened https://x");
+    let ok: Result<(), String> = Ok(());
+    assert_eq!(open_status("https://x", ok), "opened https://x");
     let err: Result<(), String> = Err("boom".to_string());
     assert_eq!(
         open_status("https://x", err),
@@ -64,7 +65,8 @@ fn open_status_reports_success_and_failure() {
 
 #[test]
 fn clipboard_status_reports_success_and_failure() {
-    assert_eq!(clipboard_status(Ok(())), "copied to clipboard");
+    let ok: Result<(), String> = Ok(());
+    assert_eq!(clipboard_status(ok), "copied to clipboard");
     assert_eq!(
         clipboard_status(Err("no clip".to_string())),
         "clipboard error: no clip"
@@ -73,10 +75,8 @@ fn clipboard_status_reports_success_and_failure() {
 
 #[test]
 fn export_status_reports_both_filenames() {
-    assert_eq!(
-        export_status("tab-7", Ok(())),
-        "exported tab-7.md and tab-7.json"
-    );
+    let ok: Result<(), String> = Ok(());
+    assert_eq!(export_status("tab-7", ok), "exported tab-7.md and tab-7.json");
     assert_eq!(
         export_status("tab-7", Err("disk full".to_string())),
         "export failed: disk full"
@@ -85,7 +85,8 @@ fn export_status_reports_both_filenames() {
 
 #[test]
 fn reload_status_reports_success_and_failure() {
-    assert_eq!(reload_status(Ok(())), "reloaded from disk");
+    let ok: Result<(), String> = Ok(());
+    assert_eq!(reload_status(ok), "reloaded from disk");
     assert_eq!(
         reload_status(Err("missing".to_string())),
         "reload failed: missing"

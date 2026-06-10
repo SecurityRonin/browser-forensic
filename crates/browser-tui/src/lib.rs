@@ -11,6 +11,83 @@ use snss::{Nav, Source, SourceKind, Tab, Window};
 mod render;
 pub use render::draw;
 
+/// The outcome of feeding one key to a single-line text prompt (the search and
+/// glob input loops). The loop owns the actual `event::read`/`draw`; this maps a
+/// key to "what to do with the editor", keeping the decision out of the shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputStep {
+    /// The buffer changed (a char was pushed/popped); keep reading.
+    Edited,
+    /// `Enter` — accept the buffer.
+    Accept,
+    /// `Esc` — cancel the prompt.
+    Cancel,
+    /// A key with no binding; the buffer is unchanged.
+    Ignored,
+}
+
+/// Apply one key to a single-line input `buffer`, returning what the prompt loop
+/// should do next. `Char` appends, `Backspace` pops, `Enter`/`Esc` finish; any
+/// other key is ignored. Pure: the only effect is on the passed-in `buffer`.
+pub fn apply_input_key(buffer: &mut String, code: KeyCode) -> InputStep {
+    match code {
+        KeyCode::Enter => InputStep::Accept,
+        KeyCode::Esc => InputStep::Cancel,
+        KeyCode::Backspace => {
+            buffer.pop();
+            InputStep::Edited
+        }
+        KeyCode::Char(c) => {
+            buffer.push(c);
+            InputStep::Edited
+        }
+        _ => InputStep::Ignored,
+    }
+}
+
+/// Status line after attempting to open a URL in the default browser.
+pub fn open_status<E: std::fmt::Display>(url: &str, outcome: Result<(), E>) -> String {
+    match outcome {
+        Ok(()) => format!("opened {url}"),
+        Err(e) => format!("could not open {url}: {e}"),
+    }
+}
+
+/// Status line after attempting a clipboard copy.
+pub fn clipboard_status<E: std::fmt::Display>(outcome: Result<(), E>) -> String {
+    match outcome {
+        Ok(()) => "copied to clipboard".to_string(),
+        Err(e) => format!("clipboard error: {e}"),
+    }
+}
+
+/// Status line after attempting to write the `<name>.md` + `<name>.json` export.
+pub fn export_status<E: std::fmt::Display>(name: &str, outcome: Result<(), E>) -> String {
+    match outcome {
+        Ok(()) => format!("exported {name}.md and {name}.json"),
+        Err(e) => format!("export failed: {e}"),
+    }
+}
+
+/// Status line after attempting to reload the profile from disk.
+pub fn reload_status<E: std::fmt::Display>(outcome: Result<(), E>) -> String {
+    match outcome {
+        Ok(()) => "reloaded from disk".to_string(),
+        Err(e) => format!("reload failed: {e}"),
+    }
+}
+
+/// The live prompt shown while typing a tag/untag glob.
+pub fn glob_status(tag: bool, pattern: &str) -> String {
+    let verb = if tag { "tag" } else { "untag" };
+    format!(" {verb} glob: {pattern}")
+}
+
+/// The status line confirming how many tabs a glob tag/untag affected.
+pub fn tagged_status(count: usize) -> String {
+    format!("{count} tab(s) tagged")
+}
+
 /// How many rows a half-page / full-page jump moves (fixed step; the viewport
 /// height is not threaded into the model in v1).
 const HALF_PAGE: usize = 10;
