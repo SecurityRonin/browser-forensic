@@ -1,9 +1,13 @@
 [![Stars](https://img.shields.io/github/stars/SecurityRonin/browser-forensic?style=flat-square)](https://github.com/SecurityRonin/browser-forensic/stargazers)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/SecurityRonin/browser-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/browser-forensic/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-securityronin.github.io-blue.svg)](https://securityronin.github.io/browser-forensic/)
 [![Rust 1.80+](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg)](#install)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
+
+[![CI](https://github.com/SecurityRonin/browser-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/browser-forensic/actions/workflows/ci.yml)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](#trust-but-verify)
+[![security: cargo-deny](https://img.shields.io/badge/security-cargo--deny-success.svg)](deny.toml)
 
 # browser-forensic
 
@@ -17,8 +21,6 @@ Browser artifacts are present in almost every investigation — they reconstruct
 cargo install --git https://github.com/SecurityRonin/browser-forensic bw-cli
 bw history /path/to/Chrome/Default/History --format jsonl | jq 'select(.attrs.url | test("google.com"))'
 ```
-
-**[Full documentation →](https://securityronin.github.io/browser-forensic/)**
 
 ---
 
@@ -211,7 +213,8 @@ Each library crate is independently usable in your own Rust tooling. `browser-in
 | `browser-carve` | SQLite free-page carving, WAL frame recovery |
 | `browser-memory` | Byte-pattern URL/cookie scanning for memory forensics — no runtime dependencies below this layer |
 | `browser-rt` | RapidTriage orchestration — `triage_profile()` + `triage()` → `TriageReport` |
-| `bw-cli` | `bw` CLI binary |
+| `bw-cli` | `bw` — scriptable JSON/JSONL/CSV CLI (history / cookies / downloads / integrity / carve / triage) |
+| `browser-tui` | `br4n6` — dual-mode binary: same subcommands for piping, plus an interactive vi-keyed terminal viewer (`br4n6 tui`) |
 
 ---
 
@@ -244,6 +247,19 @@ for ind in &indicators {
     }
 }
 ```
+
+---
+
+## Trust but verify
+
+Browser databases are evidence. This suite is built to read them without altering them and without trusting their contents:
+
+- **Read-only on evidence** — SQLite databases are opened read-only; the tool never writes back to the artifact, so timestamps and free pages stay intact for re-examination.
+- **`forbid(unsafe)`** — the entire workspace denies `unsafe` code at compile time. Malformed, attacker-controlled artifacts cannot reach a raw pointer path.
+- **CI on Linux, macOS, and Windows** — every push runs `cargo fmt --check`, `cargo clippy -D warnings`, build, and the full test suite on all three platforms.
+- **Supply-chain gate** — `cargo-deny` checks licenses, RustSec advisories, and banned dependencies on every push (`deny.toml`).
+
+Honest gaps (tracked, not hidden): the suite is **not yet fuzzed** and has **no line-coverage gate** — both are planned to bring it level with the rest of the fleet's Paranoid-Gatekeeper bar.
 
 ---
 

@@ -39,6 +39,10 @@ forensicnomicon = { version = "0.3.1", features = ["serde"] }
 thiserror = "2"
 
 [workspace.lints.rust]
+# Forbid unsafe across the suite — these crates parse untrusted browser artifacts;
+# the code is unsafe-free and stays that way (Paranoid Gatekeeper). Earns the
+# `unsafe-forbidden` README badge.
+unsafe_code = "forbid"
 unused_imports = "warn"
 unused_variables = "warn"
 
