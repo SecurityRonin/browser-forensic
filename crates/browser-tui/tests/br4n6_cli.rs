@@ -142,7 +142,11 @@ fn br4n6_history_collapses_redirect_chain_by_default() {
         .args(["history", "--format", "jsonl", history.to_str().unwrap()])
         .output()
         .unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let urls = urls_of(&jsonl_lines(&out.stdout));
     assert_eq!(
         urls,
@@ -219,7 +223,11 @@ fn br4n6_sessions_surfaces_open_tabs() {
         .args(["sessions", "--format", "jsonl", sessions.to_str().unwrap()])
         .output()
         .unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let lines = jsonl_lines(&out.stdout);
     let urls = urls_of(&lines);
     assert!(urls.contains(&"https://alpha.example".to_string()));
@@ -256,17 +264,32 @@ fn br4n6_browsers_discovers_chromium_profile() {
         .path()
         .join("Library/Application Support/Google/Chrome/Default");
     std::fs::create_dir_all(&chrome_default).unwrap();
-    std::fs::copy(dir.path().join("Google/Chrome/Default/History"), chrome_default.join("History"))
-        .unwrap();
+    std::fs::copy(
+        dir.path().join("Google/Chrome/Default/History"),
+        chrome_default.join("History"),
+    )
+    .unwrap();
 
     let out = br4n6()
-        .args(["browsers", "--home", home.path().to_str().unwrap(), "--format", "jsonl"])
+        .args([
+            "browsers",
+            "--home",
+            home.path().to_str().unwrap(),
+            "--format",
+            "jsonl",
+        ])
         .output()
         .unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let lines = jsonl_lines(&out.stdout);
     assert!(
-        lines.iter().any(|v| v["browser"] == "Chromium" && v["name"] == "Default"),
+        lines
+            .iter()
+            .any(|v| v["browser"] == "Chromium" && v["name"] == "Default"),
         "expected a Chromium/Default profile, got: {lines:?}"
     );
 }

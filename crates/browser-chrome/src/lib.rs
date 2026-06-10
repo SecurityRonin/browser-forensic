@@ -22,4 +22,4 @@ pub use history::parse_history;
 pub use local_state::parse_local_state;
 pub use login_data::parse_login_data;
 pub use session::parse_session;
-pub use visits::parse_visits;
+pub use visits::{collapse_redirects, parse_visits};

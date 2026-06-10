@@ -25,6 +25,7 @@ arboard = "3.6"
 open = "5"
 anyhow = { workspace = true }
 clap = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 dirs = { workspace = true }

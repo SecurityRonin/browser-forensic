@@ -329,6 +329,7 @@ dependencies = [
  "browser-chrome",
  "browser-core",
  "browser-discovery",
+ "chrono",
  "clap",
  "crossterm",
  "dirs",

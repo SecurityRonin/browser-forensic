@@ -1,167 +1,94 @@
-//! `browser_tui` entry point: load the default Brave profile and run the TUI.
+//! `br4n6` — the dual-mode (CLI + TUI) browser state-and-history front-end.
+//!
+//! Chromium MVP (WS-D): discover browsers, dump history visits (redirect-collapsed,
+//! WAL-aware, timestamp-normalized) and session state, with local search — in
+//! scriptable CLI form or an interactive terminal viewer. With no subcommand,
+//! `br4n6` launches the TUI over the default local profile.
 
-use std::io;
+mod cli;
+mod tui;
 
-use std::fs;
+use std::path::PathBuf;
+use std::process;
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use snss::SessionStore;
+use clap::{Parser, Subcommand};
 
-use browser_tui::{draw, Action, App, Effect, Keymap};
+use cli::OutputFormat;
 
-fn main() -> io::Result<()> {
-    let store = match SessionStore::open_default_profile() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("browser_tui: {e}");
-            return Ok(());
-        }
+/// br4n6 — read-only browser state & history viewer (Chromium MVP).
+#[derive(Parser, Debug)]
+#[command(name = "br4n6", version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// List browser profiles discovered on this system.
+    Browsers {
+        /// Home directory to scan (defaults to the current user's home).
+        #[arg(long, value_name = "DIR")]
+        home: Option<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Dump Chromium history visits (redirect-collapsed by default).
+    History {
+        /// A `History` file, or a Chromium profile directory containing one.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Keep every raw visit, including intermediate redirect hops.
+        #[arg(long)]
+        no_collapse: bool,
+        /// Show only visits whose URL or title contains this substring.
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Dump Chromium session state (open / recently-closed tabs).
+    Sessions {
+        /// A Chromium profile directory, or its `Sessions` directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Show only tabs whose URL or title contains this substring.
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Launch the interactive terminal viewer (session state).
+    Tui {
+        /// A `Sessions` directory to view (defaults to the local profile).
+        #[arg(value_name = "SESSIONS_DIR")]
+        path: Option<PathBuf>,
+    },
+}
+
+fn main() {
+    let cli = Cli::parse();
+    let result = match cli.command {
+        None => tui::run_tui(None).map_err(anyhow::Error::from),
+        Some(Command::Tui { path }) => tui::run_tui(path).map_err(anyhow::Error::from),
+        Some(Command::Browsers { home, format }) => cli::run_browsers(home.as_deref(), format),
+        Some(Command::History {
+            path,
+            no_collapse,
+            search,
+            format,
+        }) => cli::run_history(&path, no_collapse, search.as_deref(), format),
+        Some(Command::Sessions {
+            path,
+            search,
+            format,
+        }) => cli::run_sessions(&path, search.as_deref(), format),
     };
-    if store.sources().is_empty() {
-        eprintln!("browser_tui: no Brave session files found.");
-        return Ok(());
-    }
-
-    let mut app = App::new(store.sources().to_vec());
-    let mut terminal = ratatui::init();
-    let result = run(&mut terminal, &mut app);
-    ratatui::restore();
-    result
-}
-
-fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Result<()> {
-    let mut keymap = Keymap::default();
-    while !app.should_quit() {
-        terminal.draw(|f| draw(f, app))?;
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            if let Some(action) = keymap.handle(key) {
-                match action {
-                    Action::SearchForward | Action::SearchBackward => {
-                        app.update(action);
-                        search_input(terminal, app)?;
-                    }
-                    Action::TagGlob => glob_input(terminal, app, true)?,
-                    Action::UntagGlob => glob_input(terminal, app, false)?,
-                    other => {
-                        if let Some(effect) = app.update(other) {
-                            perform(effect, app);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Read a URL glob and tag (or untag) all matching tabs on Enter; Esc cancels.
-fn glob_input(terminal: &mut ratatui::DefaultTerminal, app: &mut App, tag: bool) -> io::Result<()> {
-    let mut pattern = String::new();
-    loop {
-        let verb = if tag { "tag" } else { "untag" };
-        app.status = format!(" {verb} glob: {pattern}");
-        terminal.draw(|f| draw(f, app))?;
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
-        match key.code {
-            KeyCode::Enter => {
-                if tag {
-                    app.tag_by_glob(&pattern);
-                } else {
-                    app.untag_by_glob(&pattern);
-                }
-                app.status = format!("{} tab(s) tagged", app.tag_count());
-                return Ok(());
-            }
-            KeyCode::Esc => {
-                app.status.clear();
-                return Ok(());
-            }
-            KeyCode::Backspace => {
-                pattern.pop();
-            }
-            KeyCode::Char(c) => pattern.push(c),
-            _ => {}
-        }
-    }
-}
-
-/// Execute a side effect produced by the reducer and report the outcome in the
-/// status bar. Failures are surfaced, never silently swallowed.
-fn perform(effect: Effect, app: &mut App) {
-    match effect {
-        Effect::OpenUrl(url) => {
-            app.status = match open::that(&url) {
-                Ok(()) => format!("opened {url}"),
-                Err(e) => format!("could not open {url}: {e}"),
-            };
-        }
-        Effect::CopyToClipboard(text) => {
-            app.status = match copy_to_clipboard(&text) {
-                Ok(()) => "copied to clipboard".to_string(),
-                Err(e) => format!("clipboard error: {e}"),
-            };
-        }
-        Effect::Export(export) => {
-            let md = format!("{}.md", export.name);
-            let json = format!("{}.json", export.name);
-            app.status = match fs::write(&md, &export.markdown)
-                .and_then(|()| fs::write(&json, &export.json))
-            {
-                Ok(()) => format!("exported {md} and {json}"),
-                Err(e) => format!("export failed: {e}"),
-            };
-        }
-        Effect::Reload => match SessionStore::open_default_profile() {
-            Ok(store) => {
-                *app = App::new(store.sources().to_vec());
-                app.status = "reloaded from disk".to_string();
-            }
-            Err(e) => app.status = format!("reload failed: {e}"),
-        },
-    }
-}
-
-fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut clipboard = arboard::Clipboard::new()?;
-    clipboard.set_text(text.to_string())?;
-    Ok(())
-}
-
-/// Drive the incremental-search text input: each keystroke updates the live query
-/// and re-runs the search. Enter accepts (keeps the match); Esc cancels (clears).
-fn search_input(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Result<()> {
-    let mut query = String::new();
-    loop {
-        terminal.draw(|f| draw(f, app))?;
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
-        match key.code {
-            KeyCode::Enter => return Ok(()),
-            KeyCode::Esc => {
-                app.clear_search();
-                return Ok(());
-            }
-            KeyCode::Backspace => {
-                query.pop();
-                app.set_query(&query);
-            }
-            KeyCode::Char(c) => {
-                query.push(c);
-                app.set_query(&query);
-            }
-            _ => {}
-        }
+    if let Err(e) = result {
+        eprintln!("br4n6: {e:#}");
+        process::exit(1);
     }
 }

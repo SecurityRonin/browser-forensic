@@ -122,6 +122,34 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
     Ok(events)
 }
 
+/// Collapse redirect chains in a [`parse_visits`] result into logical page views.
+///
+/// A redirect chain is `start → (hop → hop → …) → landing`. The intermediate hops
+/// (`is_redirect` and **not** `chain_end`) are transport artifacts, not pages the
+/// user meaningfully landed on; keeping them pollutes visit counts and recency.
+/// This drops exactly those hops and keeps everything else: the chain start, the
+/// final landing (`chain_end`), and every non-redirect visit. Input order (the
+/// ascending-time order `parse_visits` guarantees) is preserved.
+///
+/// Operates on the `is_redirect`/`chain_end` attrs `parse_visits` already records,
+/// so it composes with any [`BrowserEvent`] stream those attrs were set on. A visit
+/// missing either attr is treated as a non-redirect and kept (fail-open: never drop
+/// evidence on absent metadata).
+#[must_use]
+pub fn collapse_redirects(visits: Vec<BrowserEvent>) -> Vec<BrowserEvent> {
+    visits
+        .into_iter()
+        .filter(|e| {
+            let is_redirect = e.attrs.get("is_redirect").and_then(|v| v.as_bool()) == Some(true);
+            let chain_end = e.attrs.get("chain_end").and_then(|v| v.as_bool()) == Some(true);
+            // A mid-chain redirect hop: a redirect that is not the chain's landing.
+            let is_mid_chain_hop = is_redirect && !chain_end;
+            // Drop only those hops; keep starts, landings, and plain visits.
+            !is_mid_chain_hop
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
