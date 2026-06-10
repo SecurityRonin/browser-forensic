@@ -1,10 +1,14 @@
-//! The `br4n6` command-line mode: list browsers, dump Chromium history visits
-//! (redirect-collapsed by default), and dump session state — with local search
-//! and `text`/`jsonl`/`csv` output. The TUI mode lives in [`crate::tui`].
+//! The `br4n6` command-line mode: list browsers, dump history visits
+//! (redirect-collapsed where the family supports it), and dump session state —
+//! with local search and `text`/`jsonl`/`csv` output. The TUI mode lives in
+//! [`crate::tui`].
 //!
-//! Scope is the Chromium MVP (WS-D). Firefox/Safari slot in later behind the same
-//! subcommands; the source-resolution helpers ([`resolve_history`],
-//! [`resolve_sessions`]) are the seam where other families attach.
+//! Cross-browser: the [`Family`] auto-detector routes a user-supplied file or
+//! profile directory to the matching reader — Chromium (`History`/SNSS via
+//! `browser-chrome` + `snss`), Firefox (`places.sqlite`/`sessionstore.jsonlz4`
+//! via `browser-firefox`), or Safari (`History.db` via `browser-safari`) — and
+//! every reader emits the same normalized [`BrowserEvent`] rows. All SQLite is
+//! opened read-only and WAL-safe inside the readers (`open_evidence_db`).
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +18,15 @@ use browser_core::BrowserEvent;
 use browser_discovery::discover_profiles;
 use clap::ValueEnum;
 use serde_json::json;
+
+/// Browser family a `history`/`sessions` source resolves to. Auto-detected from
+/// the file name or, for a profile directory, from the artifact files it holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Family {
+    Chromium,
+    Firefox,
+    Safari,
+}
 
 /// Output encoding shared by every CLI subcommand.
 #[derive(Clone, Copy, Debug, ValueEnum, Default, PartialEq, Eq)]
@@ -27,44 +40,103 @@ pub enum OutputFormat {
     Csv,
 }
 
-/// Resolve a user-supplied path to a Chromium `History` SQLite file. A directory
-/// is treated as a profile directory and its `History` child is used.
-fn resolve_history(path: &Path) -> Result<PathBuf> {
+/// Lowercased final path component, or `""` if there is none.
+fn file_name_lower(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+}
+
+/// Classify a history *file* by its name: `places.sqlite` → Firefox,
+/// `history.db` → Safari, anything else (`History`) → Chromium.
+fn history_family_of_file(path: &Path) -> Family {
+    match file_name_lower(path).as_str() {
+        "places.sqlite" => Family::Firefox,
+        "history.db" => Family::Safari,
+        _ => Family::Chromium,
+    }
+}
+
+/// Resolve a user-supplied history path to a concrete `(family, file)`. A file
+/// is classified by name; a directory is probed for each family's history
+/// artifact in turn (`places.sqlite` → `History.db` → `History`).
+fn resolve_history(path: &Path) -> Result<(Family, PathBuf)> {
     if path.is_dir() {
-        let candidate = path.join("History");
-        if candidate.is_file() {
-            return Ok(candidate);
+        for (family, name) in [
+            (Family::Firefox, "places.sqlite"),
+            (Family::Safari, "History.db"),
+            (Family::Chromium, "History"),
+        ] {
+            let candidate = path.join(name);
+            if candidate.is_file() {
+                return Ok((family, candidate));
+            }
         }
         anyhow::bail!(
-            "{} is a directory with no `History` file (not a Chromium profile?)",
+            "{} is a directory with no recognized history file \
+             (places.sqlite / History.db / History)",
             path.display()
         );
     }
-    Ok(path.to_path_buf())
+    Ok((history_family_of_file(path), path.to_path_buf()))
 }
 
-/// Resolve a user-supplied path to a Chromium `Sessions` directory. A `Sessions`
-/// child is preferred when `path` is a profile directory; otherwise `path` itself
-/// is used as the sessions directory.
-fn resolve_sessions(path: &Path) -> Result<PathBuf> {
+/// A resolved sessions source: either a Chromium SNSS directory to scan, or a
+/// single Firefox `sessionstore`/`recovery` file to decode.
+enum SessionSource {
+    ChromiumDir(PathBuf),
+    FirefoxFile(PathBuf),
+}
+
+/// True for a Firefox session file name (`sessionstore.jsonlz4` /
+/// `recovery.jsonlz4`, and their `*-backups`/`previous` siblings).
+fn is_firefox_session_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.ends_with(".jsonlz4") && (n.contains("sessionstore") || n.contains("recovery"))
+}
+
+/// Resolve a user-supplied sessions path. A Firefox `*.jsonlz4` file routes to
+/// Firefox; a `Sessions/` child or any directory routes to the Chromium SNSS
+/// scan; a Firefox profile directory containing a session file routes to Firefox.
+fn resolve_sessions(path: &Path) -> Result<SessionSource> {
+    if path.is_file() {
+        if is_firefox_session_name(&file_name_lower(path)) {
+            return Ok(SessionSource::FirefoxFile(path.to_path_buf()));
+        }
+        anyhow::bail!(
+            "{} is not a recognized session file (expected sessionstore.jsonlz4)",
+            path.display()
+        );
+    }
     if path.join("Sessions").is_dir() {
-        return Ok(path.join("Sessions"));
+        return Ok(SessionSource::ChromiumDir(path.join("Sessions")));
     }
     if path.is_dir() {
-        return Ok(path.to_path_buf());
+        // Prefer a Firefox session file when present, else treat the directory
+        // as a Chromium SNSS directory.
+        for name in ["sessionstore.jsonlz4", "recovery.jsonlz4"] {
+            let candidate = path.join(name);
+            if candidate.is_file() {
+                return Ok(SessionSource::FirefoxFile(candidate));
+            }
+        }
+        return Ok(SessionSource::ChromiumDir(path.to_path_buf()));
     }
     anyhow::bail!(
-        "{} is not a directory (expected a Chromium profile or its `Sessions` dir)",
+        "{} is not a directory or session file (expected a profile, a \
+         Chromium `Sessions` dir, or a Firefox sessionstore.jsonlz4)",
         path.display()
     );
 }
 
-/// `br4n6 history` — dump Chromium history visits. Redirect chains are collapsed
-/// into logical page views unless `no_collapse` is set; `search` filters to visits
-/// whose URL or title contains the (case-insensitive) needle.
+/// `br4n6 history` — dump history visits for the auto-detected browser family.
+/// Chromium redirect chains are collapsed into logical page views unless
+/// `no_collapse` is set (Firefox/Safari history is already per-URL, so the flag
+/// is a no-op there); `search` filters to visits whose URL or title contains the
+/// (case-insensitive) needle.
 ///
 /// # Errors
-/// Returns an error if the path cannot be resolved or the `History` DB cannot be
+/// Returns an error if the path cannot be resolved or the history store cannot be
 /// opened/queried.
 pub fn run_history(
     path: &Path,
@@ -72,12 +144,22 @@ pub fn run_history(
     search: Option<&str>,
     format: OutputFormat,
 ) -> Result<()> {
-    let history = resolve_history(path)?;
-    let mut visits = parse_visits(&history)
-        .with_context(|| format!("reading history visits from {}", history.display()))?;
-    if !no_collapse {
-        visits = collapse_redirects(visits);
-    }
+    let (family, history) = resolve_history(path)?;
+    let mut visits = match family {
+        Family::Chromium => {
+            let mut v = parse_visits(&history).with_context(|| {
+                format!("reading Chromium history visits from {}", history.display())
+            })?;
+            if !no_collapse {
+                v = collapse_redirects(v);
+            }
+            v
+        }
+        Family::Firefox => browser_firefox::parse_history(&history)
+            .with_context(|| format!("reading Firefox history from {}", history.display()))?,
+        Family::Safari => browser_safari::parse_history(&history)
+            .with_context(|| format!("reading Safari history from {}", history.display()))?,
+    };
     if let Some(needle) = search {
         filter_in_place(&mut visits, needle);
     }
@@ -85,16 +167,33 @@ pub fn run_history(
     Ok(())
 }
 
-/// `br4n6 sessions` — dump Chromium session state (open/recently-closed tabs).
+/// `br4n6 sessions` — dump session state (open/recently-closed tabs) for the
+/// auto-detected browser family: Chromium SNSS files in a directory, or a
+/// Firefox `sessionstore.jsonlz4`.
 ///
 /// # Errors
-/// Returns an error if the path cannot be resolved or no session file decodes.
+/// Returns an error if the path cannot be resolved or no session source decodes.
 pub fn run_sessions(path: &Path, search: Option<&str>, format: OutputFormat) -> Result<()> {
-    let dir = resolve_sessions(path)?;
+    let mut events = match resolve_sessions(path)? {
+        SessionSource::FirefoxFile(file) => browser_firefox::parse_session(&file)
+            .with_context(|| format!("reading Firefox session from {}", file.display()))?,
+        SessionSource::ChromiumDir(dir) => read_chromium_sessions(&dir)?,
+    };
+    if let Some(needle) = search {
+        filter_in_place(&mut events, needle);
+    }
+    emit_events(&events, format);
+    Ok(())
+}
+
+/// Scan a Chromium SNSS directory, decoding every `Session_*`/`Tabs_*`/`Apps_*`
+/// file into [`BrowserEvent`]s. A single unreadable file is non-fatal; the run
+/// fails loud only if nothing at all decodes.
+fn read_chromium_sessions(dir: &Path) -> Result<Vec<BrowserEvent>> {
     let mut events = Vec::new();
     let mut decoded_any = false;
     let mut last_err: Option<anyhow::Error> = None;
-    for entry in std::fs::read_dir(&dir)
+    for entry in std::fs::read_dir(dir)
         .with_context(|| format!("listing sessions directory {}", dir.display()))?
     {
         let entry = entry?;
@@ -121,11 +220,7 @@ pub fn run_sessions(path: &Path, search: Option<&str>, format: OutputFormat) -> 
         }
         anyhow::bail!("no Chromium session files found in {}", dir.display());
     }
-    if let Some(needle) = search {
-        filter_in_place(&mut events, needle);
-    }
-    emit_events(&events, format);
-    Ok(())
+    Ok(events)
 }
 
 /// `br4n6 browsers` — list discovered browser profiles under `home` (defaults to
@@ -325,7 +420,8 @@ mod tests {
     fn resolve_history_appends_history_for_a_profile_dir() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("History"), b"x").unwrap();
-        let resolved = resolve_history(dir.path()).unwrap();
+        let (family, resolved) = resolve_history(dir.path()).unwrap();
+        assert_eq!(family, Family::Chromium);
         assert_eq!(resolved, dir.path().join("History"));
     }
 
@@ -334,17 +430,61 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("History");
         std::fs::write(&f, b"x").unwrap();
-        assert_eq!(resolve_history(&f).unwrap(), f);
+        let (family, resolved) = resolve_history(&f).unwrap();
+        assert_eq!(family, Family::Chromium);
+        assert_eq!(resolved, f);
+    }
+
+    #[test]
+    fn resolve_history_detects_firefox_places_in_a_profile_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("places.sqlite"), b"x").unwrap();
+        let (family, resolved) = resolve_history(dir.path()).unwrap();
+        assert_eq!(family, Family::Firefox);
+        assert_eq!(resolved, dir.path().join("places.sqlite"));
+    }
+
+    #[test]
+    fn resolve_history_detects_safari_history_db_by_file_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("History.db");
+        std::fs::write(&f, b"x").unwrap();
+        let (family, resolved) = resolve_history(&f).unwrap();
+        assert_eq!(family, Family::Safari);
+        assert_eq!(resolved, f);
     }
 
     #[test]
     fn resolve_sessions_prefers_sessions_child() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("Sessions")).unwrap();
-        assert_eq!(
-            resolve_sessions(dir.path()).unwrap(),
-            dir.path().join("Sessions")
-        );
+        match resolve_sessions(dir.path()).unwrap() {
+            SessionSource::ChromiumDir(p) => assert_eq!(p, dir.path().join("Sessions")),
+            SessionSource::FirefoxFile(p) => panic!("expected Chromium dir, got {}", p.display()),
+        }
+    }
+
+    #[test]
+    fn resolve_sessions_routes_firefox_sessionstore_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("sessionstore.jsonlz4");
+        std::fs::write(&f, b"x").unwrap();
+        match resolve_sessions(&f).unwrap() {
+            SessionSource::FirefoxFile(p) => assert_eq!(p, f),
+            SessionSource::ChromiumDir(p) => panic!("expected Firefox file, got {}", p.display()),
+        }
+    }
+
+    #[test]
+    fn resolve_sessions_finds_firefox_file_in_a_profile_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("sessionstore.jsonlz4"), b"x").unwrap();
+        match resolve_sessions(dir.path()).unwrap() {
+            SessionSource::FirefoxFile(p) => {
+                assert_eq!(p, dir.path().join("sessionstore.jsonlz4"));
+            }
+            SessionSource::ChromiumDir(p) => panic!("expected Firefox file, got {}", p.display()),
+        }
     }
 
     #[test]

@@ -18,6 +18,8 @@ path = "src/main.rs"
 snss-core = { path = "../snss-core" }
 browser-core = { path = "../browser-core" }
 browser-chrome = { path = "../browser-chrome" }
+browser-firefox = { path = "../browser-firefox" }
+browser-safari = { path = "../browser-safari" }
 browser-discovery = { path = "../browser-discovery" }
 ratatui = "0.30"
 crossterm = "0.29"
