@@ -33,6 +33,13 @@ pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
         }
     };
 
+    // A page size of 0 is invalid (SQLite uses 512..=65536, with 1 meaning 65536);
+    // an attacker-controlled header can carry it, and every page calculation below
+    // divides or strides by page_size, so reject it before doing arithmetic.
+    if page_size == 0 {
+        anyhow::bail!("invalid SQLite page size (0)");
+    }
+
     let freelist_trunk = u32::from_be_bytes([
         data[SQLITE_FREELIST_TRUNK_OFFSET],
         data[SQLITE_FREELIST_TRUNK_OFFSET + 1],
