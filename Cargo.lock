@@ -323,11 +323,22 @@ dependencies = [
 name = "browser-tui"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "arboard",
+ "assert_cmd",
+ "browser-chrome",
+ "browser-core",
+ "browser-discovery",
+ "clap",
  "crossterm",
+ "dirs",
  "open",
  "ratatui",
+ "rusqlite",
+ "serde",
+ "serde_json",
  "snss-core",
+ "tempfile",
 ]
 
 [[package]]

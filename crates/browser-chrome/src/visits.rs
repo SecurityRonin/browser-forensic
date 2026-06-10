@@ -218,4 +218,81 @@ mod tests {
         assert!(is_chain_end(CHAIN_END | 1));
         assert!(!is_chain_end(1));
     }
+
+    /// Build a redirect chain `typed → 2× server-redirect hop → landing` plus a
+    /// standalone typed visit, then assert [`collapse_redirects`] drops only the
+    /// intermediate hops (redirect && !chain_end) and keeps everything else.
+    #[test]
+    fn collapse_redirects_drops_intermediate_hops_keeps_landings() {
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO urls (id,url,title,visit_count,last_visit_time) \
+             VALUES (1,'https://start.example','Start',1,13327626000000000)",
+            [],
+        );
+        db.insert(
+            "INSERT INTO urls (id,url,title,visit_count,last_visit_time) \
+             VALUES (2,'https://hop.example','Hop',1,13327626000000000)",
+            [],
+        );
+        db.insert(
+            "INSERT INTO urls (id,url,title,visit_count,last_visit_time) \
+             VALUES (3,'https://landing.example','Landing',1,13327626000000000)",
+            [],
+        );
+        db.insert(
+            "INSERT INTO urls (id,url,title,visit_count,last_visit_time) \
+             VALUES (4,'https://other.example','Other',1,13327626000000000)",
+            [],
+        );
+        // Chain: typed start (chain_start), redirect hop (no chain_end), landing
+        // (server-redirect + chain_end). Then an unrelated typed visit.
+        db.insert(
+            "INSERT INTO visits (url,visit_time,from_visit,transition) VALUES (1,13327626000000000,0,1)",
+            [],
+        ); // typed, not a redirect → kept
+        db.insert(
+            "INSERT INTO visits (url,visit_time,from_visit,transition) VALUES (2,13327626100000000,0,?1)",
+            [SERVER_REDIRECT],
+        ); // redirect hop, NOT chain_end → dropped
+        db.insert(
+            "INSERT INTO visits (url,visit_time,from_visit,transition) VALUES (3,13327626200000000,0,?1)",
+            [SERVER_REDIRECT | CHAIN_END],
+        ); // redirect AND chain_end → kept (the landing)
+        db.insert(
+            "INSERT INTO visits (url,visit_time,from_visit,transition) VALUES (4,13327627000000000,0,1)",
+            [],
+        ); // standalone typed → kept
+
+        let visits = parse_visits(db.path()).unwrap();
+        assert_eq!(visits.len(), 4, "parse_visits is faithful (all 4 visits)");
+
+        let collapsed = collapse_redirects(visits);
+        let urls: Vec<&str> = collapsed
+            .iter()
+            .map(|e| e.attrs["url"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            urls,
+            vec![
+                "https://start.example",
+                "https://landing.example",
+                "https://other.example",
+            ],
+            "intermediate redirect hop dropped; start, landing, and standalone kept"
+        );
+    }
+
+    #[test]
+    fn collapse_redirects_is_identity_when_no_redirects() {
+        let db = TestDb::new(SCHEMA);
+        seed_one_url(&db);
+        db.insert(
+            "INSERT INTO visits (url,visit_time,from_visit,transition) VALUES (1,13327626000000000,0,1)",
+            [],
+        );
+        let visits = parse_visits(db.path()).unwrap();
+        let collapsed = collapse_redirects(visits.clone());
+        assert_eq!(collapsed.len(), visits.len());
+    }
 }
