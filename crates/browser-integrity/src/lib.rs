@@ -157,7 +157,7 @@ mod tests {
         let indicator = IntegrityIndicator::WalPresent {
             path: PathBuf::from("/tmp/test-wal"),
         };
-        let debug = format!("{:?}", indicator);
+        let debug = format!("{indicator:?}");
         assert!(debug.contains("WalPresent"));
     }
 
