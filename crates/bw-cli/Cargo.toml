@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "bw_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "bw"
 path = "src/main.rs"

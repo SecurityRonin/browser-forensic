@@ -1,12 +1,13 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
-//! `bw` — browser forensic CLI.
-
-mod format;
+//! `bw` — browser forensic CLI. Pure decisions (carve-stat merge, triage summary,
+//! filename inference, output formatting) live in the `bw_cli` lib; this binary
+//! owns argument parsing, the parser I/O, and `println!`.
 
 use std::path::PathBuf;
 
 use anyhow::Result;
 use browser_core::BrowserFamily;
+use bw_cli::{format, infer_browser_from_filename, merge_carve_stats, triage_summary_lines};
 use clap::{Parser, Subcommand, ValueEnum};
 
 /// bw — browser forensic analysis CLI.
@@ -284,23 +285,6 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
     Ok(())
 }
 
-fn infer_browser_from_filename(path: &std::path::Path) -> Option<browser_core::BrowserFamily> {
-    let name = path.file_name()?.to_string_lossy().to_lowercase();
-    if name == "history.db" {
-        return Some(browser_core::BrowserFamily::Safari);
-    }
-    if name == "places.sqlite"
-        || name == "formhistory.sqlite"
-        || name == "cookies.sqlite"
-        || name == "extensions.json"
-        || name == "logins.json"
-        || name == "sessionstore.jsonlz4"
-    {
-        return Some(browser_core::BrowserFamily::Firefox);
-    }
-    None
-}
-
 fn run_integrity(args: ArtifactArgs) -> Result<()> {
     let path = &args.path;
 
@@ -374,13 +358,7 @@ fn run_carve(args: ArtifactArgs) -> Result<()> {
     let mut all_records = free_result.records;
     all_records.extend(wal_result.records);
 
-    let total_stats = browser_carve::CarveStats {
-        bytes_scanned: free_result.stats.bytes_scanned + wal_result.stats.bytes_scanned,
-        pages_scanned: free_result.stats.pages_scanned + wal_result.stats.pages_scanned,
-        free_pages_found: free_result.stats.free_pages_found + wal_result.stats.free_pages_found,
-        records_recovered: free_result.stats.records_recovered + wal_result.stats.records_recovered,
-        records_partial: free_result.stats.records_partial + wal_result.stats.records_partial,
-    };
+    let total_stats = merge_carve_stats(&free_result.stats, &wal_result.stats);
 
     match args.format {
         OutputFormat::Text => {
@@ -440,13 +418,9 @@ fn run_triage(args: TriageArgs) -> Result<()> {
 
     match args.format {
         OutputFormat::Text => {
-            println!("Browser Forensic Triage Report");
-            println!("==============================");
-            println!("Generated: {}", report.generated_at_ns);
-            println!("Profiles found: {}", report.profiles.len());
-            println!("Events parsed: {}", report.events.len());
-            println!("Integrity indicators: {}", report.integrity.len());
-            println!("Carved records: {}", report.carved.len());
+            for line in triage_summary_lines(&report) {
+                println!("{line}");
+            }
 
             if !report.events.is_empty() {
                 println!("\nTimeline ({} events):", report.events.len());
