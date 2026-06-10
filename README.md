@@ -1,4 +1,3 @@
-[![Stars](https://img.shields.io/github/stars/SecurityRonin/browser-forensic?style=flat-square)](https://github.com/SecurityRonin/browser-forensic/stargazers)
 [![Docs](https://img.shields.io/badge/docs-securityronin.github.io-blue.svg)](https://securityronin.github.io/browser-forensic/)
 [![Rust 1.80+](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue.svg)](#install)
@@ -11,7 +10,7 @@
 
 # browser-forensic
 
-**Parse Chrome, Firefox, and Safari artifacts. Detect history clearing. Carve deleted records. No runtime deps.**
+**Parse Chrome, Edge, Firefox, and Safari artifacts. Detect history clearing. Carve deleted records. No runtime deps.**
 
 Browser artifacts are present in almost every investigation — they reconstruct the user's timeline, expose credential exposure, and often reveal the delivery mechanism for an attack. The problem is tooling: most parsers require Python, lock you to Windows, or ignore the forensically interesting question of whether the evidence was tampered with.
 
@@ -50,7 +49,7 @@ bw history /path/to/Chrome/Default/History --format jsonl \
 bw history /path/to/Firefox/Profiles/abc.default/places.sqlite --format jsonl
 ```
 
-All three browsers produce the same `BrowserEvent` JSON schema. Your downstream analysis pipeline doesn't need to know which browser produced the data.
+Every supported browser produces the same `BrowserEvent` JSON schema. Your downstream analysis pipeline doesn't need to know which browser produced the data.
 
 ### Detect history clearing and tampering
 
@@ -80,16 +79,16 @@ SQLite marks deleted rows as free pages rather than overwriting them immediately
 
 | | browser-forensic | Hindsight | BrowsingHistoryView | plaso |
 |--|:-:|:-:|:-:|:-:|
-| Runs on Linux / macOS | ✓ | ✓ | — | ✓ |
-| Single static binary | ✓ | — | — | — |
-| No Python runtime | ✓ | — | ✓ | — |
-| Chrome + Firefox + Safari | ✓ | ✓ | ✓ | ✓ |
-| Integrity / tampering checks | ✓ | — | — | — |
-| SQLite free-page carving | ✓ | — | — | — |
-| WAL recovery | ✓ | — | — | — |
-| Memory byte-pattern scanning | ✓ | — | — | — |
-| Embeddable Rust library | ✓ | — | — | — |
-| JSON / JSONL / CSV output | ✓ | — | ✓ | partial |
+| Runs on Linux / macOS | ✅ | ✅ | — | ✅ |
+| Single static binary | ✅ | — | — | — |
+| No Python runtime | ✅ | — | ✅ | — |
+| Chrome + Firefox + Safari | ✅ | ✅ | ✅ | ✅ |
+| Integrity / tampering checks | ✅ | — | — | — |
+| SQLite free-page carving | ✅ | — | — | — |
+| WAL recovery | ✅ | — | — | — |
+| Memory byte-pattern scanning | ✅ | — | — | — |
+| Embeddable Rust library | ✅ | — | — | — |
+| JSON / JSONL / CSV output | ✅ | — | ✅ | partial |
 
 ---
 
@@ -97,20 +96,20 @@ SQLite marks deleted rows as free pages rather than overwriting them immediately
 
 | Artifact | Chrome / Edge / Brave | Firefox | Safari |
 |---|:-:|:-:|:-:|
-| History | ✓ | ✓ | ✓ |
-| Cookies | ✓ | ✓ | ✓ |
-| Downloads | ✓ | ✓ | ✓ |
-| Bookmarks | ✓ | ✓ | ✓ |
-| Extensions / Add-ons | ✓ | ✓ | — |
-| Autofill | ✓ | — | — |
-| Login Data (no passwords) | ✓ | ✓ | — |
-| Cache | ✓ | — | — |
-| Session State | ✓ | ✓ | — |
-| Top Sites | — | — | ✓ |
-| Profile Metadata (Local State) | ✓ | — | — |
-| Integrity indicators | ✓ | ✓ | ✓ |
-| SQLite free-page carving | ✓ | ✓ | ✓ |
-| WAL recovery | ✓ | ✓ | ✓ |
+| History | ✅ | ✅ | ✅ |
+| Cookies | ✅ | ✅ | ✅ |
+| Downloads | ✅ | ✅ | ✅ |
+| Bookmarks | ✅ | ✅ | ✅ |
+| Extensions / Add-ons | ✅ | ✅ | — |
+| Autofill | ✅ | — | — |
+| Login Data (no passwords) | ✅ | ✅ | — |
+| Cache | ✅ | — | — |
+| Session State | ✅ | ✅ | — |
+| Top Sites | — | — | ✅ |
+| Profile Metadata (Local State) | ✅ | — | — |
+| Integrity indicators | ✅ | ✅ | ✅ |
+| SQLite free-page carving | ✅ | ✅ | ✅ |
+| WAL recovery | ✅ | ✅ | ✅ |
 
 ---
 
@@ -145,7 +144,7 @@ bw triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
 ```
 
 The triage report includes:
-- All parsed browser events across Chrome, Firefox, and Safari
+- All parsed browser events across Chrome, Edge, Firefox, and Safari
 - Integrity indicators from every database found
 - Carved records from SQLite free pages and WAL files
 - A manifest of discovered profiles (browser, name, path)
