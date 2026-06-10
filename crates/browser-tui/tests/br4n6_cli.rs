@@ -1,8 +1,10 @@
-//! Integration tests for the `br4n6` dual-mode CLI/TUI front-end (Chromium MVP).
+//! Integration tests for the `br4n6` dual-mode CLI/TUI front-end (cross-browser).
 //!
-//! These drive the real binary end-to-end: build a synthetic Chromium `History`
-//! SQLite with a redirect chain and an SNSS `Sessions/` directory, then assert
-//! `br4n6` surfaces history visits redirect-collapsed and session-state tabs.
+//! These drive the real binary end-to-end: build synthetic Chromium `History`
+//! (redirect chain) + SNSS `Sessions/`, Firefox `places.sqlite` +
+//! `sessionstore.jsonlz4`, and Safari `History.db` fixtures, then assert `br4n6`
+//! auto-detects the browser family and surfaces visits/tabs through the unified
+//! `BrowserEvent` output.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -292,4 +294,212 @@ fn br4n6_browsers_discovers_chromium_profile() {
             .any(|v| v["browser"] == "Chromium" && v["name"] == "Default"),
         "expected a Chromium/Default profile, got: {lines:?}"
     );
+}
+
+// ── Firefox fixtures ─────────────────────────────────────────────────────────
+
+/// Build a Firefox `places.sqlite` with `moz_places` + `moz_historyvisits`.
+/// `last_visit_date` is PRTime (microseconds since the Unix epoch). Returns the
+/// profile dir + `places.sqlite` path.
+fn create_firefox_places() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let profile_dir = dir
+        .path()
+        .join("Firefox")
+        .join("Profiles")
+        .join("abc.default-release");
+    std::fs::create_dir_all(&profile_dir).unwrap();
+    let places = profile_dir.join("places.sqlite");
+    let conn = Connection::open(&places).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE moz_places (
+            id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT,
+            visit_count INTEGER DEFAULT 0, last_visit_date INTEGER);
+         CREATE TABLE moz_historyvisits (
+            id INTEGER PRIMARY KEY, place_id INTEGER NOT NULL,
+            visit_date INTEGER NOT NULL, visit_type INTEGER NOT NULL);
+         INSERT INTO moz_places (id,url,title,visit_count,last_visit_date) VALUES
+            (1,'https://ff-one.example','FF One',3,1648000000000000),
+            (2,'https://ff-two.example','FF Two',1,1648000100000000);
+         INSERT INTO moz_historyvisits (id,place_id,visit_date,visit_type) VALUES
+            (1,1,1648000000000000,1),
+            (2,2,1648000100000000,1);",
+    )
+    .unwrap();
+    (dir, places)
+}
+
+/// Build a Firefox `sessionstore.jsonlz4` (mozLz4: magic + u32 LE size + LZ4
+/// block) with one window holding two open tabs. Returns the profile dir + path.
+fn create_firefox_sessionstore() -> (TempDir, PathBuf) {
+    const MOZLZ4_MAGIC: &[u8] = b"mozLz40\0";
+    let dir = TempDir::new().unwrap();
+    let profile_dir = dir
+        .path()
+        .join("Firefox")
+        .join("Profiles")
+        .join("abc.default-release");
+    std::fs::create_dir_all(&profile_dir).unwrap();
+    let session = serde_json::json!({
+        "windows": [{
+            "tabs": [
+                { "lastAccessed": 1_648_000_000_000_i64,
+                  "entries": [{ "url": "https://ff-tab-a.example", "title": "FF Tab A" }] },
+                { "lastAccessed": 1_648_000_001_000_i64,
+                  "entries": [{ "url": "https://ff-tab-b.example", "title": "FF Tab B" }] }
+            ]
+        }]
+    });
+    let json_bytes = session.to_string().into_bytes();
+    let compressed = lz4_flex::block::compress(&json_bytes);
+    let mut bytes = MOZLZ4_MAGIC.to_vec();
+    bytes.extend_from_slice(&(json_bytes.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&compressed);
+    let path = profile_dir.join("sessionstore.jsonlz4");
+    std::fs::write(&path, bytes).unwrap();
+    (dir, path)
+}
+
+#[test]
+fn br4n6_history_reads_firefox_places() {
+    let (_d, places) = create_firefox_places();
+    let out = br4n6()
+        .args(["history", "--format", "jsonl", places.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines = jsonl_lines(&out.stdout);
+    let urls = urls_of(&lines);
+    assert!(urls.contains(&"https://ff-one.example".to_string()));
+    assert!(urls.contains(&"https://ff-two.example".to_string()));
+    assert!(
+        lines.iter().all(|v| v["browser"] == "Firefox"),
+        "family auto-detected as Firefox, got: {lines:?}"
+    );
+}
+
+#[test]
+fn br4n6_history_accepts_firefox_profile_directory() {
+    let (_d, places) = create_firefox_places();
+    let profile = places.parent().unwrap();
+    let out = br4n6()
+        .args(["history", "--format", "jsonl", profile.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "a Firefox profile dir should resolve to places.sqlite; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let urls = urls_of(&jsonl_lines(&out.stdout));
+    assert!(urls.contains(&"https://ff-one.example".to_string()));
+}
+
+#[test]
+fn br4n6_sessions_reads_firefox_sessionstore() {
+    let (_d, session) = create_firefox_sessionstore();
+    let out = br4n6()
+        .args(["sessions", "--format", "jsonl", session.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines = jsonl_lines(&out.stdout);
+    let urls = urls_of(&lines);
+    assert!(urls.contains(&"https://ff-tab-a.example".to_string()));
+    assert!(urls.contains(&"https://ff-tab-b.example".to_string()));
+    assert!(
+        lines.iter().all(|v| v["browser"] == "Firefox"),
+        "family auto-detected as Firefox, got: {lines:?}"
+    );
+}
+
+#[test]
+fn br4n6_sessions_accepts_firefox_profile_directory() {
+    let (_d, session) = create_firefox_sessionstore();
+    let profile = session.parent().unwrap();
+    let out = br4n6()
+        .args(["sessions", "--format", "jsonl", profile.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "a Firefox profile dir should resolve to sessionstore.jsonlz4; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let urls = urls_of(&jsonl_lines(&out.stdout));
+    assert!(urls.contains(&"https://ff-tab-a.example".to_string()));
+}
+
+// ── Safari fixtures ──────────────────────────────────────────────────────────
+
+/// Build a Safari `History.db` with `history_items` + `history_visits`.
+/// `visit_time` is Core Data seconds (since 2001-01-01). Returns the Safari
+/// dir + `History.db` path.
+fn create_safari_history() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let safari_dir = dir.path().join("Library").join("Safari");
+    std::fs::create_dir_all(&safari_dir).unwrap();
+    let history = safari_dir.join("History.db");
+    let conn = Connection::open(&history).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE history_items (
+            id INTEGER PRIMARY KEY, url TEXT NOT NULL, visit_count INTEGER DEFAULT 0);
+         CREATE TABLE history_visits (
+            id INTEGER PRIMARY KEY, history_item INTEGER NOT NULL, visit_time REAL NOT NULL);
+         INSERT INTO history_items (id,url,visit_count) VALUES
+            (1,'https://sf-one.example',2),
+            (2,'https://sf-two.example',1);
+         INSERT INTO history_visits (id,history_item,visit_time) VALUES
+            (1,1,700000000.0),
+            (2,2,700000100.0);",
+    )
+    .unwrap();
+    (dir, history)
+}
+
+#[test]
+fn br4n6_history_reads_safari_history_db() {
+    let (_d, history) = create_safari_history();
+    let out = br4n6()
+        .args(["history", "--format", "jsonl", history.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines = jsonl_lines(&out.stdout);
+    let urls = urls_of(&lines);
+    assert!(urls.contains(&"https://sf-one.example".to_string()));
+    assert!(urls.contains(&"https://sf-two.example".to_string()));
+    assert!(
+        lines.iter().all(|v| v["browser"] == "Safari"),
+        "family auto-detected as Safari, got: {lines:?}"
+    );
+}
+
+#[test]
+fn br4n6_history_accepts_safari_profile_directory() {
+    let (_d, history) = create_safari_history();
+    let safari_dir = history.parent().unwrap();
+    let out = br4n6()
+        .args(["history", "--format", "jsonl", safari_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "a Safari dir should resolve to History.db; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let urls = urls_of(&jsonl_lines(&out.stdout));
+    assert!(urls.contains(&"https://sf-one.example".to_string()));
 }
