@@ -329,10 +329,13 @@ dependencies = [
  "browser-chrome",
  "browser-core",
  "browser-discovery",
+ "browser-firefox",
+ "browser-safari",
  "chrono",
  "clap",
  "crossterm",
  "dirs",
+ "lz4_flex",
  "open",
  "ratatui",
  "rusqlite",
@@ -903,9 +906,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "forensicnomicon"
-version = "0.3.1"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f66c898c0f3813cb476c7d1f9e78919566e753b8ce5d581ca8d0f364a55b04b5"
+checksum = "f4f25dba7d97bb3fd95ecc37506cfb4c1d8ea43de0a4206d4de0bbc6b28dc6a4"
 dependencies = [
  "serde",
 ]
