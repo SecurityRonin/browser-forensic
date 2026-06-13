@@ -1,0 +1,20 @@
+[
+  {
+    "description": "Safari bookmarks parser reads Bookmarks.plist and emits BrowserEvent per URL bookmark",
+    "steps": [
+      "Create crates/browser-safari/src/bookmarks.rs with parse_bookmarks(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_bookmarks from crates/browser-safari/src/lib.rs",
+      "Use plist crate to read file, walk recursively",
+      "Leaf nodes have WebBookmarkType == 'WebBookmarkTypeLeaf', URLString key for URL, URIDictionary.title for title",
+      "Folder nodes have WebBookmarkType == 'WebBookmarkTypeList', Children array",
+      "Use current time (or 0) as timestamp since plist bookmarks lack timestamps",
+      "Set browser = BrowserFamily::Safari, artifact = ArtifactKind::Bookmarks",
+      "Attrs: url, title",
+      "Test: parse_safari_bookmarks_finds_leaf_urls — plist with 1 leaf URL emits 1 event",
+      "Test: parse_safari_bookmarks_excludes_folders — folder-type nodes not emitted",
+      "Test: nested_safari_bookmarks_all_found — 2 URLs in nested folders both found",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]

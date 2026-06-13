@@ -1,0 +1,1096 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://securityronin.github.io/browser-forensic/design/br4n6-unified-cli-tui/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>br4n6 — one binary, two faces: a cross-browser, read-only forensic browser - browser-forensic</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#br4n6-one-binary-two-faces-a-cross-browser-read-only-forensic-browser" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="browser-forensic" class="md-header__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            browser-forensic
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              br4n6 — one binary, two faces: a cross-browser, read-only forensic browser
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../privacy/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Privacy Policy
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../terms/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Terms of Service
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="browser-forensic" class="md-nav__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    browser-forensic
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terms of Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#executive-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executive Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-who-uses-this-and-what-they-are-trying-to-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Who uses this, and what they are trying to do
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Who uses this, and what they are trying to do">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#persona-a-dana-dfir-analyst-primary-interactive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persona A — Dana, DFIR analyst (primary, interactive)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#persona-b-ravi-incident-responder-scripted-interactive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persona B — Ravi, incident responder (scripted + interactive)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#persona-c-4n6h4x0r-threat-hunter-on-own-machine-zero-config-interactive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persona C — 4n6h4x0r, threat hunter on own machine (zero-config interactive)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#persona-d-soc-pipeline-non-interactive-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persona D — SOC pipeline (non-interactive automation)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-where-we-are-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Where we are today
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-target-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Target architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Target architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-one-model-under-both-faces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 One model under both faces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-the-unified-tree-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 The unified tree (Node)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-navigation-refactor-array-path-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Navigation refactor: array → path stack
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-dual-mode-dispatch-clap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Dual-mode dispatch (clap)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-bw-br4n6-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 bw → br4n6 migration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-make-it-work-on-every-browser-split-honestly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. "Make it work on every browser" — split honestly
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. &#34;Make it work on every browser&#34; — split honestly">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-history-downloads-cookies-bookmarks-extensions-autofill-login-data-mostly-there-with-named-holes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 History / downloads / cookies / bookmarks / extensions / autofill / login-data — mostly there, with named holes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-session-tab-state-uneven-must-be-labeled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Session / tab state — uneven, must be labeled
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-discovery-breadth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Discovery breadth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-forensic-soundness-the-non-negotiable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Forensic soundness — the non-negotiable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-phased-plan-tdd-throughout-red-then-green-separate-commits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Phased plan (TDD throughout — RED then GREEN, separate commits)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-downstream-consumer-browsing-state-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Downstream consumer: browsing-state-mcp
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-performance-memory-lazy-by-construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Performance &amp; memory — lazy by construction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-open-questions-for-the-reviewer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Open questions for the reviewer
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="br4n6-one-binary-two-faces-a-cross-browser-read-only-forensic-browser">br4n6 — one binary, two faces: a cross-browser, read-only forensic browser<a class="headerlink" href="#br4n6-one-binary-two-faces-a-cross-browser-read-only-forensic-browser" title="Permanent link">&para;</a></h1>
+<p>Status: <strong>Design (draft for review)</strong> · Author: 4n6h4x0r · Date: 2026-06-09</p>
+<h2 id="executive-summary">Executive Summary<a class="headerlink" href="#executive-summary" title="Permanent link">&para;</a></h2>
+<p><strong>Decision.</strong> Collapse the two binaries we ship today — <code>br4n6</code> (an interactive TUI that reads <strong>only</strong> Brave/Chromium session state, on macOS, from the default profile) and <code>bw</code> (a cross-browser forensic <strong>CLI</strong>) — into a single binary, <code>br4n6</code>, that is <strong>a CLI and a TUI at once</strong>:</p>
+<ul>
+<li><code>br4n6</code> with <strong>no arguments</strong> → launches the TUI, auto-discovering every browser profile on the host.</li>
+<li><code>br4n6 &lt;PATH&gt;</code> → launches the TUI scoped to a path (a live profile, a mounted evidence image, a forensic copy).</li>
+<li><code>br4n6 &lt;subcommand&gt; …</code> → behaves exactly like <code>bw</code> does today (scriptable, machine-readable output).</li>
+</ul>
+<p><strong>Why it only reads Brave/Chromium today</strong> is not a deep limitation — it is an accident of wiring. The TUI was built directly on <code>snss-core</code> (a Chromium-only <em>session-state</em> decoder) and never connected to the cross-browser engine (<code>browser-chrome</code> / <code>browser-firefox</code> / <code>browser-safari</code>) that the CLI already uses. The fix is to put a <strong>single unified data model</strong> under both faces so the TUI inherits the engine's reach.</p>
+<p><strong>Top recommendation.</strong> Introduce one navigable tree model (<code>Profile → Artifact → …</code>) that both session-state readers and the flat <code>BrowserEvent</code> engine lower into. The TUI becomes a generic browser over that tree; the CLI keeps emitting the same events. One model, one loader, two presentations.</p>
+<p><strong>Top risks (and where they bite).</strong></p>
+<ol>
+<li><strong>Forensic soundness — we currently open evidence read-write.</strong> Every engine crate calls <code>Connection::open(path)</code> (read-write). On a live or imaged SQLite database this can checkpoint/replay the WAL and <strong>mutate the evidence</strong>. This must be fixed (immutable / <code>mode=ro</code>) as part of, and arguably <em>before</em>, this work. This is the single most important finding in this document.</li>
+<li><strong>The TUI's navigation model is hardcoded to a 4-level tree</strong> (<code>selection: [usize; 4]</code>, <code>MAX_DEPTH = 3</code>). Generalizing to a variable-shaped tree is a real refactor of the reducer — though the hard parts (search, tag, glob, sort, export) are already tree-walks and port cleanly.</li>
+<li><strong>"Every browser" is two different jobs.</strong> History/downloads/cookies/etc. are <em>already</em> cross-browser in the engine and come almost for free. Cross-browser <strong>session state</strong> is not: Chromium ✓ and Firefox ✓ have readers; <strong>Safari has none</strong>. We must scope and label that honestly rather than implying uniform coverage.</li>
+</ol>
+<p><strong>Scope of this document.</strong> Design and phased plan only. No code is changed here. Phase 1 (read-only hardening + binary unification) is independently shippable and is the recommended first cut.</p>
+<hr />
+<h2 id="1-who-uses-this-and-what-they-are-trying-to-do">1. Who uses this, and what they are trying to do<a class="headerlink" href="#1-who-uses-this-and-what-they-are-trying-to-do" title="Permanent link">&para;</a></h2>
+<p>Design proceeds from personas and their use cases, not from what is easy to build.</p>
+<h3 id="persona-a-dana-dfir-analyst-primary-interactive">Persona A — Dana, DFIR analyst (primary, interactive)<a class="headerlink" href="#persona-a-dana-dfir-analyst-primary-interactive" title="Permanent link">&para;</a></h3>
+<p>Investigating a seized laptop. Has mounted an image read-only at <code>/mnt/evidence</code>. Wants to <strong>see every browser's history and open/recently-closed tabs in one place</strong>, tag the URLs that matter, and export them into a report. Cares about: (1) never altering evidence, (2) <em>all</em> browsers, not just one, (3) correlating across artifacts on a timeline, (4) clean Markdown/JSON export with provenance.</p>
+<blockquote>
+<p><code>br4n6 /mnt/evidence/Users/suspect</code> → a tree of every profile found under that path; drill, search <code>/</code>, tag with <code>Space</code>/<code>+</code>, export with <code>e</code>.</p>
+</blockquote>
+<h3 id="persona-b-ravi-incident-responder-scripted-interactive">Persona B — Ravi, incident responder (scripted + interactive)<a class="headerlink" href="#persona-b-ravi-incident-responder-scripted-interactive" title="Permanent link">&para;</a></h3>
+<p>Live triage on a running host, time-boxed, often over SSH. Wants a one-shot machine-readable dump for the case file, then a quick human look.</p>
+<blockquote>
+<p><code>br4n6 triage --format jsonl &gt; case/browsers.jsonl</code> then <code>br4n6</code> to eyeball. Cares about: speed, stable JSON schema, exit codes, and <strong>zero accidental writes</strong> to a running user's profile.</p>
+</blockquote>
+<h3 id="persona-c-4n6h4x0r-threat-hunter-on-own-machine-zero-config-interactive">Persona C — 4n6h4x0r, threat hunter on own machine (zero-config interactive)<a class="headerlink" href="#persona-c-4n6h4x0r-threat-hunter-on-own-machine-zero-config-interactive" title="Permanent link">&para;</a></h3>
+<p>Wants to see what each browser on <em>this</em> machine knows, immediately, with vi keys.</p>
+<blockquote>
+<p><code>br4n6</code> (no args) → instant tree of my own profiles. Cares about: zero configuration, speed, muscle-memory navigation.</p>
+</blockquote>
+<h3 id="persona-d-soc-pipeline-non-interactive-automation">Persona D — SOC pipeline (non-interactive automation)<a class="headerlink" href="#persona-d-soc-pipeline-non-interactive-automation" title="Permanent link">&para;</a></h3>
+<p>A scheduled job parsing collected artifacts. Never opens a TUI.</p>
+<blockquote>
+<p><code>br4n6 history /collected/Default/History --format jsonl</code>. Cares about: deterministic output, a schema that does not churn, and a non-zero exit on failure.</p>
+</blockquote>
+<p><strong>What the personas tell the design:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Need</th>
+<th>Design consequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Never alter evidence (A, B)</td>
+<td>Read-only/immutable opens are <strong>mandatory and default</strong>, not a flag</td>
+</tr>
+<tr>
+<td>Every browser in one view (A, C)</td>
+<td>One unified tree fed by the cross-browser engine</td>
+</tr>
+<tr>
+<td>Scriptable <em>and</em> interactive (B)</td>
+<td>One binary, mode chosen by arguments</td>
+</tr>
+<tr>
+<td>Zero-config (C)</td>
+<td>No args → discover-and-show</td>
+</tr>
+<tr>
+<td>Stable machine output (B, D)</td>
+<td>CLI subcommands and JSON schema unchanged from today's <code>bw</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-where-we-are-today">2. Where we are today<a class="headerlink" href="#2-where-we-are-today" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>flowchart LR
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  subgraph TUI[&quot;br4n6  (browser-tui)&quot;]
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    snss[&quot;snss-core&lt;br/&gt;Chromium SNSS only&lt;br/&gt;macOS Brave default profile&quot;]
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    tree[&quot;Tree model:&lt;br/&gt;Source → Window → Tab → Nav&lt;br/&gt;(session STATE only)&quot;]
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    snss --&gt; tree
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  end
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  subgraph CLI[&quot;bw  (bw-cli)&quot;]
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    eng[&quot;browser-chrome / -firefox / -safari&lt;br/&gt;discovery · integrity · carve · rt&quot;]
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    ev[&quot;Flat model: Vec&amp;lt;BrowserEvent&amp;gt;&lt;br/&gt;(history, cookies, downloads, …)&quot;]
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    eng --&gt; ev
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  end
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  TUI -. &quot;no shared types&quot; .- CLI
+</code></pre></div>
+<p>Two binaries, two data models, no overlap. The TUI is rich (vi keys, two-pane Midnight-Commander layout, incremental search, tagging, glob-tag, Markdown/JSON export) but format- and OS-narrow. The CLI is broad but has no interactive face.</p>
+<p><strong>The core mismatch.</strong> The TUI navigates a <em>tree</em> (<code>Source→Window→Tab→Nav</code>, from <code>snss-core</code>). The CLI emits a <em>flat stream</em> (<code>Vec&lt;BrowserEvent&gt;</code>). They share no types. That gap — not the missing clap branch — is the design problem.</p>
+<p>A second, subtler point the personas surface: the TUI shows <strong>session state</strong> (which tabs/windows were open), while the CLI mostly shows <strong>history</strong> (what was visited). "Make it read state <em>and</em> history" means the unified model must hold <strong>both classes of artifact</strong>.</p>
+<hr />
+<h2 id="3-target-architecture">3. Target architecture<a class="headerlink" href="#3-target-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="31-one-model-under-both-faces">3.1 One model under both faces<a class="headerlink" href="#31-one-model-under-both-faces" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>flowchart TD
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  args[&quot;br4n6 args&quot;] --&gt; route{&quot;subcommand?&quot;}
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  route -- &quot;yes&quot; --&gt; cli[&quot;CLI handlers&lt;br/&gt;(text / jsonl / csv)&quot;]
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  route -- &quot;no&quot; --&gt; tui[&quot;TUI over the tree&quot;]
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  subgraph loader[&quot;Unified loader (read-only)&quot;]
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    disc[&quot;browser-discovery&lt;br/&gt;(all families, all OSes)&quot;]
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    sess[&quot;Session-state readers&lt;br/&gt;Chromium ◑  Firefox ◑  Safari ✗(new)&quot;]
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    evs[&quot;Event engine&lt;br/&gt;history · cookies · downloads · …&quot;]
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  end
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>  disc --&gt; model
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>  sess --&gt; model
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  evs --&gt; model
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>  model[&quot;Unified tree: Node&lt;br/&gt;Profile → Artifact → (Window→Tab→Entry | Event rows)&quot;]
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>  cli --&gt; loader
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>  tui --&gt; model
+</code></pre></div>
+<p>The CLI keeps producing <code>BrowserEvent</code>s exactly as today (Persona B/D schema stability). The TUI consumes the <strong>tree</strong>. Both are fed by one loader that opens everything read-only.</p>
+<h3 id="32-the-unified-tree-node">3.2 The unified tree (<code>Node</code>)<a class="headerlink" href="#32-the-unified-tree-node" title="Permanent link">&para;</a></h3>
+<p>A single navigable node type, deep enough for both artifact classes:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="sd">/// A navigable node in the unified browser tree.</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Node</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">label</span>: <span class="nb">String</span><span class="p">,</span><span class="w">          </span><span class="c1">// the row text the TUI shows</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">kind</span>: <span class="nc">NodeKind</span><span class="p">,</span><span class="w">         </span><span class="c1">// Profile | Artifact | Window | Tab | Entry | EventRow | Group</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">item</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="n">Item</span><span class="o">&gt;</span><span class="p">,</span><span class="w">     </span><span class="c1">// Some(..) at navigable leaves</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">children</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Node</span><span class="o">&gt;</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">}</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="sd">/// The payload that search / tag / yank / export operate on, uniformly.</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Item</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">url</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">title</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">timestamp_ns</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="kt">i64</span><span class="o">&gt;</span><span class="p">,</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">browser</span>: <span class="nc">BrowserFamily</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">artifact</span>: <span class="nc">ArtifactKind</span><span class="p">,</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">attrs</span>: <span class="nc">serde_json</span>::<span class="n">Map</span><span class="o">&lt;</span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">serde_json</span>::<span class="n">Value</span><span class="o">&gt;</span><span class="p">,</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>The existing snss <code>Source→Window→Tab→Nav</code> lowers into <code>Node</code>s with an <code>Item</code> at each <code>Nav</code>/tab leaf.</li>
+<li>A <code>Vec&lt;BrowserEvent&gt;</code> (history, downloads, …) lowers into an <code>Artifact</code> node whose children are <code>EventRow</code> leaves, each carrying an <code>Item</code>.</li>
+<li><code>search</code>, <code>tag_by_glob</code>, <code>sort</code>, <code>export</code>, <code>yank</code> become <strong>walks that collect <code>Item</code>-bearing nodes</strong> — which is exactly what today's reducer already does over the fixed hierarchy.</li>
+</ul>
+<h3 id="33-navigation-refactor-array-path-stack">3.3 Navigation refactor: array → path stack<a class="headerlink" href="#33-navigation-refactor-array-path-stack" title="Permanent link">&para;</a></h3>
+<p>Today: <code>selection: [usize; 4]</code>, <code>depth: 0..=3</code>, <code>MAX_DEPTH = 3</code> — a fixed 4-level tree baked into the reducer.</p>
+<p>Target: a path stack over a variable tree.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Cursor</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="n">path</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="kt">usize</span><span class="o">&gt;</span><span class="p">,</span><span class="w">   </span><span class="c1">// selected index at each level, root → current depth</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><strong>Down/Up</strong> — change <code>*path.last()</code>, clamped to the current level length.</li>
+<li><strong>Descend</strong> — if the addressed node has children, <code>path.push(0)</code>.</li>
+<li><strong>Ascend</strong> — <code>path.pop()</code>.</li>
+<li><strong>level length at depth d</strong> — number of children of the node addressed by <code>path[0..d]</code>.</li>
+</ul>
+<p>Every existing key (<code>gg</code>, <code>G</code>, <code>Ctrl-d/u/f/b</code>, <code>}</code>/<code>{</code>, <code>/</code>, <code>?</code>, <code>n</code>, <code>N</code>, <code>*</code>, <code>o</code>, <code>y</code>, <code>Y</code>, <code>e</code>, <code>r</code>, <code>s</code>, <code>Space</code>, <code>+</code>, <code>-</code>, <code>q</code>) keeps its meaning; only the addressing underneath changes. The search/tag/sort/export logic is preserved because it already operates by walking the model and collecting leaves.</p>
+<h3 id="34-dual-mode-dispatch-clap">3.4 Dual-mode dispatch (clap)<a class="headerlink" href="#34-dual-mode-dispatch-clap" title="Permanent link">&para;</a></h3>
+<p>A bare top-level positional <code>PATH</code> is <strong>ambiguous against subcommand names</strong>: a real evidence directory named <code>history</code>, <code>profiles</code>, <code>cookies</code>, or <code>session</code> collides grammatically with a subcommand, and clap resolves grammar before intent. <code>args_conflicts_with_subcommands</code> does <em>not</em> fix this — it only prevents mixing the two, it does not disambiguate a path that happens to be spelled like a subcommand. So the design must not put a free positional path at the top level.</p>
+<p>Resolution — make the two modes <strong>grammatically disjoint</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="cp">#[derive(Parser)]</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="cp">#[command(name = </span><span class="s">&quot;br4n6&quot;</span><span class="cp">, version, about)]</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">struct</span> <span class="nc">Cli</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="cp">#[command(subcommand)]</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="n">command</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="n">Commands</span><span class="o">&gt;</span><span class="p">,</span><span class="w">   </span><span class="c1">// None → TUI on auto-discovered host</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">}</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="cp">#[derive(Subcommand)]</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="k">enum</span> <span class="nc">Commands</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="sd">/// Open the interactive TUI on a path (profile dir, evidence mount, copy).</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="n">Open</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">path</span>: <span class="nc">PathBuf</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">    </span><span class="c1">// …existing bw subcommands: History, Cookies, Downloads, Triage, …</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>br4n6</code> (no subcommand) → TUI, auto-discovering this host.</li>
+<li><code>br4n6 open &lt;PATH&gt;</code> → TUI scoped to a path. The verb removes all ambiguity; a directory named <code>history</code> is just <code>br4n6 open history</code>.</li>
+<li><code>br4n6 &lt;subcommand&gt; …</code> → CLI, exactly as <code>bw</code> today.</li>
+</ul>
+<p>This keeps the zero-config interactive path (Persona C) <em>and</em> the explicit forensic path (Persona A) while staying parseable. (A convenience heuristic — "if the sole argument is an existing path, imply <code>open</code>" — can be layered on later behind the unambiguous grammar, never as the primary contract.)</p>
+<p><strong>One concept, one name</strong> (cognitive-load discipline): the nouns are identical across both faces — <em>Profile</em>, <em>Artifact</em> (History / Session State / Downloads / Cookies / …), and the family names (Chromium / Firefox / Safari). A reader who learns the CLI already knows the TUI's vocabulary.</p>
+<h3 id="35-bw-br4n6-migration">3.5 <code>bw</code> → <code>br4n6</code> migration<a class="headerlink" href="#35-bw-br4n6-migration" title="Permanent link">&para;</a></h3>
+<p><code>bw</code>'s command handlers move into a reusable library (e.g. <code>browser-cli</code> or fold into <code>browser-rt</code>) so the binary is a thin shell and the TUI loader can reuse the same parsing entry points (DRY). <code>bw</code> remains for one release as a <strong>thin deprecated alias</strong> that prints a notice and forwards to <code>br4n6</code>, then is removed.</p>
+<hr />
+<h2 id="4-make-it-work-on-every-browser-split-honestly">4. "Make it work on every browser" — split honestly<a class="headerlink" href="#4-make-it-work-on-every-browser-split-honestly" title="Permanent link">&para;</a></h2>
+<p>The phrase hides two very different efforts.</p>
+<h3 id="41-history-downloads-cookies-bookmarks-extensions-autofill-login-data-mostly-there-with-named-holes">4.1 History / downloads / cookies / bookmarks / extensions / autofill / login-data — mostly there, with named holes<a class="headerlink" href="#41-history-downloads-cookies-bookmarks-extensions-autofill-login-data-mostly-there-with-named-holes" title="Permanent link">&para;</a></h3>
+<p>Most event artifacts are cross-browser in the engine (<code>browser_chrome::parse_*</code>, <code>browser_firefox::parse_*</code>, <code>browser_safari::parse_*</code>); the loader calls them per discovered profile and lowers the <code>BrowserEvent</code>s into <code>Artifact</code> nodes. But coverage is a <strong>matrix with real gaps</strong>, not uniform — and the design must surface the gaps, not paper over them. The CLI today hard-rejects several Safari artifacts (<code>bw-cli/src/main.rs:195-217</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Artifact</th>
+<th style="text-align: center;">Chromium</th>
+<th style="text-align: center;">Firefox</th>
+<th style="text-align: center;">Safari</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>History · Cookies · Downloads · Bookmarks</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>Extensions</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>Login data</td>
+<td style="text-align: center;">✓ (metadata)</td>
+<td style="text-align: center;">✓ (metadata)</td>
+<td style="text-align: center;">✗ rejected</td>
+</tr>
+<tr>
+<td>Autofill</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✗ rejected</td>
+</tr>
+<tr>
+<td>Cache</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✗ rejected</td>
+</tr>
+</tbody>
+</table>
+<p>So the win is large but not total: Chromium and Firefox are broad; <strong>Safari has three missing parsers</strong>. The unified view must render those cells as "not available for this family," never as an empty list that reads like "nothing found" (fail-loud / no silent caps).</p>
+<p><strong>Encrypted fields are out of scope (metadata-only), and that must be explicit.</strong> Chrome cookie values surface as <code>"ENCRYPTED"</code> and login <code>password</code> as <code>"ENCRYPTED"</code> (<code>browser-chrome/src/{cookies,login_data}.rs</code>); Firefox <code>encryptedPassword</code> is never read. The merged tool is a <strong>metadata</strong> tool — Keychain/DPAPI/<code>nss</code> decryption is a deliberate non-goal here, called out so a reader does not assume secrets are exposed (secure-by-design: we structurally never emit a plaintext secret).</p>
+<h3 id="42-session-tab-state-uneven-must-be-labeled">4.2 Session / tab <strong>state</strong> — uneven, must be labeled<a class="headerlink" href="#42-session-tab-state-uneven-must-be-labeled" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th>State source</th>
+<th>Reader today</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chromium</td>
+<td>SNSS <code>Session_*</code> / <code>Tabs_*</code> / <code>Apps_*</code></td>
+<td>◑ <strong>rich tree only via <code>snss-core</code> (TUI path)</strong>; <code>browser_chrome::parse_session</code> exists but emits flat events and is <strong>not wired into the CLI</strong> (the CLI's <code>Session</code> arm rejects non-Firefox, <code>bw-cli/src/main.rs:207-210</code>)</td>
+</tr>
+<tr>
+<td>Firefox</td>
+<td><code>sessionstore.jsonlz4</code> / <code>recovery.jsonlz4</code></td>
+<td>◑ <strong>flat / current-tab-only</strong> — <code>browser_firefox::parse_session</code> keeps <code>entries.last()</code> per tab (<code>session.rs:50</code>), dropping nav history, window/tab indices, and selected-tab state</td>
+</tr>
+<tr>
+<td>Safari</td>
+<td><code>~/Library/Safari/LastSession.plist</code></td>
+<td>✗ <strong>none</strong> (<code>plist</code> is already a workspace dep)</td>
+</tr>
+</tbody>
+</table>
+<p>So "session state for every browser" is the <strong>least-done</strong> part of "every browser," and the honest status is:</p>
+<ul>
+<li>Only <strong>Chromium</strong> has a <em>rich</em> session tree, and only through <code>snss-core</code> — the format the current TUI already speaks.</li>
+<li><strong>Firefox</strong> session reading exists but is <strong>lossy</strong> (current entry per tab); reconstructing the full <code>Window → Tab → Nav</code> tree from <code>sessionstore.jsonlz4</code> is <strong>new work</strong>, not a wiring exercise.</li>
+<li><strong>Safari</strong> has <strong>no</strong> session reader at all.</li>
+</ul>
+<p>Implication for the <code>Node</code> tree: do <strong>not</strong> design branches that imply parity which the readers cannot fill. Where a family's session state is lossy or absent, the tree shows that explicitly (a labelled, empty-but-annotated branch), rather than a hollow node that looks like real data.</p>
+<h3 id="43-discovery-breadth">4.3 Discovery breadth<a class="headerlink" href="#43-discovery-breadth" title="Permanent link">&para;</a></h3>
+<p><code>browser-discovery</code> enumerates Chrome, Edge, Brave, Vivaldi, Opera, Arc, Chromium, and Firefox across macOS, Linux, and Windows — a strong base the loader builds on directly. Two known narrownesses to keep honest: <strong>Arc</strong> is registered only under its macOS path, and <strong>Safari</strong> discovery is macOS-only by nature (<code>Library/Safari/History.db</code>). These are acceptable (Arc/Safari are macOS-first products) but should be documented, not implied away.</p>
+<hr />
+<h2 id="5-forensic-soundness-the-non-negotiable">5. Forensic soundness — the non-negotiable<a class="headerlink" href="#5-forensic-soundness-the-non-negotiable" title="Permanent link">&para;</a></h2>
+<p><strong>Finding:</strong> every primary SQLite open in the engine is <code>Connection::open(path)</code> — <strong>read-write</strong> (Chrome <code>history.rs</code>/<code>cookies.rs</code>, Firefox <code>history.rs</code>, Safari <code>history.rs</code>, <code>browser-integrity</code>). No parser uses <code>OpenFlags</code>, <code>mode=ro</code>, or <code>immutable</code>. Opening a live or imaged browser database read-write can trigger a WAL checkpoint and <strong>alter the evidence file</strong>. For a forensic tool this is a correctness defect, not a nicety. (Carving is exempt — <code>browser-carve</code> reads raw bytes via <code>std::fs::read</code>, not a connection.)</p>
+<p><strong>The subtlety that makes naïve "read-only" wrong: the <code>-wal</code> file.</strong> A browser DB that was open carries a sidecar <code>-wal</code> holding the <strong>most recent, not-yet-checkpointed</strong> rows — often the forensically interesting ones. Two failure modes:</p>
+<ul>
+<li><code>immutable=1</code> tells SQLite to <strong>ignore the <code>-wal</code> entirely</strong> → you open cleanly but <strong>silently miss the newest data</strong>. Wrong for forensics.</li>
+<li>Plain read-write open → SQLite may <strong>checkpoint the WAL into the main DB</strong>, mutating evidence. Also wrong.</li>
+</ul>
+<p><strong>Required design (secure by default) — copy the unit, then read the copy:</strong></p>
+<ul>
+<li>The atomic unit of evidence is <strong><code>{db, db-wal, db-shm}</code> together</strong>, not the main file alone. (<code>browser-integrity</code> already treats a non-empty sibling <code>-wal</code> as significant; <code>browser-carve</code> reads <code>db-wal</code> directly — both confirm the WAL carries state.)</li>
+<li>For a <strong>live/locked</strong> profile (Chrome/Firefox lock <code>History</code>/<code>places.sqlite</code> while running): <strong>snapshot all three siblings to a temp working copy, then open the copy with <code>OpenFlags::SQLITE_OPEN_READ_ONLY</code></strong> (WAL <em>honored</em>, so the newest rows are read; any checkpoint touches the disposable copy, never the original). Never <code>immutable=1</code> here.</li>
+<li>For a <strong>static evidence artifact with no <code>-wal</code></strong> (a clean export/image), opening the original with <code>immutable=1</code> is safe and avoids a copy.</li>
+<li>The safe path is the <strong>only</strong> path in the default API surface — a single <code>open_evidence_db(path) -&gt; Connection</code> helper encapsulates the WAL-aware decision; there is no raw <code>Connection::open</code> for callers to reach for (secure-by-design: the unsafe option is not offered).</li>
+<li><strong>Chain of custody is first-class, not retrofitted.</strong> A snapshot records <code>{original_path, snapshot_path, sha256, copied_at}</code>; this provenance rides along in exports. <code>BrowserEvent.source</code> and <code>TriageReport</code> carry only a path today, so these fields are <strong>new schema</strong> — added additively so the existing JSON contract for Personas B/D does not break.</li>
+<li>Reader caveats from <code>forensicnomicon</code> (<code>ForensicMeta</code>) continue to ride along in JSON/Markdown output.</li>
+</ul>
+<p>This is the <strong>first</strong> phase because it protects evidence regardless of whether the rest of the unification ships — and because every later phase reads through this helper.</p>
+<hr />
+<h2 id="6-phased-plan-tdd-throughout-red-then-green-separate-commits">6. Phased plan (TDD throughout — RED then GREEN, separate commits)<a class="headerlink" href="#6-phased-plan-tdd-throughout-red-then-green-separate-commits" title="Permanent link">&para;</a></h2>
+<p>The original draft bundled "read-only hardening + binary unification" into one P1. Review showed those are <strong>unrelated risks at different readiness levels</strong> — read-only hardening is shippable now; unification depends on first extracting the CLI into a library. They are split below.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>flowchart LR
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  P0[&quot;P0 · Safe-open helper&lt;br/&gt;open_evidence_db (WAL-aware)&lt;br/&gt;migrate all parser opens&quot;] --&gt; P1
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  P1[&quot;P1 · Extract bw-cli → library&lt;br/&gt;(thin binary; reusable handlers)&quot;] --&gt; P2
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  P2[&quot;P2 · Dual-mode br4n6 binary&lt;br/&gt;no-arg → TUI · open PATH · subcmds&lt;br/&gt;bw = deprecated alias&quot;] --&gt; P3
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>  P3[&quot;P3 · Unified Node tree + lazy load&lt;br/&gt;(lower snss + BrowserEvent)&quot;] --&gt; P4
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>  P4[&quot;P4 · TUI over generic tree&lt;br/&gt;(path-stack reducer; keep all UX)&quot;] --&gt; P5
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  P5[&quot;P5 · Cross-browser content in TUI&lt;br/&gt;lazy per-artifact load&quot;] --&gt; P6
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>  P6[&quot;P6 · Session-state parity&lt;br/&gt;Firefox full tree · Safari LastSession.plist&quot;]
+</code></pre></div>
+<ol>
+<li><strong>P0 — Safe-open helper (forensically urgent, fully self-contained).</strong> Add <code>open_evidence_db</code> (WAL-aware copy-then-<code>READ_ONLY</code>, per §5); migrate every <code>Connection::open</code> in the parser/integrity crates to it. Tests prove no checkpoint of the original and that <code>-wal</code> rows are still read. <em>Ships on its own; nothing else depends on the rest of this design.</em></li>
+<li><strong>P1 — Extract <code>bw-cli</code> into a library.</strong> Move the subcommand handlers into a reusable crate so the binary is a thin shell. No behaviour change; existing CLI tests stay green. Prerequisite for unification.</li>
+<li><strong>P2 — Dual-mode <code>br4n6</code> binary.</strong> <code>br4n6</code> (no subcommand) → TUI; <code>br4n6 open &lt;PATH&gt;</code> → scoped TUI; <code>br4n6 &lt;subcommand&gt;</code> → CLI via the P1 library. <code>bw</code> becomes a deprecated alias.</li>
+<li><strong>P3 — Unified <code>Node</code> tree + lazy loading.</strong> Define <code>Node</code>/<code>Item</code>; lower <code>snss::Source</code> and <code>Vec&lt;BrowserEvent&gt;</code> into it. <strong>Children are produced lazily on descend</strong> (see §8) so a multi-profile host never eager-loads millions of rows. Pure-data, unit-testable.</li>
+<li><strong>P4 — Generic-tree TUI.</strong> Replace the <code>[usize; 4]</code>/<code>MAX_DEPTH</code> reducer with the path-stack cursor over <code>Node</code>; re-point search/tag/sort/export at the generic walk. Behaviour-preserving — existing TUI tests stay green.</li>
+<li><strong>P5 — Cross-browser content in the TUI.</strong> Loader feeds history/downloads/cookies/etc. for every discovered profile into the tree (lazily). The visible "now it reads every browser" moment; renders the §4.1 gaps as labelled-unavailable cells.</li>
+<li><strong>P6 — Session-state parity.</strong> Reconstruct the full Firefox <code>Window→Tab→Nav</code> tree from <code>sessionstore.jsonlz4</code> (today it is current-tab-only); add the Safari <code>LastSession.plist</code> reader; normalize all session readers to one <code>Node</code> shape.</li>
+</ol>
+<p><strong>Doer-Checker / real-data validation.</strong> Per discipline, each reader phase is validated against <strong>real</strong> artifacts (a real Safari <code>LastSession.plist</code>, real <code>sessionstore.jsonlz4</code> with multi-entry tabs, real History/places DBs <strong>with a populated <code>-wal</code></strong>), not only synthetic fixtures — real generators carry quirks synthetic ones miss. The <code>-wal</code> case is explicitly in the P0 test matrix, since that is where naïve read-only silently loses data.</p>
+<hr />
+<h2 id="7-downstream-consumer-browsing-state-mcp">7. Downstream consumer: <code>browsing-state-mcp</code><a class="headerlink" href="#7-downstream-consumer-browsing-state-mcp" title="Permanent link">&para;</a></h2>
+<p><code>browsing-state-mcp</code> (the MCP server exposing browser history/state to AI agents, secret-free and PII-redacted) is a <strong>third</strong> consumer of this same data, alongside the CLI and TUI. The unified model is an opportunity, not just a refactor: if <code>Node</code>/<code>Item</code> (or the <code>BrowserEvent</code> schema it lowers from) is the one source of truth, the MCP server, the CLI, and the TUI stay in lockstep instead of drifting. Two constraints fall out:</p>
+<ul>
+<li>Schema changes from §5 (chain-of-custody fields) and §3.2 (<code>Item</code>) must be <strong>additive</strong> so the MCP server's existing contract does not break.</li>
+<li>The MCP server's secret-free / PII-redaction guarantee must hold through the unified path — the metadata-only stance in §4.1 (never emit a plaintext secret) is what makes that structurally safe across all three faces.</li>
+</ul>
+<hr />
+<h2 id="8-performance-memory-lazy-by-construction">8. Performance &amp; memory — lazy by construction<a class="headerlink" href="#8-performance-memory-lazy-by-construction" title="Permanent link">&para;</a></h2>
+<p>A naïve loader that eager-parses every artifact of every profile into one tree will not survive real evidence: parsers collect full <code>Vec&lt;BrowserEvent&gt;</code> in memory, and a heavily-used Chrome profile holds <strong>millions</strong> of history rows. Multiply by several profiles and several artifact classes and the TUI would stall on launch and balloon memory.</p>
+<p>The model is therefore <strong>lazy by construction</strong>:</p>
+<ul>
+<li><strong>Discovery is cheap and eager</strong> (just profile dirs); <strong>artifact parsing is deferred</strong> until a node is descended into. Opening <code>br4n6</code> lists profiles instantly; the History DB for a profile is parsed only when the analyst opens that branch.</li>
+<li><strong>Bounded views by default</strong> — leaf lists render windowed/paginated, not by materializing every row at once (the CLI already caps some output, e.g. triage's 50-event preview).</li>
+<li><strong>Snapshot/parse cost is paid once per descended artifact</strong> and cached for the session; reload (<code>r</code>) re-snapshots.</li>
+<li>This shapes the <code>Node</code> API (P3): children are produced by a <strong>thunk</strong> the cursor invokes on descend, not a pre-built <code>Vec</code>.</li>
+</ul>
+<p>Cross-browser, cross-profile <strong>timeline correlation</strong> (a merged chronological view) is explicitly deferred — it is a separate artifact class with its own memory profile, not a free side effect of the tree (see open question 4).</p>
+<hr />
+<h2 id="9-open-questions-for-the-reviewer">9. Open questions for the reviewer<a class="headerlink" href="#9-open-questions-for-the-reviewer" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Keep <code>bw</code> as a permanent alias, or remove after one release?</strong> (Recommendation: deprecate now, remove next minor.)</li>
+<li><strong>Snapshot-on-lock location</strong> — system temp vs. a user-specified evidence working directory (chain-of-custody implications; the latter is friendlier to documented custody).</li>
+<li><strong>Timeline correlation across browsers</strong> — is a merged, cross-profile chronological view in scope for the TUI soon, or a later artifact-class of its own?</li>
+<li><strong>Firefox session depth</strong> — is current-tab-per-tab (today's behaviour, surfaced honestly) acceptable for an interim P5, with the full <code>Window→Tab→Nav</code> reconstruction landing in P6, or must full fidelity land together?</li>
+</ol>
+<hr />
+<p><em>Validation note:</em> claims were checked against the current <code>feat/browser-state-and-history</code> tree — <code>crates/browser-tui/src/{main,lib}.rs</code>, <code>crates/bw-cli/src/main.rs</code> (incl. the Safari/session rejections at <code>195-217</code>), <code>crates/browser-core/src/lib.rs</code>, <code>crates/browser-discovery/src/lib.rs</code>, <code>crates/snss-core/src/lib.rs</code>, <code>crates/browser-firefox/src/session.rs:50</code> (the <code>entries.last()</code> flattening), and the <code>Connection::open</code> sites across <code>browser-chrome/-firefox/-safari</code>. This revision incorporates an adversarial Codex review; note the review was run against a worktree branched from <code>main</code>, which predates the <code>browser-tui</code>/<code>snss-core</code>/<code>browsing-state-mcp</code> crates — so its "these crates do not exist" findings are review-environment artifacts, while its branch-independent findings (Firefox session is lossy, Safari artifact gaps, the <code>immutable=1</code>-vs-<code>-wal</code> hazard, clap path/subcommand ambiguity, eager-load memory risk, P1 over-bundling) are all incorporated above. The <code>immutable=1</code>-vs-<code>-wal</code> correction in §5 is the highest-impact change from the review.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.tabs", "navigation.sections", "navigation.top", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

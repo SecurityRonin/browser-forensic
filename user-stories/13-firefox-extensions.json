@@ -1,0 +1,19 @@
+[
+  {
+    "description": "Firefox extensions parser reads extensions.json and emits BrowserEvent per add-on",
+    "steps": [
+      "Create crates/browser-firefox/src/extensions.rs with parse_extensions(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_extensions from crates/browser-firefox/src/lib.rs",
+      "Read file as serde_json::Value, iterate addons array",
+      "Each addon: id (string), defaultLocale.name (string), version (string), installDate (i64 ms since Unix epoch)",
+      "Timestamp: ts_ns = installDate * 1_000_000 (ms to ns)",
+      "Set browser = BrowserFamily::Firefox, artifact = ArtifactKind::Extensions",
+      "Description: '{name} v{version}'. Attrs: id, name, version",
+      "Test: write test JSON to NamedTempFile, parse, verify",
+      "Test: parse_empty_addons_array — empty addons yields empty vec",
+      "Test: parse_single_firefox_addon — attrs[name] and attrs[version] correct, ts_ns = installDate * 1_000_000",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]

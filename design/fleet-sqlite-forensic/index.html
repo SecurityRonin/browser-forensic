@@ -1,0 +1,747 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://securityronin.github.io/browser-forensic/design/fleet-sqlite-forensic/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>A fleet-wide sqlite-forensic crate — one SQLite layer, WAL as a time axis - browser-forensic</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#a-fleet-wide-sqlite-forensic-crate-one-sqlite-layer-wal-as-a-time-axis" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="browser-forensic" class="md-header__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            browser-forensic
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              A fleet-wide sqlite-forensic crate — one SQLite layer, WAL as a time axis
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../privacy/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Privacy Policy
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../terms/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Terms of Service
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="browser-forensic" class="md-nav__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    browser-forensic
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terms of Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#executive-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executive Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-dry-case-three-repos-one-set-of-sqlite-primitives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The DRY case — three repos, one set of SQLite primitives
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-crown-jewel-wal-as-a-time-axis-issen-h-at-sqlite-granularity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The crown jewel: WAL as a time axis (Issen [H] at SQLite granularity)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-secure-by-design-why-pure-rust-beats-open-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Secure by design — why pure-Rust beats "open read-only"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-naming-the-coreforensic-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Naming &amp; the core/forensic split
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-integration-with-issens-state-history-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Integration with Issen's State-History layer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-impact-on-browser-forensic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Impact on browser-forensic
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-migration-sequence-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Migration sequence &amp; open questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="a-fleet-wide-sqlite-forensic-crate-one-sqlite-layer-wal-as-a-time-axis">A fleet-wide <code>sqlite-forensic</code> crate — one SQLite layer, WAL as a time axis<a class="headerlink" href="#a-fleet-wide-sqlite-forensic-crate-one-sqlite-layer-wal-as-a-time-axis" title="Permanent link">&para;</a></h1>
+<p>Status: <strong>Design / recommendation (draft for review)</strong> · Author: 4n6h4x0r · Date: 2026-06-09</p>
+<h2 id="executive-summary">Executive Summary<a class="headerlink" href="#executive-summary" title="Permanent link">&para;</a></h2>
+<p><strong>Recommendation: yes, eventually — create <code>~/src/sqlite-forensic</code> as the fleet's single SQLite layer</strong>, extracted from the already-built engine in <code>~/src/chat4n6/crates/chat4n6-sqlite-forensics</code>. But the cost is materially higher than a lift-and-shift, and an adversarial code review (folded in below) corrected the original estimate. The engine is genuinely pure-Rust and slice-based with <strong>no runtime <code>libsqlite3</code></strong> (<code>rusqlite</code> is dev-only, <code>Cargo.toml:21</code>) — a rare and valuable property — <strong>but it is not fleet-neutral</strong>: <code>chat4n6-plugin-api</code> is a <em>production</em> dependency (<code>Cargo.toml:16</code>), and its types (<code>EvidenceSource</code>, <code>WalDelta</code>) are threaded through the core data structures (<code>record.rs:12,17</code>, <code>wal.rs:5</code>, <code>carver.rs</code>, <code>unalloc.rs:3</code>). So the gating first task is <strong>decoupling those types</strong>, not setting <code>fts.rs</code>/<code>schema_sig.rs</code> aside.</p>
+<p>Doing this still resolves four real problems, but with the corrected scope:</p>
+<ol>
+<li><strong>The read-write evidence-mutation defect</strong> in <code>browser-forensic</code> (every <code>Connection::open(path)</code> is read-write) — a pure-Rust slice reader <strong>cannot</strong> auto-checkpoint, so mutation becomes <em>structurally impossible</em>. (Caveat in §3: this applies to <em>recovery/temporal</em> reads; routine allocated browser reads should stay on <strong>read-only <code>rusqlite</code></strong>, not a reimplemented query engine.)</li>
+<li><strong>The "WAL = two points in time" request</strong> — <code>chat4n6</code> already implements the <strong>2-state</strong> case (<code>WalMode::Both</code> is a last-writer-wins overlay diff: walk the b-tree over raw pages vs. over the collapsed overlay, emit added/deleted — <code>wal.rs:245,293,306</code>). The <strong><code>(2+N)</code> per-commit-boundary</strong> states Issen wants are <strong>new work</strong> (§2), not a cheap generalization.</li>
+<li><strong>Issen's <code>[H]</code> State-History functor at SQLite granularity</strong> — the <code>(2+N)</code>-state model is what this crate <em>would</em> produce, <strong>but</strong> the <code>state-history-forensic</code> traits crate it must implement (<code>HistoricalSource</code>) <strong>does not exist yet</strong> (<code>STATE_HISTORY_PLAN.md:534</code> — planned). Integration is gated on that.</li>
+<li><strong>Weak-duplication</strong> — <code>browser-carve</code> and <code>chat4n6</code> overlap in <em>intent</em> but not code: <code>browser-carve</code> pattern-matches ASCII <code>http</code> strings in freelist/WAL pages (<code>sqlite_carve.rs:54,110</code>), while <code>chat4n6</code> decodes record headers/serial-types (<code>carver.rs:22,71</code>). So this is <strong>supersession by a higher-fidelity carver</strong>, not removing a literal copy — still a win.</li>
+</ol>
+<p><strong>Split per the fleet convention</strong> (<code>&lt;x&gt;-core</code> raw reader + <code>&lt;x&gt;-forensic</code> anomaly auditor): <code>sqlite-core</code> (header/page/btree/varint/record/freelist/WAL-frame decode, <strong>neutral types, no fleet provenance</strong>) and <code>sqlite-forensic</code> (recovery, carving, WAL differential, temporal cohort, integrity → <code>forensicnomicon</code> findings — note chat4n6 currently emits its <em>own</em> <code>VerifiableFinding</code>/<code>VerificationReport</code> at <code>verify.rs:9,20</code>, so the <code>forensicnomicon</code> contract is an adapter to build).</p>
+<p><strong>Two real extraction risks</strong> the original draft under-weighted:
+- <strong><code>&amp;[u8]</code> whole-file → <code>Read + Seek</code> is a breaking refactor, not a nice-to-have.</strong> Every b-tree offset indexes directly into one contiguous slice (<code>btree.rs:12,225,282</code>); browser <code>History</code>/<code>places.sqlite</code> reach gigabytes. Streaming touches every interior call site and the lifetime model.
+- <strong>Plugin-API decoupling permeates the crate</strong> (see above) and must land <em>before</em> the <code>core</code>/<code>forensic</code> line can be drawn.</p>
+<p><strong>Scope of this document:</strong> recommendation + architecture + migration sequence. No code is moved here.</p>
+<hr />
+<h2 id="1-the-dry-case-three-repos-one-set-of-sqlite-primitives">1. The DRY case — three repos, one set of SQLite primitives<a class="headerlink" href="#1-the-dry-case-three-repos-one-set-of-sqlite-primitives" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Repo</th>
+<th>What it does with SQLite today</th>
+<th>Problem</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>chat4n6</code></td>
+<td>Full pure-Rust forensic engine (<code>chat4n6-sqlite-forensics</code>, 22 modules): WAL differential, btree walk, varint/serial-type, freelist/freeblock, carving, integrity</td>
+<td>Locked inside the chat product; not reusable by the fleet</td>
+</tr>
+<tr>
+<td><code>browser-forensic</code></td>
+<td><code>browser-*</code> parsers open via <strong>read-write</strong> <code>rusqlite</code>; <code>browser-carve</code> <strong>reimplements</strong> freelist/WAL carving</td>
+<td>Evidence-mutation risk; duplicated, weaker carving</td>
+</tr>
+<tr>
+<td><code>issen</code></td>
+<td>Plans <code>issen-sqlite-history</code> as a <em>thin wrapper around chat4n6's WAL reader</em> (<code>STATE_HISTORY_PLAN.md:543-545</code>)</td>
+<td>Already assumes chat4n6's engine is the source of truth — but via an ad-hoc bridge</td>
+</tr>
+</tbody>
+</table>
+<p>All three want the same primitives. Issen's own plan already points at chat4n6 as the engine. The honest conclusion: <strong>promote chat4n6's SQLite engine to a first-class fleet crate</strong> and have everyone — including chat4n6 — depend on it.</p>
+<hr />
+<h2 id="2-the-crown-jewel-wal-as-a-time-axis-issen-h-at-sqlite-granularity">2. The crown jewel: WAL as a time axis (Issen <code>[H]</code> at SQLite granularity)<a class="headerlink" href="#2-the-crown-jewel-wal-as-a-time-axis-issen-h-at-sqlite-granularity" title="Permanent link">&para;</a></h2>
+<p>The user's framing — <em>"with-<code>-wal</code> and without-<code>-wal</code> as two points in time, the history axis"</em> — is exactly Issen's model, and chat4n6 already codes the degenerate case.</p>
+<p><strong>Issen's general model</strong> (<code>STATE_HISTORY_PLAN.md:215-231</code>): a SQLite WAL with <code>N</code> committed transactions yields <code>(2 + N)</code> states —</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>flowchart LR
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  S0[&quot;State 0&lt;br/&gt;main DB, WAL ignored&lt;br/&gt;(last checkpoint)&quot;] --&gt; Sk[&quot;State k&lt;br/&gt;main + WAL frames[1..k]&lt;br/&gt;(each commit boundary)&quot;]
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  Sk --&gt; SN[&quot;State N+1&lt;br/&gt;fully replayed&lt;br/&gt;(live / latest)&quot;]
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  SN --&gt; tail[&quot;Uncommitted tail&lt;br/&gt;frames past last commit&lt;br/&gt;(in-flight at acquisition)&quot;]
+</code></pre></div>
+<ul>
+<li><strong>State 0</strong> — <code>main.db</code> with the <code>-wal</code> <em>ignored</em>: the database as of the last checkpoint (an <em>earlier</em> point in time).</li>
+<li><strong>State k</strong> — <code>main.db</code> + WAL frames <code>[1..k]</code> applied: the state at each commit boundary.</li>
+<li><strong>State N+1</strong> — fully replayed: the <em>live/latest</em> state.</li>
+<li><strong>Uncommitted tail</strong> — frames beyond the last commit: transactions in flight at the moment of acquisition (often the most interesting).</li>
+</ul>
+<p><strong>What chat4n6 already has</strong> (<code>chat4n6-sqlite-forensics</code>) — the <strong>2-state</strong> case:</p>
+<ul>
+<li><code>WalMode::{Both, Apply, Ignore}</code> (<code>db.rs:10-14</code>). <code>Both</code> builds a WAL overlay by <strong>collapsing <em>all</em> frames</strong> to their final per-page state (last-writer-wins, <code>wal.rs:245,261</code>), then walks the b-tree twice — over the raw pages (pre-replay) and over the overlay (post-replay) — dedups by record hash, and classifies: records only in the post view are <strong>added</strong> (<code>WalPending</code>), records only in the pre view are <strong>deleted</strong> (<code>WalDeleted</code>) (<code>wal.rs:293,306</code>). This is a <strong>two-snapshot diff</strong>, not commit-boundary tracking.</li>
+<li><code>wal_enhanced.rs</code> has a <strong>per-frame</strong> classifier (Committed / Uncommitted / Superseded, <code>wal_enhanced.rs:16,35</code>), but two caveats: it is <strong>not on the main recovery path</strong> (<code>db.rs</code> calls <code>recover_layer2_enhanced</code> in <code>wal.rs</code>, not this classifier), and <code>Superseded</code> is <strong>exclusive</strong> of <code>Committed</code> (<code>wal_enhanced.rs:127</code>) — the states are not independently composable.</li>
+</ul>
+<p><strong>The gap to close for Issen is real new work, not a generalization.</strong> Issen wants the full <strong><code>(2+N)</code>-state cohort</strong> with <code>TemporalCohort::diff(a, b) -&gt; StateDelta</code> (<code>STATE_HISTORY_PLAN.md:501</code>). The current overlay is a <em>single</em> collapsed page-map walked <em>once</em>; producing a distinct state at <strong>each commit boundary</strong> requires either incremental overlay snapshots (page-map duplication per commit) or a replay-log structure that does not exist today. Budget this as a <strong>new capability</strong>, with its own fixtures (a multi-transaction WAL exercised at each boundary — no such test exists today).</p>
+<p><strong>Mapping to the framework:</strong> <code>sqlite-forensic</code> <em>is</em> the <code>[H]</code> functor applied at SQLite granularity — it lifts one <code>(main.db, -wal, -shm)</code> artifact into a time-indexed <code>Vec&lt;TemporalState&gt;</code>. The deletion-window inference Issen wants (<code>message present in state A, absent in state B → deleted in (A,B]</code>) falls straight out of <code>diff()</code>.</p>
+<hr />
+<h2 id="3-secure-by-design-why-pure-rust-beats-open-read-only">3. Secure by design — why pure-Rust beats "open read-only"<a class="headerlink" href="#3-secure-by-design-why-pure-rust-beats-open-read-only" title="Permanent link">&para;</a></h2>
+<p>The <code>br4n6</code> design doc proposed a WAL-aware <code>open_evidence_db</code> helper (copy <code>{db,-wal,-shm}</code>, then open <code>READ_ONLY</code>). That is correct but still routes through <code>libsqlite3</code>, which has historically surprising checkpoint/recovery behavior. <strong>chat4n6's approach is strictly stronger:</strong></p>
+<ul>
+<li>The reader takes <code>&amp;[u8]</code> and never hands the file to <code>libsqlite3</code>, so <strong>it physically cannot checkpoint, recover, or write</strong> — the unsafe operation is not <em>in the API surface</em> (the strongest form of secure-by-design: the wrong thing is unconstructible).</li>
+<li>The <code>-wal</code> is parsed as raw frames, so State 0 (WAL-ignored) is obtained by <em>not applying frames</em> — no risk of libsqlite3 silently replaying them.</li>
+</ul>
+<p><strong>Settled decision (was an open question): keep read-only <code>rusqlite</code> for routine allocated reads; use <code>sqlite-forensic</code> only for temporal/deleted/carved recovery.</strong> Browser parsers run real SQL with joins, filters, and ordering — Chromium joins <code>visits</code>⋈<code>urls</code> (<code>visits.rs:67</code>), Firefox downloads join three tables filtered on annotation name (<code>downloads.rs:20</code>), Safari joins visits⋈items (<code>history.rs:21</code>). Reimplementing projection/join/<code>WHERE</code> evaluation over raw b-tree walks is a <strong>query-engine rewrite</strong>, not an extraction — a trap. So the safe-open fix for <em>allocated</em> reads is simply switching those <code>Connection::open</code> calls to <strong>read-only flags</strong> (<code>SQLITE_OPEN_READ_ONLY</code>, and copy <code>{db,-wal,-shm}</code> when locked). The pure-Rust engine earns its keep on the things SQL <em>cannot</em> see: deleted rows, freelist/unallocated carving, and the WAL time axis.</p>
+<hr />
+<h2 id="4-naming-the-coreforensic-split">4. Naming &amp; the core/forensic split<a class="headerlink" href="#4-naming-the-coreforensic-split" title="Permanent link">&para;</a></h2>
+<p>Per <code>issen/CLAUDE.md:292-304</code> (reader = <code>&lt;x&gt;-core</code>, analyzer = <code>&lt;x&gt;-forensic</code>, always):</p>
+<table>
+<thead>
+<tr>
+<th>Crate</th>
+<th>Owns</th>
+<th>From chat4n6 modules</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>sqlite-core</code></strong></td>
+<td>Raw decode, no findings: header, page-type, b-tree walk, varint, serial-type/record, freelist/freeblock, <strong>WAL frame parsing</strong>, overlay construction</td>
+<td><code>header.rs</code>, <code>page.rs</code>, <code>btree.rs</code>, <code>varint.rs</code>, <code>record.rs</code>, <code>freelist.rs</code>, <code>freeblock.rs</code>, <code>wal.rs</code> (frame parse + overlay), <code>page_map.rs</code></td>
+</tr>
+<tr>
+<td><strong><code>sqlite-forensic</code></strong></td>
+<td>Interpretation → <code>forensicnomicon</code> findings: deleted/carved recovery, WAL <strong>differential &amp; temporal cohort</strong>, integrity/tamper, pragma anomalies</td>
+<td><code>carver.rs</code>, <code>unalloc.rs</code>, <code>gap.rs</code>, <code>journal.rs</code>, <code>wal_enhanced.rs</code> (classification), <code>verify.rs</code>, <code>pragma.rs</code>, <code>dedup.rs</code>, <code>rowid_gap.rs</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Boundary question for review:</strong> does the <strong>temporal-state builder</strong> (collapse frames <code>[1..k]</code> → a <code>TemporalState</code>) live in <code>-core</code> or <code>-forensic</code>? Argument for <code>-core</code>: it is pure decode (apply frames, present bytes). Argument for <code>-forensic</code>: <em>attributing</em> a delta as "deletion" is interpretation. Proposed line: <strong>frame parsing + state materialization → <code>-core</code>; delta/anomaly attribution → <code>-forensic</code>.</strong></p>
+<p><strong>Prerequisite the review surfaced:</strong> the would-be <code>-core</code> types are <em>currently coupled to chat</em>. <code>RecoveredRecord</code> carries a <code>chat4n6-plugin-api::EvidenceSource</code> (<code>record.rs:12,17</code>) and the WAL path imports <code>WalDelta</code>/<code>WalDeltaStatus</code> from the same crate (<code>wal.rs:5</code>). Before the <code>core</code>/<code>forensic</code> line can be drawn, define <strong>neutral</strong> <code>SqliteRow</code> / <code>WalFrame</code> / <code>PageRef</code> types in <code>sqlite-core</code> with no fleet provenance attached; provenance (<code>EvidenceSource</code>, findings) belongs above, in <code>-forensic</code> and its consumers.</p>
+<blockquote>
+<p>Note on the user's phrasing: the proposal named one crate <code>sqlite-forensic</code>. The fleet convention makes that the <strong>workspace/repo</strong> name, containing both <code>sqlite-core</code> and <code>sqlite-forensic</code> members (the same shape as <code>ntfs-forensic</code> → <code>ntfs-core</code> + <code>ntfs-forensic</code>).</p>
+</blockquote>
+<hr />
+<h2 id="5-integration-with-issens-state-history-layer">5. Integration with Issen's State-History layer<a class="headerlink" href="#5-integration-with-issens-state-history-layer" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>flowchart TD
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  shf[&quot;state-history-forensic&lt;br/&gt;(traits only, zero deps)&lt;br/&gt;HistoricalSource · TemporalState · TemporalCohort&quot;]
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  sc[&quot;sqlite-core&lt;br/&gt;(decode + frame parse)&quot;]
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  sf[&quot;sqlite-forensic&lt;br/&gt;(recovery · WAL differential · cohort)&quot;]
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  sc --&gt; sf
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  shf -. &quot;implements&quot; .- sf
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  sf --&gt; issen[&quot;issen-correlation&lt;br/&gt;TemporalEventGraph · deletion windows&quot;]
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  sf --&gt; c4[&quot;chat4n6 plugins&lt;br/&gt;(fts, schema_sig kept local)&quot;]
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  sf --&gt; bf[&quot;browser-forensic&lt;br/&gt;(browser-carve retired)&quot;]
+</code></pre></div>
+<ul>
+<li><code>sqlite-forensic</code> <strong>implements</strong> <code>state-history-forensic::HistoricalSource</code>, emitting a <code>TemporalCohort</code> per <code>(db,-wal)</code> unit. Issen's planned <code>issen-sqlite-history</code> wrapper (<code>STATE_HISTORY_PLAN.md:543-545</code>) <strong>shrinks to an adapter or disappears</strong>.</li>
+<li><code>chat4n6</code> deletes its in-tree copy, depends on <code>sqlite-forensic</code>, and keeps only <code>fts.rs</code> / <code>schema_sig.rs</code> as plugin-side code.</li>
+<li><strong>Decoupling:</strong> chat4n6's engine depends on <code>chat4n6-plugin-api</code> for <code>EvidenceSource</code> / <code>WalDelta</code>; move those two types <strong>into <code>sqlite-forensic</code></strong> so the shared crate has no chat dependency (the survey flags this as light).</li>
+</ul>
+<hr />
+<h2 id="6-impact-on-browser-forensic">6. Impact on <code>browser-forensic</code><a class="headerlink" href="#6-impact-on-browser-forensic" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Supersede <code>browser-carve</code>'s SQLite carving</strong> — it pattern-matches <code>http</code> strings in freelist/WAL pages (<code>sqlite_carve.rs:54,110</code>); <code>sqlite-forensic</code>'s record-header/serial-type carver is higher fidelity. Retire the former onto the latter. (Non-SQLite carving, if any, stays.)</li>
+<li><strong><code>browser-*</code> parsers</strong> — switch the read-write <code>Connection::open</code> sites to <strong>read-only <code>rusqlite</code></strong> (<code>SQLITE_OPEN_READ_ONLY</code>; copy <code>{db,-wal,-shm}</code> when the live DB is locked). This is the concrete form of the <code>br4n6</code> design doc's P0 <code>open_evidence_db</code>; the shared safe-open helper is the better home, but the <em>fix itself does not need the full extraction</em> — it can land immediately. Pure-Rust <code>sqlite-forensic</code> is additive on top, for deleted/temporal recovery.</li>
+<li><strong><code>snss-core</code> is untouched</strong> — SNSS is a Pickle-based format, not SQLite.</li>
+<li><strong>Bonus:</strong> browser history gains WAL temporal awareness for free — "tabs/visits present in the live state but absent at last checkpoint" becomes a first-class query.</li>
+</ul>
+<hr />
+<h2 id="7-migration-sequence-open-questions">7. Migration sequence &amp; open questions<a class="headerlink" href="#7-migration-sequence-open-questions" title="Permanent link">&para;</a></h2>
+<p><strong>Recommended first step (de-risked, from the review) — prove the seam before committing the fleet.</strong> Do <em>not</em> open by extracting the whole engine. Instead:</p>
+<ol>
+<li><strong>Carve a minimal, fleet-neutral <code>sqlite-core</code></strong> from <code>header.rs</code>, <code>varint.rs</code>, <code>btree.rs</code>, and the WAL frame-parse/overlay parts of <code>wal.rs</code> — <strong>stripped of <code>chat4n6-plugin-api</code></strong> (neutral <code>SqliteRow</code>/<code>WalFrame</code>/<code>PageRef</code>). Validate it against (a) one existing chat4n6 recovery test and (b) one <code>browser-forensic</code> read-only read path. <em>This single step proves the decoupling and the API shape before anything depends on it.</em></li>
+<li><strong>Then</strong> lift <code>sqlite-forensic</code> (carving, WAL differential, integrity) onto <code>sqlite-core</code>, emitting <code>forensicnomicon::report::Finding</code> via an adapter (chat4n6 emits its own <code>VerifiableFinding</code> today, <code>verify.rs:9,20</code>).</li>
+<li><strong>Repoint <code>chat4n6</code></strong> at the two crates (path dep during the coordinated change, registry once published); keep <code>fts.rs</code>/<code>schema_sig.rs</code> as plugin-side code.</li>
+<li><strong><code>browser-forensic</code></strong> — switch parsers to <strong>read-only <code>rusqlite</code></strong> (allocated reads); retire <code>browser-carve</code>'s lower-fidelity SQLite carving onto <code>sqlite-forensic</code>.</li>
+<li><strong>Only after <code>state-history-forensic</code> exists</strong> (<code>STATE_HISTORY_PLAN.md:534</code>, not yet a crate): build the <code>(2+N)</code>-state cohort and implement <code>HistoricalSource</code>; collapse Issen's planned <code>issen-sqlite-history</code> to an adapter. The <code>&amp;[u8]</code>→<code>Read + Seek</code> streaming refactor lands here or earlier, driven by real DB sizes.</li>
+</ol>
+<p><strong>Correctness gaps the pure-Rust reader must address (review findings):</strong></p>
+<ul>
+<li><strong>Encrypted DBs (SQLCipher/SEE).</strong> Header detection keys on the plaintext magic <code>SQLite format 3\0</code> (<code>header.rs:1,3</code>); encrypted files fail at parse with no graceful "encrypted, out of scope" signal. Add detection + explicit scope limitation.</li>
+<li><strong>Reserved-bytes / overflow.</strong> Overflow math assumes <strong>0 reserved bytes</strong> in the usable page size (<code>btree.rs:282,288</code>); SQLCipher and some DBs use the reserved field (salt), which would mis-size overflow chains. Read the header's reserved-bytes field, don't assume 0.</li>
+<li><strong><code>-shm</code> &amp; checkpoint modes.</strong> No <code>shm_data</code> is tracked (<code>db.rs:53</code>); after a partial checkpoint under <code>RESTART</code>/<code>TRUNCATE</code>, frame visibility depends on WAL-index state. <code>(2+N)</code> materialization must consult it or it can mis-classify frames.</li>
+<li><strong><code>auto_vacuum=Incremental</code>.</strong> Parsed but only <code>Full</code> suppresses freelist recovery (<code>pragma.rs:117</code>, <code>db.rs:256</code>); incremental keeps a pointer-map page affecting freelist logic — handle distinctly.</li>
+</ul>
+<p><strong>Open questions for the reviewer:</strong></p>
+<ol>
+<li><strong>core/forensic boundary</strong> for the temporal-state builder (§4).</li>
+<li><strong>Streaming</strong>: is mmap/<code>&amp;[u8]</code> acceptable interim, with <code>Read + Seek</code> mandatory before multi-GB browser DBs? (Leaning: mandatory before browser adoption at scale.)</li>
+<li><strong>Versioning across 4 repos</strong> during the coordinated extraction — who owns the cut; path → registry cadence.</li>
+</ol>
+<hr />
+<p><em>Validation note:</em> claims drawn from two read-only surveys of the actual trees. Issen model: <code>~/src/issen/{README.md,CLAUDE.md,STATE_HISTORY_PLAN.md}</code> (5 data sources <code>README.md:55-61</code>; <code>[H]</code> functor &amp; <code>(2+N)</code>-state WAL model <code>STATE_HISTORY_PLAN.md:69-75,215-231</code>; <code>TemporalState</code>/<code>TemporalCohort</code>/<code>diff</code> <code>:484-505</code>; acquisition guidance <code>:419</code>). chat4n6 engine: <code>~/src/chat4n6/crates/chat4n6-sqlite-forensics/src/*</code> (<code>WalMode</code> <code>db.rs:10-14</code>; differential replay <code>wal.rs:289-335</code>; per-frame classification <code>wal_enhanced.rs</code>; ~95% liftable, only <code>fts.rs</code>/<code>schema_sig.rs</code> chat-specific). The whole-file <code>&amp;[u8]</code> I/O boundary is the highest-confidence <em>effort</em> finding; the read-write-open defect in <code>browser-forensic</code> is the highest-confidence <em>correctness</em> finding.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.tabs", "navigation.sections", "navigation.top", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

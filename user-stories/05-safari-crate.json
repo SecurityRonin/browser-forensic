@@ -1,0 +1,23 @@
+[
+  {
+    "description": "Safari crate created with history parser for History.db using Core Data timestamps",
+    "steps": [
+      "Add plist = '1' to [workspace.dependencies] in root Cargo.toml",
+      "Create crates/browser-safari/Cargo.toml with deps: anyhow, browser-core, rusqlite, serde_json, serde, plist; dev-deps: tempfile",
+      "Add 'crates/browser-safari' to workspace members in root Cargo.toml",
+      "Create crates/browser-safari/src/lib.rs with pub mod history; pub use history::parse_history;",
+      "Create crates/browser-safari/src/history.rs",
+      "Implement safari_to_unix_ns(core_data_secs: f64) -> i64 using offset 978_307_200.0",
+      "Implement parse_history(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Query: SELECT i.url, i.visit_count, v.visit_time FROM history_visits v JOIN history_items i ON v.history_item = i.id WHERE v.visit_time > 0 ORDER BY v.visit_time ASC",
+      "Set browser = BrowserFamily::Safari, artifact = ArtifactKind::History",
+      "Test: safari_epoch_offset_is_correct — safari_to_unix_ns(0.0) == 978_307_200_000_000_000",
+      "Test: safari_epoch_known_value — safari_to_unix_ns(700_000_000.0) == 1_678_307_200_000_000_000",
+      "Test: parse_empty_safari_history_returns_empty",
+      "Test: parse_single_safari_url — browser=Safari, artifact=History, attrs[url] and attrs[visit_count] correct",
+      "Test: parse_multiple_visits_creates_one_event_per_visit — 2 rows = 2 events",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]
