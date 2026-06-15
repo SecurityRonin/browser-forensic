@@ -14,6 +14,13 @@ path = "src/lib.rs"
 name = "br4n6"
 path = "src/main.rs"
 
+# `bw` is a documented, historic entry point (README install line + every CLI
+# example). br4n6 also installs under that name from the same dual-mode source,
+# so existing `bw <subcommand>` invocations keep working unchanged.
+[[bin]]
+name = "bw"
+path = "src/main.rs"
+
 [dependencies]
 snss-core = { version = "0.1.0", path = "../snss-core" }
 browser-core = { version = "0.1.0", path = "../browser-core" }
@@ -21,6 +28,9 @@ browser-chrome = { version = "0.1.0", path = "../browser-chrome" }
 browser-firefox = { version = "0.1.0", path = "../browser-firefox" }
 browser-safari = { version = "0.1.0", path = "../browser-safari" }
 browser-discovery = { version = "0.1.0", path = "../browser-discovery" }
+browser-integrity = { version = "0.1.0", path = "../browser-integrity" }
+browser-carve = { version = "0.1.0", path = "../browser-carve" }
+browser-rt = { version = "0.1.0", path = "../browser-rt" }
 ratatui = "0.30"
 crossterm = "0.29"
 arboard = "3.6"
