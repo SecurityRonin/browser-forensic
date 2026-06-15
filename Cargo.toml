@@ -4,7 +4,6 @@ members = [
     "crates/browser-chrome",
     "crates/browser-firefox",
     "crates/browser-safari",
-    "crates/bw-cli",
     "crates/browser-discovery",
     "crates/browser-integrity",
     "crates/browser-carve",

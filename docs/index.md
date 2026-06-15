@@ -3,7 +3,7 @@
 **Parse Chrome, Firefox, and Safari artifacts. Detect history clearing. Carve deleted records. No runtime deps.**
 
 ```bash
-cargo install --git https://github.com/SecurityRonin/browser-forensic bw-cli
+cargo install --git https://github.com/SecurityRonin/browser-forensic browser-tui
 bw triage --home ~ --format jsonl
 ```
 
@@ -71,7 +71,7 @@ bw triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
 | `browser-carve` | SQLite free-page and WAL recovery |
 | `browser-memory` | Byte-pattern URL/cookie scanning |
 | `browser-rt` | RapidTriage orchestration |
-| `bw-cli` | `bw` CLI binary |
+| `browser-tui` | `br4n6` / `bw` dual-mode CLI + TUI binary |
 
 ---
 

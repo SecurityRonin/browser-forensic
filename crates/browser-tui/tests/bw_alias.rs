@@ -42,5 +42,7 @@ fn bw_profiles_exits_0() {
 
 #[test]
 fn bw_timeline_nonexistent_path_fails() {
-    bw().args(["timeline", "/nonexistent/History"]).assert().failure();
+    bw().args(["timeline", "/nonexistent/History"])
+        .assert()
+        .failure();
 }

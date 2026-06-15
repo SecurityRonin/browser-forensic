@@ -87,10 +87,7 @@ fn every_subcommand_help_exits_0() {
         "browsers",
         "sessions",
     ] {
-        br4n6()
-            .args([sub, "--help"])
-            .assert()
-            .success();
+        br4n6().args([sub, "--help"]).assert().success();
     }
 }
 
@@ -148,7 +145,10 @@ fn timeline_firefox_history_text() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains('['), "Expected '[' in text output: {stdout}");
+    assert!(
+        stdout.contains('['),
+        "Expected '[' in text output: {stdout}"
+    );
 }
 
 #[test]
@@ -299,5 +299,8 @@ fn triage_with_chrome_profile_finds_events() {
 #[test]
 fn analyze_chrome_history_succeeds() {
     let (_dir, path) = create_chrome_history();
-    br4n6().args(["analyze", path.to_str().unwrap()]).assert().success();
+    br4n6()
+        .args(["analyze", path.to_str().unwrap()])
+        .assert()
+        .success();
 }

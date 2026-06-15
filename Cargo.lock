@@ -326,10 +326,13 @@ dependencies = [
  "anyhow",
  "arboard",
  "assert_cmd",
+ "browser-carve",
  "browser-chrome",
  "browser-core",
  "browser-discovery",
  "browser-firefox",
+ "browser-integrity",
+ "browser-rt",
  "browser-safari",
  "chrono",
  "clap",
@@ -376,28 +379,6 @@ name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
-
-[[package]]
-name = "bw-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "browser-carve",
- "browser-chrome",
- "browser-core",
- "browser-discovery",
- "browser-firefox",
- "browser-integrity",
- "browser-rt",
- "browser-safari",
- "chrono",
- "clap",
- "dirs",
- "rusqlite",
- "serde_json",
- "tempfile",
-]
 
 [[package]]
 name = "by_address"

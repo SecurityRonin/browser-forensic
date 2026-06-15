@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! Humble-Object decision helpers absorbed from `bw_cli`: carve-stat merging, the
+//! Humble-Object decision helpers in `browser_tui::cli`: carve-stat merging, the
 //! triage text summary, and filename-based browser inference. The CLI shells only
 //! `println!` what these return, so they carry the testable behavior.
 

@@ -1,7 +1,11 @@
-//! The `br4n6` command-line mode: list browsers, dump history visits
-//! (redirect-collapsed where the family supports it), and dump session state —
-//! with local search and `text`/`jsonl`/`csv` output. The TUI mode lives in
-//! [`crate::tui`].
+//! The `br4n6` / `bw` command-line mode and dispatch ([`run`]): list browsers,
+//! dump history visits (redirect-collapsed where the family supports it) and
+//! session state with local search, plus the full forensic surface absorbed from
+//! the former `bw` binary — any single artifact (cookies / downloads / bookmarks
+//! / extensions / login-data / autofill / session / cache / timeline), rare-domain
+//! analysis, integrity checks, deleted-record carving, and full triage — all with
+//! `text`/`jsonl`/`csv` output. The interactive TUI is launched via the injected
+//! `launch_tui` callback.
 //!
 //! Cross-browser: the [`Family`] auto-detector routes a user-supplied file or
 //! profile directory to the matching reader — Chromium (`History`/SNSS via
@@ -537,8 +541,8 @@ fn csv_escape(s: &str) -> String {
 // These subcommands (timeline / cookies / downloads / bookmarks / extensions /
 // login-data / autofill / session / cache / profiles / analyze / integrity /
 // carve / triage) keep `bw`'s exact machine-readable output contracts — the
-// `fmt` submodule below is byte-for-byte the old `bw_cli::format`, and the
-// `run_*` handlers mirror the old `bw` `run_*` glue. The Humble-Object decision
+// `fmt` submodule below is the byte-for-byte `bw` event format (5-column CSV,
+// full-`serde` JSONL, `[ts] browser/artifact: desc` text). The Humble-Object decision
 // helpers (`merge_carve_stats`, `triage_summary_lines`, `infer_browser_from_filename`)
 // stay pure and directly unit-testable.
 // ===========================================================================
@@ -1135,5 +1139,303 @@ mod tests {
     #[test]
     fn format_ts_is_rfc3339() {
         assert!(format_ts(1_648_000_000_000_000_000).contains('T'));
+    }
+
+    // ---- migrated bw handlers: exercise every output-format branch + the
+    // ---- per-family parse arms against in-test SQLite fixtures ----
+
+    use rusqlite::Connection;
+
+    /// Chrome `History` DB with one URL, under a Chrome-looking profile dir so
+    /// `detect_browser` resolves Chromium.
+    fn chrome_history_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let profile = dir.path().join("google-chrome").join("Default");
+        std::fs::create_dir_all(&profile).unwrap();
+        let conn = Connection::open(profile.join("History")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT DEFAULT '', visit_count INTEGER DEFAULT 0 NOT NULL, last_visit_time INTEGER NOT NULL);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0, visit_duration INTEGER DEFAULT 0);
+             INSERT INTO urls (url, title, visit_count, last_visit_time) VALUES ('https://example.com', 'Example', 1, 13327626000000000);
+             INSERT INTO visits (url, visit_time, visit_duration) VALUES (1, 13327626000000000, 0);",
+        )
+        .unwrap();
+        dir
+    }
+
+    fn chrome_history_path(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path()
+            .join("google-chrome")
+            .join("Default")
+            .join("History")
+    }
+
+    /// Firefox `places.sqlite` with one URL.
+    fn firefox_places() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("places.sqlite");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE moz_places (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_date INTEGER);
+             CREATE TABLE moz_historyvisits (id INTEGER PRIMARY KEY, place_id INTEGER NOT NULL, visit_date INTEGER NOT NULL);
+             INSERT INTO moz_places (url, title, visit_count, last_visit_date) VALUES ('https://ff.example', 'FF', 1, 1648000000000000);
+             INSERT INTO moz_historyvisits (place_id, visit_date) VALUES (1, 1648000000000000);",
+        )
+        .unwrap();
+        (dir, p)
+    }
+
+    #[test]
+    fn run_artifact_history_all_formats_chromium() {
+        let dir = chrome_history_dir();
+        let p = chrome_history_path(&dir);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_artifact(&p, ArtifactType::History, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_artifact_history_all_formats_firefox() {
+        let (_d, p) = firefox_places();
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_artifact(&p, ArtifactType::History, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_artifact_unknown_path_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("History"); // bare name → undetectable family
+        std::fs::write(&p, b"x").unwrap();
+        assert!(run_artifact(&p, ArtifactType::History, OutputFormat::Text).is_err());
+    }
+
+    #[test]
+    fn run_artifact_session_rejects_non_firefox() {
+        let dir = chrome_history_dir();
+        let p = chrome_history_path(&dir);
+        // Chromium + Session is an unsupported pairing → loud error.
+        assert!(run_artifact(&p, ArtifactType::Session, OutputFormat::Text).is_err());
+    }
+
+    #[test]
+    fn run_analyze_chromium_ok() {
+        let dir = chrome_history_dir();
+        run_analyze(&chrome_history_path(&dir), 5).unwrap();
+    }
+
+    #[test]
+    fn run_analyze_unknown_path_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("History");
+        std::fs::write(&p, b"x").unwrap();
+        assert!(run_analyze(&p, 5).is_err());
+    }
+
+    #[test]
+    fn run_integrity_all_formats_clean_and_dirty() {
+        // Clean DB → the "no issues" arm of each format.
+        let dir = tempfile::tempdir().unwrap();
+        let clean = dir.path().join("clean.db");
+        let conn = Connection::open(&clean).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_integrity(&clean, fmt).unwrap();
+        }
+
+        // Cleared-history DB → the "found indicators" arm of each format.
+        let dirty = dir.path().join("dirty.db");
+        let conn = Connection::open(&dirty).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
+             UPDATE sqlite_sequence SET seq = 500 WHERE name = 'urls';
+             DELETE FROM urls;",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_integrity(&dirty, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_carve_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("c.db");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);
+             INSERT INTO urls VALUES (1, 'https://example.com');",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_carve(&db, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_profiles_all_formats() {
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_profiles(fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_triage_all_formats_with_events() {
+        let home = tempfile::tempdir().unwrap();
+        let chrome = home
+            .path()
+            .join("Library/Application Support/Google/Chrome/Default");
+        std::fs::create_dir_all(&chrome).unwrap();
+        let conn = Connection::open(chrome.join("History")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
+             INSERT INTO visits VALUES (1, 1, 13300000000000000, 0, 0);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_triage(Some(home.path()), fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_triage_empty_home_all_formats() {
+        let home = tempfile::tempdir().unwrap();
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_triage(Some(home.path()), fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn fmt_event_round_trips_each_format() {
+        let ev = BrowserEvent::new(
+            1_648_000_000_000_000_000,
+            BrowserFamily::Chromium,
+            ArtifactKind::History,
+            "/History",
+            "Example",
+        )
+        .with_attr("url", json!("https://x,y.example"));
+        // text / jsonl / csv (the comma forces csv_escape quoting)
+        assert!(fmt::event_to_text(&ev).starts_with('['));
+        let _: serde_json::Value = serde_json::from_str(&fmt::event_to_jsonl(&ev)).unwrap();
+        assert!(fmt::event_to_csv_row(&ev).contains("Chromium"));
+        assert_eq!(fmt::format_timestamp_ns(0), "1970-01-01T00:00:00Z");
+        assert_eq!(fmt::csv_escape("a,b"), "\"a,b\"");
+    }
+
+    /// Firefox `places.sqlite`-style DB also carrying cookies/downloads tables so
+    /// the per-artifact Firefox arms can be exercised.
+    fn firefox_cookies() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("cookies.sqlite");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE moz_cookies (id INTEGER PRIMARY KEY, host TEXT, name TEXT, value TEXT, path TEXT, expiry INTEGER, lastAccessed INTEGER, creationTime INTEGER, isSecure INTEGER, isHttpOnly INTEGER, sameSite INTEGER DEFAULT 0);
+             INSERT INTO moz_cookies (host, name, value, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly, sameSite) VALUES ('.example.com', 'sid', 'abc', '/', 0, 1648000000000000, 1648000000000000, 1, 1, 0);",
+        )
+        .unwrap();
+        (dir, p)
+    }
+
+    #[test]
+    fn run_browsers_all_formats() {
+        let home = tempfile::tempdir().unwrap();
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_browsers(Some(home.path()), fmt).unwrap();
+        }
+        // None → resolves the real home dir; just exercise the path.
+        run_browsers(None, OutputFormat::Text).unwrap();
+    }
+
+    #[test]
+    fn run_history_chromium_collapsed_and_raw_all_formats() {
+        let dir = chrome_history_dir();
+        let profile = dir.path().join("google-chrome").join("Default");
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_history(&profile, false, None, fmt).unwrap();
+        }
+        // raw (no collapse) + a search needle that matches.
+        run_history(&profile, true, Some("example"), OutputFormat::Jsonl).unwrap();
+        // search needle that matches nothing → empty emit.
+        run_history(&profile, false, Some("zzz-nomatch"), OutputFormat::Csv).unwrap();
+    }
+
+    #[test]
+    fn run_history_firefox_and_directory_errors() {
+        let (_d, p) = firefox_places();
+        run_history(&p, false, None, OutputFormat::Text).unwrap();
+        // Empty dir → bail (no recognized history file).
+        let empty = tempfile::tempdir().unwrap();
+        assert!(run_history(empty.path(), false, None, OutputFormat::Text).is_err());
+    }
+
+    #[test]
+    fn run_sessions_firefox_file_and_dir_errors() {
+        // A non-session file → bail.
+        let dir = tempfile::tempdir().unwrap();
+        let bogus = dir.path().join("not-a-session.txt");
+        std::fs::write(&bogus, b"x").unwrap();
+        assert!(run_sessions(&bogus, None, OutputFormat::Text).is_err());
+        // A nonexistent path → bail.
+        assert!(run_sessions(&dir.path().join("nope"), None, OutputFormat::Text).is_err());
+    }
+
+    #[test]
+    fn run_artifact_firefox_cookies_all_formats() {
+        let (_d, p) = firefox_cookies();
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_artifact(&p, ArtifactType::Cookies, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_artifact_safari_unsupported_arms_error() {
+        // Safari `history.db` name → inferred Safari; these artifacts are
+        // unsupported and must bail loudly rather than silently produce nothing.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("history.db");
+        std::fs::write(&p, b"x").unwrap();
+        for art in [
+            ArtifactType::LoginData,
+            ArtifactType::Autofill,
+            ArtifactType::Cache,
+        ] {
+            assert!(run_artifact(&p, art, OutputFormat::Text).is_err());
+        }
+    }
+
+    #[test]
+    fn merge_carve_stats_and_summary_helpers() {
+        let s = browser_carve::CarveStats {
+            bytes_scanned: 1,
+            pages_scanned: 2,
+            free_pages_found: 3,
+            records_recovered: 4,
+            records_partial: 5,
+        };
+        let m = merge_carve_stats(&s, &s);
+        assert_eq!(m.bytes_scanned, 2);
+        let report = browser_rt::TriageReport {
+            events: Vec::new(),
+            carved: Vec::new(),
+            integrity: Vec::new(),
+            profiles: Vec::new(),
+            generated_at_ns: 7,
+        };
+        assert_eq!(
+            triage_summary_lines(&report)[0],
+            "Browser Forensic Triage Report"
+        );
     }
 }

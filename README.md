@@ -17,7 +17,7 @@ Browser artifacts are present in almost every investigation — they reconstruct
 `bw` is a single static Rust binary. Point it at a browser database and get JSON. Point it at a profile directory and get a full triage report with integrity indicators and carved deleted records.
 
 ```bash
-cargo install --git https://github.com/SecurityRonin/browser-forensic bw-cli
+cargo install --git https://github.com/SecurityRonin/browser-forensic browser-tui
 bw history /path/to/Chrome/Default/History --format jsonl | jq 'select(.attrs.url | test("google.com"))'
 ```
 
@@ -196,7 +196,8 @@ browser-safari           artifact parsers
       |
 browser-rt               TriageReport orchestration — wires all crates into a single report
       |
-bw-cli                   `bw` — history / cookies / downloads / bookmarks / integrity / carve / triage
+browser-tui              `br4n6` / `bw` — dual-mode binary: scriptable CLI (history / cookies /
+                         downloads / bookmarks / integrity / carve / triage) + interactive TUI
 ```
 
 Each library crate is independently usable in your own Rust tooling. `browser-integrity`, `browser-carve`, and `browser-memory` accept `Path` or `&[u8]` — they are medium-agnostic and have no dependency on any image format or memory dump layer.
@@ -212,8 +213,7 @@ Each library crate is independently usable in your own Rust tooling. `browser-in
 | `browser-carve` | SQLite free-page carving, WAL frame recovery |
 | `browser-memory` | Byte-pattern URL/cookie scanning for memory forensics — no runtime dependencies below this layer |
 | `browser-rt` | RapidTriage orchestration — `triage_profile()` + `triage()` → `TriageReport` |
-| `bw-cli` | `bw` — scriptable JSON/JSONL/CSV CLI (history / cookies / downloads / integrity / carve / triage) |
-| `browser-tui` | `br4n6` — dual-mode binary: same subcommands for piping, plus an interactive vi-keyed terminal viewer (`br4n6 tui`) |
+| `browser-tui` | `br4n6` / `bw` — dual-mode binary: scriptable JSON/JSONL/CSV CLI (history / cookies / downloads / bookmarks / integrity / carve / triage) plus an interactive vi-keyed terminal viewer (`br4n6 tui`) |
 
 ---
 

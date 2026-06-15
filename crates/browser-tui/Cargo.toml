@@ -1,7 +1,7 @@
 [package]
 name = "browser-tui"
 version = "0.1.0"
-description = "br4n6 — a Midnight-Commander-style, vi-keyed terminal browser for on-disk browser history and session state"
+description = "br4n6 / bw — dual-mode browser-forensic tool: a scriptable CLI (history, cookies, downloads, integrity, carve, triage) and a Midnight-Commander-style, vi-keyed TUI for on-disk browser history and session state"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
