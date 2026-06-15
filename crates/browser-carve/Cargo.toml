@@ -10,8 +10,8 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-browser-core = { path = "../browser-core" }
-browser-integrity = { path = "../browser-integrity" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
+browser-integrity = { version = "0.1.0", path = "../browser-integrity" }
 rusqlite = { workspace = true }
 forensicnomicon = { workspace = true }
 

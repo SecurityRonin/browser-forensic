@@ -19,10 +19,10 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 dirs = { workspace = true }
-browser-core = { path = "../browser-core" }
-browser-chrome = { path = "../browser-chrome" }
-browser-discovery = { path = "../browser-discovery" }
-snss-core = { path = "../snss-core" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
+browser-chrome = { version = "0.1.0", path = "../browser-chrome" }
+browser-discovery = { version = "0.1.0", path = "../browser-discovery" }
+snss-core = { version = "0.1.0", path = "../snss-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

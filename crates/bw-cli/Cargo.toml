@@ -15,14 +15,14 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-browser-core = { path = "../browser-core" }
-browser-chrome = { path = "../browser-chrome" }
-browser-firefox = { path = "../browser-firefox" }
-browser-safari = { path = "../browser-safari" }
-browser-discovery = { path = "../browser-discovery" }
-browser-integrity = { path = "../browser-integrity" }
-browser-carve = { path = "../browser-carve" }
-browser-rt = { path = "../browser-rt" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
+browser-chrome = { version = "0.1.0", path = "../browser-chrome" }
+browser-firefox = { version = "0.1.0", path = "../browser-firefox" }
+browser-safari = { version = "0.1.0", path = "../browser-safari" }
+browser-discovery = { version = "0.1.0", path = "../browser-discovery" }
+browser-integrity = { version = "0.1.0", path = "../browser-integrity" }
+browser-carve = { version = "0.1.0", path = "../browser-carve" }
+browser-rt = { version = "0.1.0", path = "../browser-rt" }
 clap = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }

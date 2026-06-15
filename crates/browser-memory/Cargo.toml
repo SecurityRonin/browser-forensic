@@ -9,7 +9,7 @@ license.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-browser-core = { path = "../browser-core" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
 url = { workspace = true }
 
 [dev-dependencies]

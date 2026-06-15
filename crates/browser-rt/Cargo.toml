@@ -9,13 +9,13 @@ license.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-browser-core = { path = "../browser-core" }
-browser-chrome = { path = "../browser-chrome" }
-browser-firefox = { path = "../browser-firefox" }
-browser-safari = { path = "../browser-safari" }
-browser-discovery = { path = "../browser-discovery" }
-browser-integrity = { path = "../browser-integrity" }
-browser-carve = { path = "../browser-carve" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
+browser-chrome = { version = "0.1.0", path = "../browser-chrome" }
+browser-firefox = { version = "0.1.0", path = "../browser-firefox" }
+browser-safari = { version = "0.1.0", path = "../browser-safari" }
+browser-discovery = { version = "0.1.0", path = "../browser-discovery" }
+browser-integrity = { version = "0.1.0", path = "../browser-integrity" }
+browser-carve = { version = "0.1.0", path = "../browser-carve" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

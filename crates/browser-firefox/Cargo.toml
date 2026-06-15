@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-browser-core = { path = "../browser-core" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
 forensicnomicon = { workspace = true }
 lz4_flex = { workspace = true }
 rusqlite = { workspace = true }

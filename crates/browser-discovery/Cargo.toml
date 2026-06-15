@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace     = true
 
 [dependencies]
-browser-core = { path = "../browser-core" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
 serde = { workspace = true }
 
 [dev-dependencies]

@@ -7,10 +7,10 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-browser-core = { path = "../browser-core" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
-snss-core = { path = "../snss-core" }
+snss-core = { version = "0.1.0", path = "../snss-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

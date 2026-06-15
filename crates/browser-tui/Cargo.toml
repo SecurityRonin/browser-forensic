@@ -15,12 +15,12 @@ name = "br4n6"
 path = "src/main.rs"
 
 [dependencies]
-snss-core = { path = "../snss-core" }
-browser-core = { path = "../browser-core" }
-browser-chrome = { path = "../browser-chrome" }
-browser-firefox = { path = "../browser-firefox" }
-browser-safari = { path = "../browser-safari" }
-browser-discovery = { path = "../browser-discovery" }
+snss-core = { version = "0.1.0", path = "../snss-core" }
+browser-core = { version = "0.1.0", path = "../browser-core" }
+browser-chrome = { version = "0.1.0", path = "../browser-chrome" }
+browser-firefox = { version = "0.1.0", path = "../browser-firefox" }
+browser-safari = { version = "0.1.0", path = "../browser-safari" }
+browser-discovery = { version = "0.1.0", path = "../browser-discovery" }
 ratatui = "0.30"
 crossterm = "0.29"
 arboard = "3.6"
