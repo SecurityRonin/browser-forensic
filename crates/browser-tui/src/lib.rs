@@ -11,6 +11,8 @@ use snss::{Nav, Source, SourceKind, Tab, Window};
 mod render;
 pub use render::draw;
 
+pub mod cli;
+
 /// The outcome of feeding one key to a single-line text prompt (the search and
 /// glob input loops). The loop owns the actual `event::read`/`draw`; this maps a
 /// key to "what to do with the editor", keeping the decision out of the shell.

@@ -16,8 +16,164 @@ use anyhow::{Context, Result};
 use browser_chrome::{collapse_redirects, parse_session, parse_visits};
 use browser_core::BrowserEvent;
 use browser_discovery::discover_profiles;
-use clap::ValueEnum;
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json::json;
+
+/// br4n6 — read-only browser state, history, and forensic-triage front-end.
+/// With no subcommand it launches the interactive TUI over the default profile.
+#[derive(Parser, Debug)]
+#[command(name = "br4n6", version, about)]
+pub struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+/// Shared `PATH` + `--format` arguments for the single-artifact subcommands.
+#[derive(Args, Debug)]
+struct ArtifactArgs {
+    /// Path to the browser artifact file or directory.
+    #[arg(value_name = "PATH")]
+    path: PathBuf,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    format: OutputFormat,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// List browser profiles discovered on this system.
+    Browsers {
+        /// Home directory to scan (defaults to the current user's home).
+        #[arg(long, value_name = "DIR")]
+        home: Option<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Dump history visits (Chromium redirect-collapsed by default).
+    History {
+        /// A history file, or a profile directory containing one.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Keep every raw visit, including intermediate redirect hops.
+        #[arg(long)]
+        no_collapse: bool,
+        /// Show only visits whose URL or title contains this substring.
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Dump session state (open / recently-closed tabs).
+    Sessions {
+        /// A profile directory, or its `Sessions` directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Show only tabs whose URL or title contains this substring.
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Launch the interactive terminal viewer (session state).
+    Tui {
+        /// A `Sessions` directory to view (defaults to the local profile).
+        #[arg(value_name = "SESSIONS_DIR")]
+        path: Option<PathBuf>,
+    },
+    /// Parse browser history into a chronological timeline.
+    Timeline(ArtifactArgs),
+    /// Parse browser cookies.
+    Cookies(ArtifactArgs),
+    /// Parse browser downloads.
+    Downloads(ArtifactArgs),
+    /// Parse browser bookmarks.
+    Bookmarks(ArtifactArgs),
+    /// Parse browser extensions.
+    Extensions(ArtifactArgs),
+    /// Parse browser login data (passwords NEVER exposed).
+    LoginData(ArtifactArgs),
+    /// Parse browser autofill data.
+    Autofill(ArtifactArgs),
+    /// Parse a browser session store.
+    Session(ArtifactArgs),
+    /// Parse browser cache.
+    Cache(ArtifactArgs),
+    /// Discover browser profiles on this system (bw-style output).
+    Profiles {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Analyze browser history for rarely-visited domains.
+    Analyze {
+        /// Path to a browser history file.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Show domains visited at most this many times (cap).
+        #[arg(long, default_value_t = 5)]
+        cap: usize,
+    },
+    /// Run integrity checks on a browser artifact.
+    Integrity(ArtifactArgs),
+    /// Carve deleted records from a browser SQLite database.
+    Carve(ArtifactArgs),
+    /// Run full triage: discover profiles, parse, check integrity, carve.
+    Triage {
+        /// Home directory to scan for browser profiles.
+        #[arg(long, value_name = "DIR")]
+        home: Option<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+}
+
+/// Parse the process arguments and dispatch. The no-subcommand and `tui` paths
+/// call `launch_tui` (injected so this lib stays decoupled from the TUI main
+/// loop); every other subcommand runs a scriptable handler in this module.
+///
+/// # Errors
+/// Propagates whatever the selected handler returns.
+pub fn run<F, E>(launch_tui: F) -> Result<()>
+where
+    F: FnOnce(Option<PathBuf>) -> std::result::Result<(), E>,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    let cli = Cli::parse();
+    match cli.command {
+        None => launch_tui(None).map_err(anyhow::Error::from),
+        Some(Command::Tui { path }) => launch_tui(path).map_err(anyhow::Error::from),
+        Some(Command::Browsers { home, format }) => run_browsers(home.as_deref(), format),
+        Some(Command::History {
+            path,
+            no_collapse,
+            search,
+            format,
+        }) => run_history(&path, no_collapse, search.as_deref(), format),
+        Some(Command::Sessions {
+            path,
+            search,
+            format,
+        }) => run_sessions(&path, search.as_deref(), format),
+        Some(Command::Timeline(a)) => run_artifact(&a.path, ArtifactType::History, a.format),
+        Some(Command::Cookies(a)) => run_artifact(&a.path, ArtifactType::Cookies, a.format),
+        Some(Command::Downloads(a)) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
+        Some(Command::Bookmarks(a)) => run_artifact(&a.path, ArtifactType::Bookmarks, a.format),
+        Some(Command::Extensions(a)) => run_artifact(&a.path, ArtifactType::Extensions, a.format),
+        Some(Command::LoginData(a)) => run_artifact(&a.path, ArtifactType::LoginData, a.format),
+        Some(Command::Autofill(a)) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
+        Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
+        Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
+        Some(Command::Profiles { format }) => run_profiles(format),
+        Some(Command::Analyze { path, cap }) => run_analyze(&path, cap),
+        Some(Command::Integrity(a)) => run_integrity(&a.path, a.format),
+        Some(Command::Carve(a)) => run_carve(&a.path, a.format),
+        Some(Command::Triage { home, format }) => run_triage(home.as_deref(), format),
+    }
+}
 
 /// Browser family a `history`/`sessions` source resolves to. Auto-detected from
 /// the file name or, for a profile directory, from the artifact files it holds.
@@ -373,6 +529,490 @@ fn csv_escape(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+// ===========================================================================
+// Forensic CLI surface absorbed from the former `bw` binary.
+//
+// These subcommands (timeline / cookies / downloads / bookmarks / extensions /
+// login-data / autofill / session / cache / profiles / analyze / integrity /
+// carve / triage) keep `bw`'s exact machine-readable output contracts — the
+// `fmt` submodule below is byte-for-byte the old `bw_cli::format`, and the
+// `run_*` handlers mirror the old `bw` `run_*` glue. The Humble-Object decision
+// helpers (`merge_carve_stats`, `triage_summary_lines`, `infer_browser_from_filename`)
+// stay pure and directly unit-testable.
+// ===========================================================================
+
+use browser_core::BrowserFamily;
+
+/// Output formatting for browser forensic events — the stable `bw` contract:
+/// 5-column CSV (`timestamp,browser,artifact,source,description`), full-`serde`
+/// JSONL, and a `[ts] browser/artifact: desc` text line.
+pub mod fmt {
+    use browser_core::BrowserEvent;
+
+    /// CSV header for timeline/artifact output.
+    pub const TIMELINE_CSV_HEADER: &str = "timestamp,browser,artifact,source,description";
+
+    /// Escape a string for CSV: wraps in double quotes if it contains commas or quotes.
+    #[must_use]
+    pub fn csv_escape(s: &str) -> String {
+        if s.contains(',') || s.contains('"') || s.contains('\n') {
+            let escaped = s.replace('"', "\"\"");
+            format!("\"{escaped}\"")
+        } else {
+            s.to_string()
+        }
+    }
+
+    /// Format a Unix nanosecond timestamp as RFC3339.
+    #[must_use]
+    pub fn format_timestamp_ns(ns: i64) -> String {
+        if ns == 0 {
+            return "1970-01-01T00:00:00Z".to_string();
+        }
+        use chrono::{DateTime, Utc};
+        let secs = ns / 1_000_000_000;
+        let nanos = u32::try_from(ns % 1_000_000_000).unwrap_or(0);
+        DateTime::<Utc>::from_timestamp(secs, nanos)
+            .map_or_else(|| "invalid".to_string(), |d| d.to_rfc3339())
+    }
+
+    /// Format a [`BrowserEvent`] as a human-readable text line.
+    #[must_use]
+    pub fn event_to_text(ev: &BrowserEvent) -> String {
+        let ts = format_timestamp_ns(ev.timestamp_ns);
+        format!(
+            "[{ts}] {browser}/{artifact}: {desc}",
+            browser = ev.browser,
+            artifact = ev.artifact,
+            desc = ev.description
+        )
+    }
+
+    /// Format a [`BrowserEvent`] as a JSONL (newline-delimited JSON) string.
+    #[must_use]
+    pub fn event_to_jsonl(ev: &BrowserEvent) -> String {
+        serde_json::to_string(ev).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Format a [`BrowserEvent`] as a CSV row (5 fields).
+    #[must_use]
+    pub fn event_to_csv_row(ev: &BrowserEvent) -> String {
+        let ts = format_timestamp_ns(ev.timestamp_ns);
+        let browser = ev.browser.to_string();
+        let artifact = ev.artifact.to_string();
+        format!(
+            "{},{},{},{},{}",
+            csv_escape(&ts),
+            csv_escape(&browser),
+            csv_escape(&artifact),
+            csv_escape(&ev.source),
+            csv_escape(&ev.description)
+        )
+    }
+}
+
+/// Sum two carve passes (free-page + WAL) into one aggregate stat block.
+#[must_use]
+pub fn merge_carve_stats(
+    a: &browser_carve::CarveStats,
+    b: &browser_carve::CarveStats,
+) -> browser_carve::CarveStats {
+    browser_carve::CarveStats {
+        bytes_scanned: a.bytes_scanned + b.bytes_scanned,
+        pages_scanned: a.pages_scanned + b.pages_scanned,
+        free_pages_found: a.free_pages_found + b.free_pages_found,
+        records_recovered: a.records_recovered + b.records_recovered,
+        records_partial: a.records_partial + b.records_partial,
+    }
+}
+
+/// The header/summary lines of the text-format triage report (everything above the
+/// per-event timeline).
+#[must_use]
+pub fn triage_summary_lines(report: &browser_rt::TriageReport) -> Vec<String> {
+    vec![
+        "Browser Forensic Triage Report".to_string(),
+        "==============================".to_string(),
+        format!("Generated: {}", report.generated_at_ns),
+        format!("Profiles found: {}", report.profiles.len()),
+        format!("Events parsed: {}", report.events.len()),
+        format!("Integrity indicators: {}", report.integrity.len()),
+        format!("Carved records: {}", report.carved.len()),
+    ]
+}
+
+/// Infer a browser family from a bare artifact file name when content sniffing
+/// can't (e.g. Firefox JSON/sqlite artifacts and Safari's `history.db`). Returns
+/// `None` for anything not uniquely tied to a family by name (e.g. `History`).
+#[must_use]
+pub fn infer_browser_from_filename(path: &Path) -> Option<BrowserFamily> {
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    if name == "history.db" {
+        return Some(BrowserFamily::Safari);
+    }
+    if name == "places.sqlite"
+        || name == "formhistory.sqlite"
+        || name == "cookies.sqlite"
+        || name == "extensions.json"
+        || name == "logins.json"
+        || name == "sessionstore.jsonlz4"
+    {
+        return Some(BrowserFamily::Firefox);
+    }
+    None
+}
+
+/// The single-artifact kinds dispatched by [`run_artifact`].
+#[derive(Clone, Copy, Debug)]
+pub enum ArtifactType {
+    History,
+    Cookies,
+    Downloads,
+    Bookmarks,
+    Extensions,
+    LoginData,
+    Autofill,
+    Session,
+    Cache,
+}
+
+/// `br4n6 <artifact> PATH` — detect the browser family, parse the requested
+/// artifact, sort by timestamp, and emit it in the requested format. Mirrors the
+/// historic `bw` artifact pipeline.
+///
+/// # Errors
+/// Returns an error if the browser family cannot be determined, the artifact is
+/// unsupported for that family, or the underlying parser fails.
+pub fn run_artifact(path: &Path, artifact: ArtifactType, format: OutputFormat) -> Result<()> {
+    use browser_core::detect_browser;
+
+    let family = detect_browser(path)
+        .or_else(|| infer_browser_from_filename(path))
+        .with_context(|| format!("cannot determine browser from path: {}", path.display()))?;
+
+    let mut events = match (family, artifact) {
+        (BrowserFamily::Chromium, ArtifactType::History) => browser_chrome::parse_history(path)?,
+        (BrowserFamily::Firefox, ArtifactType::History) => browser_firefox::parse_history(path)?,
+        (BrowserFamily::Safari, ArtifactType::History) => browser_safari::parse_history(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Cookies) => browser_chrome::parse_cookies(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Cookies) => browser_firefox::parse_cookies(path)?,
+        (BrowserFamily::Safari, ArtifactType::Cookies) => browser_safari::parse_cookies(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Downloads) => {
+            browser_chrome::parse_downloads(path)?
+        }
+        (BrowserFamily::Firefox, ArtifactType::Downloads) => {
+            browser_firefox::parse_downloads(path)?
+        }
+        (BrowserFamily::Safari, ArtifactType::Downloads) => browser_safari::parse_downloads(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Bookmarks) => {
+            browser_chrome::parse_bookmarks(path)?
+        }
+        (BrowserFamily::Firefox, ArtifactType::Bookmarks) => {
+            browser_firefox::parse_bookmarks(path)?
+        }
+        (BrowserFamily::Safari, ArtifactType::Bookmarks) => browser_safari::parse_bookmarks(path)?,
+
+        (BrowserFamily::Chromium, ArtifactType::Extensions) => {
+            browser_chrome::parse_extensions(path)?
+        }
+        (BrowserFamily::Firefox, ArtifactType::Extensions) => {
+            browser_firefox::parse_extensions(path)?
+        }
+        (BrowserFamily::Safari, ArtifactType::Extensions) => {
+            browser_safari::parse_extensions(path)?
+        }
+
+        (BrowserFamily::Chromium, ArtifactType::LoginData) => {
+            browser_chrome::parse_login_data(path)?
+        }
+        (BrowserFamily::Firefox, ArtifactType::LoginData) => {
+            browser_firefox::parse_login_data(path)?
+        }
+        (BrowserFamily::Safari, ArtifactType::LoginData) => {
+            anyhow::bail!("Safari login data not supported");
+        }
+
+        (BrowserFamily::Chromium, ArtifactType::Autofill) => browser_chrome::parse_autofill(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Autofill) => browser_firefox::parse_autofill(path)?,
+        (BrowserFamily::Safari, ArtifactType::Autofill) => {
+            anyhow::bail!("Safari autofill not supported");
+        }
+
+        (BrowserFamily::Firefox, ArtifactType::Session) => browser_firefox::parse_session(path)?,
+        (_, ArtifactType::Session) => {
+            anyhow::bail!("session only supported for Firefox");
+        }
+
+        (BrowserFamily::Chromium, ArtifactType::Cache) => browser_chrome::parse_cache(path)?,
+        (BrowserFamily::Firefox, ArtifactType::Cache) => browser_firefox::parse_cache(path)?,
+        (BrowserFamily::Safari, ArtifactType::Cache) => {
+            anyhow::bail!("Safari cache not supported");
+        }
+    };
+
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// Print a slice of events using the stable `bw` format contract.
+fn print_events(events: &[BrowserEvent], format: OutputFormat) {
+    match format {
+        OutputFormat::Csv => {
+            println!("{}", fmt::TIMELINE_CSV_HEADER);
+            for ev in events {
+                println!("{}", fmt::event_to_csv_row(ev));
+            }
+        }
+        OutputFormat::Jsonl => {
+            for ev in events {
+                println!("{}", fmt::event_to_jsonl(ev));
+            }
+        }
+        OutputFormat::Text => {
+            for ev in events {
+                println!("{}", fmt::event_to_text(ev));
+            }
+        }
+    }
+}
+
+/// `br4n6 profiles` — discover browser profiles under the current user's home,
+/// in the historic `bw` output shape (em-dash text line / hand-rolled JSONL /
+/// `browser,name,path` CSV).
+///
+/// # Errors
+/// Never errors today; returns `Result` for a uniform dispatcher signature.
+pub fn run_profiles(format: OutputFormat) -> Result<()> {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    let profiles = discover_profiles(&home);
+
+    match format {
+        OutputFormat::Csv => {
+            println!("browser,name,path");
+            for p in &profiles {
+                println!(
+                    "{},{},{}",
+                    p.browser,
+                    fmt::csv_escape(&p.name),
+                    fmt::csv_escape(&p.path.to_string_lossy())
+                );
+            }
+        }
+        OutputFormat::Jsonl => {
+            for p in &profiles {
+                println!(
+                    "{{\"browser\":\"{}\",\"name\":\"{}\",\"path\":\"{}\"}}",
+                    p.browser,
+                    p.name,
+                    p.path.display()
+                );
+            }
+        }
+        OutputFormat::Text => {
+            for p in &profiles {
+                println!("{} \u{2014} {} ({})", p.browser, p.name, p.path.display());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `br4n6 analyze PATH --cap N` — list domains visited at most `cap` times.
+///
+/// # Errors
+/// Returns an error if the browser family cannot be determined or parsing fails.
+pub fn run_analyze(path: &Path, cap: usize) -> Result<()> {
+    use browser_core::detect_browser;
+
+    let family = detect_browser(path)
+        .or_else(|| infer_browser_from_filename(path))
+        .with_context(|| format!("cannot determine browser from path: {}", path.display()))?;
+
+    let events = match family {
+        BrowserFamily::Chromium => browser_chrome::parse_history(path)?,
+        BrowserFamily::Firefox => browser_firefox::parse_history(path)?,
+        BrowserFamily::Safari => browser_safari::parse_history(path)?,
+    };
+
+    let domains = browser_core::analyze::rare_domains(&events, cap);
+    for (domain, count) in &domains {
+        println!("{count}\t{domain}");
+    }
+    Ok(())
+}
+
+/// `br4n6 integrity PATH` — run the integrity-indicator family over a database.
+///
+/// # Errors
+/// Never errors today; returns `Result` for a uniform dispatcher signature.
+pub fn run_integrity(path: &Path, format: OutputFormat) -> Result<()> {
+    // Generic SQLite files are treated as Chromium for the family-specific checks.
+    let family = BrowserFamily::Chromium;
+
+    let mut indicators = Vec::new();
+    if let Ok(mut ind) = browser_integrity::check_database_integrity(path) {
+        indicators.append(&mut ind);
+    }
+    if let Ok(mut ind) = browser_integrity::check_wal_state(path) {
+        indicators.append(&mut ind);
+    }
+    if let Ok(mut ind) = browser_integrity::check_history_integrity(path, family.clone()) {
+        indicators.append(&mut ind);
+    }
+    if let Ok(mut ind) = browser_integrity::check_cookie_integrity(path, family) {
+        indicators.append(&mut ind);
+    }
+
+    if indicators.is_empty() {
+        match format {
+            OutputFormat::Text => println!("No integrity issues detected."),
+            OutputFormat::Jsonl => println!("{{\"status\":\"clean\"}}"),
+            OutputFormat::Csv => {
+                println!("type,path,detail");
+                println!("clean,{},no issues", path.display());
+            }
+        }
+    } else {
+        match format {
+            OutputFormat::Text => {
+                println!("Found {} integrity indicator(s):", indicators.len());
+                for ind in &indicators {
+                    println!("  {ind:?}");
+                }
+            }
+            OutputFormat::Jsonl => {
+                for ind in &indicators {
+                    if let Ok(json) = serde_json::to_string(ind) {
+                        println!("{json}");
+                    }
+                }
+            }
+            OutputFormat::Csv => {
+                println!("type,detail");
+                for ind in &indicators {
+                    if let Ok(json) = serde_json::to_string(ind) {
+                        println!("{json}");
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `br4n6 carve PATH` — recover deleted records from free pages and the WAL.
+///
+/// # Errors
+/// Never errors today; returns `Result` for a uniform dispatcher signature.
+pub fn run_carve(path: &Path, format: OutputFormat) -> Result<()> {
+    let empty = || browser_carve::CarveResult {
+        records: Vec::new(),
+        integrity: Vec::new(),
+        stats: browser_carve::CarveStats::default(),
+    };
+    let free_result = browser_carve::carve_sqlite_free_pages(path).unwrap_or_else(|_| empty());
+    let wal_result = browser_carve::recover_from_wal(path).unwrap_or_else(|_| empty());
+
+    let mut all_records = free_result.records;
+    all_records.extend(wal_result.records);
+
+    let total_stats = merge_carve_stats(&free_result.stats, &wal_result.stats);
+
+    match format {
+        OutputFormat::Text => {
+            println!(
+                "Carve stats: {} bytes scanned, {} pages, {} free pages, {} records recovered ({} partial)",
+                total_stats.bytes_scanned,
+                total_stats.pages_scanned,
+                total_stats.free_pages_found,
+                total_stats.records_recovered,
+                total_stats.records_partial,
+            );
+            for rec in &all_records {
+                println!(
+                    "  offset={} table={} method={:?} quality={:?} fields={}",
+                    rec.offset,
+                    rec.table,
+                    rec.method,
+                    rec.quality,
+                    serde_json::to_string(&rec.fields).unwrap_or_default(),
+                );
+            }
+        }
+        OutputFormat::Jsonl => {
+            if let Ok(json) = serde_json::to_string(&total_stats) {
+                println!("{json}");
+            }
+            for rec in &all_records {
+                if let Ok(json) = serde_json::to_string(rec) {
+                    println!("{json}");
+                }
+            }
+        }
+        OutputFormat::Csv => {
+            println!("offset,table,method,quality,fields");
+            for rec in &all_records {
+                println!(
+                    "{},{},{:?},{:?},{}",
+                    rec.offset,
+                    fmt::csv_escape(&rec.table),
+                    rec.method,
+                    rec.quality,
+                    fmt::csv_escape(&serde_json::to_string(&rec.fields).unwrap_or_default()),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `br4n6 triage --home DIR` — discover profiles, parse, check integrity, and
+/// carve across every browser under `home`.
+///
+/// # Errors
+/// Returns an error if the triage orchestration fails.
+pub fn run_triage(home: Option<&Path>, format: OutputFormat) -> Result<()> {
+    let home = home.map_or_else(
+        || dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+        Path::to_path_buf,
+    );
+
+    let report = browser_rt::triage(&home)?;
+
+    match format {
+        OutputFormat::Text => {
+            for line in triage_summary_lines(&report) {
+                println!("{line}");
+            }
+            if !report.events.is_empty() {
+                println!("\nTimeline ({} events):", report.events.len());
+                for ev in report.events.iter().take(50) {
+                    println!("  {}", fmt::event_to_text(ev));
+                }
+                if report.events.len() > 50 {
+                    println!("  ... and {} more events", report.events.len() - 50);
+                }
+            }
+        }
+        OutputFormat::Jsonl => {
+            if let Ok(json) = serde_json::to_string(&report) {
+                println!("{json}");
+            }
+        }
+        OutputFormat::Csv => {
+            println!("{}", fmt::TIMELINE_CSV_HEADER);
+            for ev in &report.events {
+                println!("{}", fmt::event_to_csv_row(ev));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
