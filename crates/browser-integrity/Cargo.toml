@@ -1,6 +1,7 @@
 [package]
 name = "browser-integrity"
 version = "0.1.0"
+description = "Detects anomalies indicating tampering, clearing, or corruption in browser artifacts"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

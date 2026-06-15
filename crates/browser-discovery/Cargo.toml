@@ -1,6 +1,7 @@
 [package]
 name        = "browser-discovery"
 version     = "0.1.0"
+description  = "Auto-detection of browser profiles on the local filesystem"
 edition.workspace     = true
 rust-version.workspace = true
 license.workspace     = true

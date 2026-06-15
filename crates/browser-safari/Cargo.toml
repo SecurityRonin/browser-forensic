@@ -1,6 +1,7 @@
 [package]
 name = "browser-safari"
 version = "0.1.0"
+description = "Safari browser artifact parsers"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

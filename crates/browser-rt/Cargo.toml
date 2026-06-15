@@ -1,6 +1,7 @@
 [package]
 name = "browser-rt"
 version = "0.1.0"
+description = "Rapid-triage orchestration for browser forensics — merges parsing, carving, integrity, and discovery into one report"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
