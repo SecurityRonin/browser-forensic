@@ -22,7 +22,7 @@ name = "bw"
 path = "src/bin/bw.rs"
 
 [dependencies]
-snss-core = { version = "0.1.0", path = "../snss-core" }
+snss-core = { version = "0.1.0", path = "../../../snss-forensic/core" }
 browser-core = { version = "0.1.0", path = "../browser-core" }
 browser-chrome = { version = "0.1.0", path = "../browser-chrome" }
 browser-firefox = { version = "0.1.0", path = "../browser-firefox" }

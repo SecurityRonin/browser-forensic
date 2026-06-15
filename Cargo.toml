@@ -9,7 +9,6 @@ members = [
     "crates/browser-carve",
     "crates/browser-memory",
     "crates/browser-rt",
-    "crates/snss-core",
     "crates/browser-tui",
     "crates/browsing-state-mcp",
 ]
