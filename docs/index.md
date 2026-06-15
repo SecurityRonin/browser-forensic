@@ -4,7 +4,7 @@
 
 ```bash
 cargo install --git https://github.com/SecurityRonin/browser-forensic browser-tui
-bw triage --home ~ --format jsonl
+br4n6 triage --home ~ --format jsonl
 ```
 
 **[GitHub Repository →](https://github.com/SecurityRonin/browser-forensic)**
@@ -13,7 +13,7 @@ bw triage --home ~ --format jsonl
 
 ## What it does
 
-`bw` parses browser artifacts from Chrome, Firefox, and Safari — history, cookies, downloads, bookmarks, extensions, autofill, login metadata, cache, and session state — and outputs a consistent JSON event stream regardless of which browser produced the data.
+`br4n6` parses browser artifacts from Chrome, Firefox, and Safari — history, cookies, downloads, bookmarks, extensions, autofill, login metadata, cache, and session state — and outputs a consistent JSON event stream regardless of which browser produced the data.
 
 Beyond parsing, it detects structural integrity anomalies that indicate history was cleared or records were tampered with, carves deleted records from SQLite free pages and WAL files, and can scan raw memory byte sequences for URL and cookie patterns.
 
@@ -23,16 +23,16 @@ Beyond parsing, it detects structural integrity anomalies that indicate history 
 
 ```bash
 # Parse Chrome history
-bw history /path/to/Chrome/Default/History --format jsonl
+br4n6 history /path/to/Chrome/Default/History --format jsonl
 
 # Detect tampering indicators
-bw integrity /path/to/Chrome/Default/History --format jsonl
+br4n6 integrity /path/to/Chrome/Default/History --format jsonl
 
 # Carve deleted records
-bw carve /path/to/Chrome/Default/History --format jsonl
+br4n6 carve /path/to/Chrome/Default/History --format jsonl
 
 # Full triage — discovers all profiles, parses all artifacts, checks integrity
-bw triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
+br4n6 triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
 ```
 
 ---
@@ -71,7 +71,7 @@ bw triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
 | `browser-carve` | SQLite free-page and WAL recovery |
 | `browser-memory` | Byte-pattern URL/cookie scanning |
 | `browser-rt` | RapidTriage orchestration |
-| `browser-tui` | `br4n6` / `bw` dual-mode CLI + TUI binary |
+| `browser-tui` | `br4n6` dual-mode CLI + TUI binary |
 
 ---
 

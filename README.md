@@ -14,11 +14,11 @@
 
 Browser artifacts are present in almost every investigation — they reconstruct the user's timeline, expose credential exposure, and often reveal the delivery mechanism for an attack. The problem is tooling: most parsers require Python, lock you to Windows, or ignore the forensically interesting question of whether the evidence was tampered with.
 
-`bw` is a single static Rust binary. Point it at a browser database and get JSON. Point it at a profile directory and get a full triage report with integrity indicators and carved deleted records.
+`br4n6` is a single static Rust binary. Point it at a browser database and get JSON. Point it at a profile directory and get a full triage report with integrity indicators and carved deleted records.
 
 ```bash
 cargo install --git https://github.com/SecurityRonin/browser-forensic browser-tui
-bw history /path/to/Chrome/Default/History --format jsonl | jq 'select(.attrs.url | test("google.com"))'
+br4n6 history /path/to/Chrome/Default/History --format jsonl | jq 'select(.attrs.url | test("google.com"))'
 ```
 
 ---
@@ -30,7 +30,7 @@ bw history /path/to/Chrome/Default/History --format jsonl | jq 'select(.attrs.ur
 git clone https://github.com/SecurityRonin/browser-forensic.git
 cd browser-forensic
 cargo build --release
-./target/release/bw --help
+./target/release/br4n6 --help
 ```
 
 ---
@@ -41,12 +41,12 @@ cargo build --release
 
 ```bash
 # Chrome history — last 30 days, sorted by time
-bw history /path/to/Chrome/Default/History --format jsonl \
+br4n6 history /path/to/Chrome/Default/History --format jsonl \
   | jq -r '[.timestamp_ns, .attrs.url, .attrs.title] | @tsv' \
   | sort | tail -100
 
 # Firefox — same command, different path
-bw history /path/to/Firefox/Profiles/abc.default/places.sqlite --format jsonl
+br4n6 history /path/to/Firefox/Profiles/abc.default/places.sqlite --format jsonl
 ```
 
 Every supported browser produces the same `BrowserEvent` JSON schema. Your downstream analysis pipeline doesn't need to know which browser produced the data.
@@ -54,7 +54,7 @@ Every supported browser produces the same `BrowserEvent` JSON schema. Your downs
 ### Detect history clearing and tampering
 
 ```bash
-bw integrity /path/to/Chrome/Default/History --format jsonl
+br4n6 integrity /path/to/Chrome/Default/History --format jsonl
 ```
 
 ```json
@@ -68,10 +68,10 @@ Three indicators in under 100ms. The `sqlite_sequence` table recorded 847 URL in
 ### Carve deleted records from SQLite free pages
 
 ```bash
-bw carve /path/to/Chrome/Default/History --format jsonl
+br4n6 carve /path/to/Chrome/Default/History --format jsonl
 ```
 
-SQLite marks deleted rows as free pages rather than overwriting them immediately. `bw carve` walks the freelist chain, scans each free page for URL patterns, and returns whatever survived. Combine with `bw integrity` to establish what was deleted and what was recovered.
+SQLite marks deleted rows as free pages rather than overwriting them immediately. `br4n6 carve` walks the freelist chain, scans each free page for URL patterns, and returns whatever survived. Combine with `br4n6 integrity` to establish what was deleted and what was recovered.
 
 ---
 
@@ -115,7 +115,7 @@ SQLite marks deleted rows as free pages rather than overwriting them immediately
 
 ## Integrity Checks
 
-`bw integrity` detects raw structural anomalies — observable facts about the database, not forensic conclusions:
+`br4n6 integrity` detects raw structural anomalies — observable facts about the database, not forensic conclusions:
 
 **HistoryCleared / AutoIncrementGap** — `sqlite_sequence` recorded N insertions; fewer than N rows remain. The auto-increment counter is the shadow of everything that was ever inserted, including what was deleted.
 
@@ -140,7 +140,7 @@ SQLite marks deleted rows as free pages rather than overwriting them immediately
 ```bash
 # Discover all browser profiles under the user's home directory,
 # parse every artifact, run integrity checks, and carve free pages
-bw triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
+br4n6 triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
 ```
 
 The triage report includes:
@@ -196,7 +196,7 @@ browser-safari           artifact parsers
       |
 browser-rt               TriageReport orchestration — wires all crates into a single report
       |
-browser-tui              `br4n6` / `bw` — dual-mode binary: scriptable CLI (history / cookies /
+browser-tui              `br4n6` — dual-mode binary: scriptable CLI (history / cookies /
                          downloads / bookmarks / integrity / carve / triage) + interactive TUI
 ```
 
@@ -213,7 +213,7 @@ Each library crate is independently usable in your own Rust tooling. `browser-in
 | `browser-carve` | SQLite free-page carving, WAL frame recovery |
 | `browser-memory` | Byte-pattern URL/cookie scanning for memory forensics — no runtime dependencies below this layer |
 | `browser-rt` | RapidTriage orchestration — `triage_profile()` + `triage()` → `TriageReport` |
-| `browser-tui` | `br4n6` / `bw` — dual-mode binary: scriptable JSON/JSONL/CSV CLI (history / cookies / downloads / bookmarks / integrity / carve / triage) plus an interactive vi-keyed terminal viewer (`br4n6 tui`) |
+| `browser-tui` | `br4n6` — dual-mode binary: scriptable JSON/JSONL/CSV CLI (history / cookies / downloads / bookmarks / integrity / carve / triage) plus an interactive vi-keyed terminal viewer (`br4n6 tui`) |
 
 ---
 

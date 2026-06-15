@@ -14,13 +14,6 @@ path = "src/lib.rs"
 name = "br4n6"
 path = "src/main.rs"
 
-# `bw` is a documented, historic entry point (README install line + every CLI
-# example). br4n6 also installs under that name — the same dual-mode CLI/TUI
-# dispatch — so existing `bw <subcommand>` invocations keep working unchanged.
-[[bin]]
-name = "bw"
-path = "src/bin/bw.rs"
-
 [dependencies]
 snss-core = { version = "0.1.0", path = "../../../snss-forensic/core" }
 browser-core = { version = "0.1.0", path = "../browser-core" }
