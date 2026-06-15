@@ -5,7 +5,7 @@ description = "bw — command-line browser forensic analysis tool for history, c
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-
+repository.workspace = true
 [lib]
 name = "bw_cli"
 path = "src/lib.rs"

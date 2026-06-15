@@ -5,7 +5,7 @@ description = "Read-only decoder for Chromium/Brave SNSS session files (the flee
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-
+repository.workspace = true
 [lib]
 name = "snss"
 path = "src/lib.rs"

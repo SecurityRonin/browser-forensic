@@ -5,7 +5,7 @@ description = "Chromium-family (Chrome, Edge, Brave, Opera) browser artifact par
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-
+repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 browser-core = { version = "0.1.0", path = "../browser-core" }

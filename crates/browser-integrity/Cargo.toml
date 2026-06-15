@@ -5,7 +5,7 @@ description = "Detects anomalies indicating tampering, clearing, or corruption i
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-
+repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 thiserror = { workspace = true }

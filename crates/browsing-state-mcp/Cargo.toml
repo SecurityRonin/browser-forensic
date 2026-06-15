@@ -5,7 +5,7 @@ description = "MCP server exposing browser history/state to AI agents — secret
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-
+repository.workspace = true
 [lib]
 name = "browsing_state_mcp"
 path = "src/lib.rs"
