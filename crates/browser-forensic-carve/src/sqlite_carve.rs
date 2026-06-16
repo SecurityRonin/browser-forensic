@@ -245,4 +245,28 @@ mod tests {
         // Must return cleanly (Ok or Err), never panic.
         let _ = carve_sqlite_free_pages(f.path());
     }
+
+    #[test]
+    fn carve_sub_minimum_page_size_does_not_panic() {
+        // The SQLite file format (sqlite.org/fileformat2.html §1.3.2) defines the
+        // page size as a power of two in 512..=65536. A crafted header can carry a
+        // smaller value (here 4) that survives the divide-by-zero guard yet leaves
+        // a freelist-trunk page shorter than its 8-byte (next-trunk + leaf-count)
+        // prelude, so `trunk[4..8]` would read out of bounds. The carver must reject
+        // the malformed page size and never panic.
+        use std::io::Write;
+        let mut header = vec![0u8; SQLITE_HEADER_SIZE];
+        header[..SQLITE_MAGIC.len()].copy_from_slice(SQLITE_MAGIC);
+        // page size = 4 (valid u16, non-zero, below the 512 minimum)
+        header[SQLITE_PAGE_SIZE_OFFSET] = 0;
+        header[SQLITE_PAGE_SIZE_OFFSET + 1] = 4;
+        // freelist trunk = page 1, so collect_free_pages reads trunk[0..8] at offset 0
+        header[SQLITE_FREELIST_TRUNK_OFFSET + 3] = 1;
+        let f = NamedTempFile::new().expect("tempfile");
+        {
+            let mut fh = std::fs::File::create(f.path()).expect("create");
+            fh.write_all(&header).expect("write");
+        }
+        let _ = carve_sqlite_free_pages(f.path());
+    }
 }
