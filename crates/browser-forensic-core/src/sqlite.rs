@@ -71,7 +71,7 @@ pub struct EvidenceDb {
 /// written, or SQLite cannot open the (copy of the) database.
 pub fn open_evidence_db(path: &Path) -> rusqlite::Result<EvidenceDb> {
     let wal = wal_sidecar(path);
-    let has_wal = fs::metadata(&wal).map(|m| m.len() > 0).unwrap_or(false);
+    let has_wal = fs::metadata(&wal).is_ok_and(|m| m.len() > 0);
 
     if has_wal {
         open_with_wal_snapshot(path).map_err(to_sqlite_err)

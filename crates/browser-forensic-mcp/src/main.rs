@@ -55,6 +55,5 @@ fn load_allowlist() -> Allowlist {
 fn now_ns() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_nanos() as i64)
 }

@@ -30,8 +30,7 @@ pub struct TriageReport {
 pub fn triage_profile(profile_path: &Path, browser: BrowserFamily) -> Result<TriageReport> {
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i64)
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_nanos() as i64);
 
     let mut events = Vec::new();
     let mut integrity = Vec::new();
@@ -65,8 +64,7 @@ pub fn triage(home_dir: &Path) -> Result<TriageReport> {
     let profiles = browser_forensic_discovery::discover_profiles(home_dir);
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i64)
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_nanos() as i64);
 
     let mut all_events = Vec::new();
     let mut all_integrity = Vec::new();
