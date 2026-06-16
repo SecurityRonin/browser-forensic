@@ -12,5 +12,5 @@ fuzz_target!(|data: &[u8]| {
     if tmp.write_all(data).is_err() {
         return;
     }
-    let _ = browser_carve::carve_sqlite_free_pages(tmp.path());
+    let _ = browser_forensic_carve::carve_sqlite_free_pages(tmp.path());
 });

@@ -1,0 +1,21 @@
+[package]
+name = "browser-forensic-integrity"
+version = "0.1.0"
+description = "Detects anomalies indicating tampering, clearing, or corruption in browser artifacts"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+browser-forensic-core = { version = "0.1.0", path = "../browser-forensic-core" }
+rusqlite = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

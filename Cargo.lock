@@ -202,12 +202,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "browser-carve"
+name = "browser-forensic-carve"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "browser-core",
- "browser-integrity",
+ "browser-forensic-core",
+ "browser-forensic-integrity",
  "forensicnomicon",
  "rusqlite",
  "serde",
@@ -217,11 +217,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "browser-chrome"
+name = "browser-forensic-chrome"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "browser-core",
+ "browser-forensic-core",
  "rusqlite",
  "serde_json",
  "snss-core",
@@ -229,111 +229,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "browser-core"
-version = "0.1.0"
-dependencies = [
- "forensicnomicon",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "url",
-]
-
-[[package]]
-name = "browser-discovery"
-version = "0.1.0"
-dependencies = [
- "browser-core",
- "serde",
- "tempfile",
-]
-
-[[package]]
-name = "browser-firefox"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "browser-core",
- "forensicnomicon",
- "lz4_flex",
- "rusqlite",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "browser-integrity"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "browser-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "browser-memory"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "browser-core",
- "serde",
- "serde_json",
- "tempfile",
- "url",
-]
-
-[[package]]
-name = "browser-rt"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "browser-carve",
- "browser-chrome",
- "browser-core",
- "browser-discovery",
- "browser-firefox",
- "browser-integrity",
- "browser-safari",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "browser-safari"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "browser-core",
- "plist",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "browser-tui"
+name = "browser-forensic-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
  "assert_cmd",
- "browser-carve",
- "browser-chrome",
- "browser-core",
- "browser-discovery",
- "browser-firefox",
- "browser-integrity",
- "browser-rt",
- "browser-safari",
+ "browser-forensic-carve",
+ "browser-forensic-chrome",
+ "browser-forensic-core",
+ "browser-forensic-discovery",
+ "browser-forensic-firefox",
+ "browser-forensic-integrity",
+ "browser-forensic-safari",
+ "browser-forensic-triage",
  "chrono",
  "clap",
  "crossterm",
@@ -349,17 +258,108 @@ dependencies = [
 ]
 
 [[package]]
-name = "browsing-state-mcp"
+name = "browser-forensic-core"
+version = "0.1.0"
+dependencies = [
+ "forensicnomicon",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "url",
+]
+
+[[package]]
+name = "browser-forensic-discovery"
+version = "0.1.0"
+dependencies = [
+ "browser-forensic-core",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
+name = "browser-forensic-firefox"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "browser-chrome",
- "browser-core",
- "browser-discovery",
+ "browser-forensic-core",
+ "forensicnomicon",
+ "lz4_flex",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "browser-forensic-integrity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-forensic-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "browser-forensic-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-forensic-chrome",
+ "browser-forensic-core",
+ "browser-forensic-discovery",
  "dirs",
  "serde",
  "serde_json",
  "snss-core",
+ "tempfile",
+]
+
+[[package]]
+name = "browser-forensic-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-forensic-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "url",
+]
+
+[[package]]
+name = "browser-forensic-safari"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-forensic-core",
+ "plist",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "browser-forensic-triage"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-forensic-carve",
+ "browser-forensic-chrome",
+ "browser-forensic-core",
+ "browser-forensic-discovery",
+ "browser-forensic-firefox",
+ "browser-forensic-integrity",
+ "browser-forensic-safari",
+ "rusqlite",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 

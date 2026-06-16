@@ -19,13 +19,13 @@ fuzz_target!(|data: &[u8]| {
     let path = tmp.path();
     match selector % 3 {
         0 => {
-            let _ = browser_chrome::parse_history(path);
+            let _ = browser_forensic_chrome::parse_history(path);
         }
         1 => {
-            let _ = browser_firefox::parse_history(path);
+            let _ = browser_forensic_firefox::parse_history(path);
         }
         _ => {
-            let _ = browser_safari::parse_history(path);
+            let _ = browser_forensic_safari::parse_history(path);
         }
     }
 });

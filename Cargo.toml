@@ -1,16 +1,16 @@
 [workspace]
 members = [
-    "crates/browser-core",
-    "crates/browser-chrome",
-    "crates/browser-firefox",
-    "crates/browser-safari",
-    "crates/browser-discovery",
-    "crates/browser-integrity",
-    "crates/browser-carve",
-    "crates/browser-memory",
-    "crates/browser-rt",
-    "crates/browser-tui",
-    "crates/browsing-state-mcp",
+    "crates/browser-forensic-core",
+    "crates/browser-forensic-chrome",
+    "crates/browser-forensic-firefox",
+    "crates/browser-forensic-safari",
+    "crates/browser-forensic-discovery",
+    "crates/browser-forensic-integrity",
+    "crates/browser-forensic-carve",
+    "crates/browser-forensic-memory",
+    "crates/browser-forensic-triage",
+    "crates/browser-forensic-cli",
+    "crates/browser-forensic-mcp",
 ]
 resolver = "2"
 

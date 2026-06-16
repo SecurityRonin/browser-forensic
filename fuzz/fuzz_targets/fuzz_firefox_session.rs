@@ -12,5 +12,5 @@ fuzz_target!(|data: &[u8]| {
     if tmp.write_all(data).is_err() {
         return;
     }
-    let _ = browser_firefox::session::parse_session(tmp.path());
+    let _ = browser_forensic_firefox::session::parse_session(tmp.path());
 });

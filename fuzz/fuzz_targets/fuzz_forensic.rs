@@ -3,7 +3,7 @@
 //! whose artifact files are arbitrary bytes. Exercises the end-to-end
 //! parse -> carve -> integrity -> TriageReport assembly. Must never panic.
 use libfuzzer_sys::fuzz_target;
-use browser_core::BrowserFamily;
+use browser_forensic_core::BrowserFamily;
 use std::fs;
 
 fuzz_target!(|data: &[u8]| {
@@ -28,5 +28,5 @@ fuzz_target!(|data: &[u8]| {
         1 => BrowserFamily::Firefox,
         _ => BrowserFamily::Safari,
     };
-    let _ = browser_rt::triage_profile(p, browser);
+    let _ = browser_forensic_triage::triage_profile(p, browser);
 });
