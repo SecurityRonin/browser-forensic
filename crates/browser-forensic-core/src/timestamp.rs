@@ -1,4 +1,4 @@
-// crates/browser-core/src/timestamp.rs
+// crates/browser-forensic-core/src/timestamp.rs
 
 pub use forensicnomicon::heuristics::{CORE_DATA_EPOCH_OFFSET_SECS, WEBKIT_EPOCH_OFFSET_US};
 

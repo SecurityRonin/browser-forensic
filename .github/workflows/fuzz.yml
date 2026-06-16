@@ -29,8 +29,8 @@ jobs:
       - run: cargo fuzz build
       - name: Smoke-fuzz every target (30s each)
         run: |
-          for t in fuzz_snss_records fuzz_snss_navigation fuzz_firefox_session \
-                   fuzz_carve_sqlite fuzz_sqlite_history fuzz_integrity fuzz_forensic; do
+          for t in fuzz_firefox_session fuzz_carve_sqlite fuzz_sqlite_history \
+                   fuzz_integrity fuzz_forensic; do
             echo "::group::$t"
             cargo fuzz run "$t" -- -max_total_time=30 -rss_limit_mb=4096
             echo "::endgroup::"
@@ -44,8 +44,6 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - fuzz_snss_records
-          - fuzz_snss_navigation
           - fuzz_firefox_session
           - fuzz_carve_sqlite
           - fuzz_sqlite_history

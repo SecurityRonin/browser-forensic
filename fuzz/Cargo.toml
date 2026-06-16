@@ -12,13 +12,13 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 tempfile = "3"
-browser-firefox = { path = "../crates/browser-firefox" }
-browser-chrome = { path = "../crates/browser-chrome" }
-browser-safari = { path = "../crates/browser-safari" }
-browser-carve = { path = "../crates/browser-carve" }
-browser-integrity = { path = "../crates/browser-integrity" }
-browser-rt = { path = "../crates/browser-rt" }
-browser-core = { path = "../crates/browser-core" }
+browser-forensic-firefox = { path = "../crates/browser-forensic-firefox" }
+browser-forensic-chrome = { path = "../crates/browser-forensic-chrome" }
+browser-forensic-safari = { path = "../crates/browser-forensic-safari" }
+browser-forensic-carve = { path = "../crates/browser-forensic-carve" }
+browser-forensic-integrity = { path = "../crates/browser-forensic-integrity" }
+browser-forensic-triage = { path = "../crates/browser-forensic-triage" }
+browser-forensic-core = { path = "../crates/browser-forensic-core" }
 
 # One target per parsed structure. Each invariant is "must not panic".
 # The SNSS targets (records, navigation) moved to the standalone snss-forensic repo.
