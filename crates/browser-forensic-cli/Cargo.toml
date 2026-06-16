@@ -15,7 +15,7 @@ name = "br4n6"
 path = "src/main.rs"
 
 [dependencies]
-snss-core = { version = "0.1.0", path = "../../../snss-forensic/core" }
+snss-core = "0.1.0"
 browser-forensic-core = { version = "0.1.0", path = "../browser-forensic-core" }
 browser-forensic-chrome = { version = "0.1.0", path = "../browser-forensic-chrome" }
 browser-forensic-firefox = { version = "0.1.0", path = "../browser-forensic-firefox" }

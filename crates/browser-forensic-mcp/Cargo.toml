@@ -22,7 +22,7 @@ dirs = { workspace = true }
 browser-forensic-core = { version = "0.1.0", path = "../browser-forensic-core" }
 browser-forensic-chrome = { version = "0.1.0", path = "../browser-forensic-chrome" }
 browser-forensic-discovery = { version = "0.1.0", path = "../browser-forensic-discovery" }
-snss-core = { version = "0.1.0", path = "../../../snss-forensic/core" }
+snss-core = "0.1.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }

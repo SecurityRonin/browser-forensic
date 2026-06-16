@@ -2286,6 +2286,8 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 [[package]]
 name = "snss-core"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e3785e094b7380928e000155a8973e2a7073a4e1759e504cc4e013a0887d089"
 
 [[package]]
 name = "stable_deref_trait"
