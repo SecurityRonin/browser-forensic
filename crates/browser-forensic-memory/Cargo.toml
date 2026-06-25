@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-memory"
-version = "0.1.0"
+version = "0.1.1"
 description = "Browser memory scanning — extract browser artifacts from raw byte buffers"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-browser-forensic-core = { version = "0.1.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.1.1", path = "../browser-forensic-core" }
 url = { workspace = true }
 
 [dev-dependencies]
