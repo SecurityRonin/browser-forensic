@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-triage"
-version = "0.1.1"
+version = "0.2.0"
 description = "Rapid-triage orchestration for browser forensics — merges parsing, carving, integrity, and discovery into one report"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,13 +10,13 @@ repository.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-browser-forensic-core = { version = "0.1.1", path = "../browser-forensic-core" }
-browser-forensic-chrome = { version = "0.1.1", path = "../browser-forensic-chrome" }
-browser-forensic-firefox = { version = "0.1.1", path = "../browser-forensic-firefox" }
-browser-forensic-safari = { version = "0.1.1", path = "../browser-forensic-safari" }
-browser-forensic-discovery = { version = "0.1.1", path = "../browser-forensic-discovery" }
-browser-forensic-integrity = { version = "0.1.1", path = "../browser-forensic-integrity" }
-browser-forensic-carve = { version = "0.1.1", path = "../browser-forensic-carve" }
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-chrome = { version = "0.2.0", path = "../browser-forensic-chrome" }
+browser-forensic-firefox = { version = "0.2.0", path = "../browser-forensic-firefox" }
+browser-forensic-safari = { version = "0.2.0", path = "../browser-forensic-safari" }
+browser-forensic-discovery = { version = "0.2.0", path = "../browser-forensic-discovery" }
+browser-forensic-integrity = { version = "0.2.0", path = "../browser-forensic-integrity" }
+browser-forensic-carve = { version = "0.2.0", path = "../browser-forensic-carve" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

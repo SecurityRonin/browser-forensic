@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-carve"
-version = "0.1.1"
+version = "0.2.0"
 description = "Browser artifact carving and recovery from SQLite free pages, WAL files, and binary formats"
 edition.workspace = true
 rust-version.workspace = true
@@ -11,8 +11,8 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-browser-forensic-core = { version = "0.1.1", path = "../browser-forensic-core" }
-browser-forensic-integrity = { version = "0.1.1", path = "../browser-forensic-integrity" }
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-integrity = { version = "0.2.0", path = "../browser-forensic-integrity" }
 rusqlite = { workspace = true }
 forensicnomicon = { workspace = true }
 
