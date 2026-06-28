@@ -1,0 +1,19 @@
+[
+  {
+    "description": "Chrome autofill parser reads Web Data SQLite autofill table — NOTE: timestamps are Unix epoch SECONDS not WebKit",
+    "steps": [
+      "Create crates/browser-chrome/src/autofill.rs with parse_autofill(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_autofill from crates/browser-chrome/src/lib.rs",
+      "Query: SELECT name, value, count, date_created, date_last_used FROM autofill WHERE date_created > 0 ORDER BY date_created ASC",
+      "IMPORTANT: date_created is Unix epoch SECONDS (not WebKit microseconds) — ts_ns = date_created * 1_000_000_000",
+      "Set browser = BrowserFamily::Chromium, artifact = ArtifactKind::Autofill",
+      "Description: '{name}: {value}'. Attrs: name, value, count (i32), date_last_used (i64)",
+      "Test factory creates autofill table with date_created as Unix seconds",
+      "Test: parse_empty_autofill_returns_empty",
+      "Test: parse_single_autofill_entry — attrs[name] and attrs[value] correct",
+      "Test: autofill_uses_unix_seconds_not_webkit — ts_ns = date_created_secs * 1_000_000_000 (NOT webkit_to_unix_ns)",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]

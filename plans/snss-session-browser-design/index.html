@@ -1,0 +1,1107 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://securityronin.github.io/browser-forensic/plans/snss-session-browser-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Brave Session Browser (TUI) — Design - browser-forensic</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#brave-session-browser-tui-design" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="browser-forensic" class="md-header__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            browser-forensic
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Brave Session Browser (TUI) — Design
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../privacy/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Privacy Policy
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../terms/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Terms of Service
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="browser-forensic" class="md-nav__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    browser-forensic
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terms of Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#executive-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executive Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-data-layer-verified-format-facts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Data Layer — Verified Format Facts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Data Layer — Verified Format Facts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-file-container" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 File container
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-two-dialects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Two dialects
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-pickle-decoding-the-navigation-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Pickle decoding (the navigation payload)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-reconstructing-logical-state-from-the-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 Reconstructing logical state from the log
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-crate-split-follows-the-forensic-fleet-core-convention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Crate split (follows the forensic-fleet *-core convention)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-public-reader-api-secure-by-default-sketch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Public reader API (secure-by-default sketch)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-tui-midnight-commander-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. TUI — Midnight Commander Layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-keybindings-vi-first-mc-compatible" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Keybindings — vi-first, MC-compatible
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Keybindings — vi-first, MC-compatible">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#movement-vi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Movement (vi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#search-vi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search (vi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selection-bulk-mc-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Selection / bulk (MC-style)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-robustness-edge-cases-distrust-the-happy-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Robustness &amp; Edge Cases (distrust the happy path)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-build-milestones-strict-tdd-red-then-green-per-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Build Milestones (strict TDD — RED then GREEN per step)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-out-of-scope-v1-flagged-not-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Out of Scope (v1) — flagged, not built
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="brave-session-browser-tui-design">Brave Session Browser (TUI) — Design<a class="headerlink" href="#brave-session-browser-tui-design" title="Permanent link">&para;</a></h1>
+<p>A Midnight-Commander-style, vi-keyed terminal browser for Brave's on-disk session
+store at <code>~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Sessions</code>.</p>
+<h2 id="executive-summary">Executive Summary<a class="headerlink" href="#executive-summary" title="Permanent link">&para;</a></h2>
+<p><strong>What it is.</strong> A read-only, two-pane terminal UI that lets you walk every window,
+tab, and navigation-history entry Brave has persisted — including <em>recently-closed</em>
+tabs — without launching the browser. Open any URL in your default browser, yank it
+to the clipboard, full-text search across thousands of entries, and export a session
+to JSON/Markdown.</p>
+<p><strong>Why it can exist.</strong> The on-disk format (<code>SNSS</code> v3) has been fully decoded against
+the live files on this machine: <strong>1,821 navigation entries</strong> parsed from the current
+<code>Session_*</code> file and <strong>101</strong> from the latest <code>Tabs_*</code> file with <strong>zero parse
+failures</strong>. URLs, titles, tab grouping, and navigation indices all extract cleanly.</p>
+<p><strong>Shape of the build.</strong> A <code>snss-core</code> reader crate (raw decode, <code>Read + Seek</code>,
+no UI) plus a <code>bravesess</code> TUI binary (ratatui + crossterm). The reader is reusable
+by forensic tooling; the TUI is a thin, idiot-proof consumer. Read-only by design —
+the tool never writes to Brave's files.</p>
+<p><strong>Recommended stack.</strong> Rust, <code>ratatui</code> + <code>crossterm</code>, <code>arboard</code> (clipboard),
+<code>open</code> (launch URL). Single static binary, no runtime deps.</p>
+<hr />
+<h2 id="1-data-layer-verified-format-facts">1. Data Layer — Verified Format Facts<a class="headerlink" href="#1-data-layer-verified-format-facts" title="Permanent link">&para;</a></h2>
+<p>These are confirmed against the live files, not inferred from docs.</p>
+<h3 id="11-file-container">1.1 File container<a class="headerlink" href="#11-file-container" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>offset 0   : magic  = &quot;SNSS&quot;        (4 bytes)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>offset 4   : version = 3            (int32 LE)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>offset 8.. : command stream
+</code></pre></div>
+<p>Command stream record (repeated to EOF):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uint16 size            # size of (id + payload), little-endian
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>uint8  command_id
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>byte   payload[size-1]  # raw Chromium Pickle (incl. its own 4-byte length header)
+</code></pre></div>
+<p>A <code>size == 0</code> or an over-long <code>size</code> terminates parsing gracefully (truncated tail
+is normal — Brave appends live).</p>
+<h3 id="12-two-dialects">1.2 Two dialects<a class="headerlink" href="#12-two-dialects" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>File family</th>
+<th>Meaning</th>
+<th>Navigation cmd id</th>
+<th>Other key cmds (observed)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Session_*</code></td>
+<td>Live/last windows</td>
+<td><strong>6</strong> (<code>UpdateTabNavigation</code>)</td>
+<td>0 SetTabWindow, 2 TabIndexInWindow, 7 SelectedNavigationIndex, 19 SessionStorageAssoc, 21 LastActiveTime, 25 TabGroup</td>
+</tr>
+<tr>
+<td><code>Tabs_*</code></td>
+<td>Recently-closed (restore menu)</td>
+<td><strong>1</strong> (<code>UpdateTabNavigation</code>)</td>
+<td>2 RestoredEntry, 4 SelectedNavInTab, 5 PinnedState, 9 LastActiveTime</td>
+</tr>
+<tr>
+<td><code>Apps_*</code></td>
+<td>PWA/app windows</td>
+<td>(same as Session)</td>
+<td>small, optional</td>
+</tr>
+</tbody>
+</table>
+<p>Filenames carry a Windows-epoch timestamp suffix and <strong>rotate while Brave runs</strong> —
+always glob <code>Session_*</code> / <code>Tabs_*</code> and pick by mtime; never hardcode a name.</p>
+<h3 id="13-pickle-decoding-the-navigation-payload">1.3 Pickle decoding (the navigation payload)<a class="headerlink" href="#13-pickle-decoding-the-navigation-payload" title="Permanent link">&para;</a></h3>
+<p>The <code>UpdateTabNavigation</code> payload, after the 4-byte Pickle length header:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>int32   tab_id           # SessionID — groups entries into tabs
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>int32   index            # position in that tab&#39;s back/forward history
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>string  url              # int32 byte-length, utf-8, padded to 4 bytes
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>string16 title           # int32 CHAR count, utf-16-le (2*count bytes), padded to 4
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>... (referrer, transition type, timestamps — optional, ignored for v1)
+</code></pre></div>
+<p>Alignment rule that makes or breaks the parser: <strong>every field is padded to a 4-byte
+boundary</strong>, and <code>string16</code>'s length field is a <em>code-unit count</em>, not a byte count.</p>
+<h3 id="14-reconstructing-logical-state-from-the-log">1.4 Reconstructing logical state from the log<a class="headerlink" href="#14-reconstructing-logical-state-from-the-log" title="Permanent link">&para;</a></h3>
+<p>The stream is append-only, so the <em>current</em> picture is a replay:</p>
+<ul>
+<li>Group <code>UpdateTabNavigation</code> records by <code>tab_id</code> → a tab's history.</li>
+<li>The tab's <strong>current entry</strong> = the one whose <code>index</code> matches the latest
+  <code>SelectedNavigationIndex</code> (cmd 7) for that tab; absent that, the max index.</li>
+<li><code>SetTabWindow</code> (cmd 0) maps <code>tab_id → window_id</code>; <code>TabIndexInWindow</code> (cmd 2)
+  orders tabs left-to-right; <code>LastActiveTime</code> (cmd 21) drives recency sort.</li>
+<li><code>Tabs_*</code> entries are each a standalone closed tab/window for the restore list.</li>
+</ul>
+<hr />
+<h2 id="2-architecture">2. Architecture<a class="headerlink" href="#2-architecture" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>flowchart LR
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    subgraph disk[Brave Sessions dir]
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>      S[Session_*]
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>      T[Tabs_*]
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>      A[Apps_*]
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    end
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    subgraph core[snss-core crate · raw decode]
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>      RD[Record reader&lt;br/&gt;size/id/payload]
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>      PK[Pickle decoder&lt;br/&gt;4-byte aligned]
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>      RP[Replay engine&lt;br/&gt;log to Window/Tab tree]
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    end
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    subgraph tui[bravesess binary · ratatui]
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>      MD[(In-memory model:&lt;br/&gt;Sources to Windows to Tabs to History)]
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>      UI[Two-pane MC view]
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>      KB[vi + Fn keymap]
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>      AX[Actions: open · yank · export · search]
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>    end
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>    S --&gt; RD
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>    T --&gt; RD
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>    A --&gt; RD
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>    RD --&gt; PK --&gt; RP --&gt; MD
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>    MD --&gt; UI
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>    KB --&gt; UI
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>    UI --&gt; AX
+</code></pre></div>
+<h3 id="21-crate-split-follows-the-forensic-fleet-core-convention">2.1 Crate split (follows the forensic-fleet <code>*-core</code> convention)<a class="headerlink" href="#21-crate-split-follows-the-forensic-fleet-core-convention" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>snss-core</code></strong> — package <code>snss-core</code>, <code>[lib] name = "snss"</code> (the bare <code>snss</code>
+  import path stays clean even if the crates.io name is taken). Pure decode over
+  <code>Read + Seek</code>; returns a typed model. No UI, no I/O side effects, no clipboard.
+  Reusable by a future <code>snss-forensic</code> analyzer (anomaly <code>Observation</code>s: dangling
+  tab ids, impossible indices, mixed-version streams).</li>
+<li><strong><code>bravesess</code></strong> — the TUI binary. Depends on <code>snss-core</code>. Owns the model→view
+  mapping, keymap, and the four side-effecting actions.</li>
+</ul>
+<h3 id="22-public-reader-api-secure-by-default-sketch">2.2 Public reader API (secure-by-default sketch)<a class="headerlink" href="#22-public-reader-api-secure-by-default-sketch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// snss-core — the safe path is the only easy path</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">SessionStore</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* sources discovered + decoded */</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="k">impl</span><span class="w"> </span><span class="n">SessionStore</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="sd">/// Open the default Brave profile&#39;s Sessions dir (read-only).</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="k">fn</span> <span class="nf">open_default_profile</span><span class="p">()</span><span class="w"> </span>-&gt; <span class="nb">Result</span><span class="o">&lt;</span><span class="bp">Self</span><span class="p">,</span><span class="w"> </span><span class="n">SnssError</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="sd">/// Open an explicit dir (other profiles, forensic images, copies).</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="k">fn</span> <span class="nf">open_dir</span><span class="p">(</span><span class="n">path</span>: <span class="kp">&amp;</span><span class="nc">Path</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nb">Result</span><span class="o">&lt;</span><span class="bp">Self</span><span class="p">,</span><span class="w"> </span><span class="n">SnssError</span><span class="o">&gt;</span><span class="p">;</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="k">fn</span> <span class="nf">sources</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="kp">&amp;</span><span class="p">[</span><span class="n">Source</span><span class="p">];</span><span class="w">   </span><span class="c1">// Current, Last, Recently-Closed, Apps</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="p">}</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Source</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">kind</span>: <span class="nc">SourceKind</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">windows</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Window</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">path</span>: <span class="nc">PathBuf</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Window</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">id</span>: <span class="kt">i32</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">tabs</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Tab</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">last_active</span>: <span class="nb">Option</span><span class="o">&lt;</span><span class="n">SystemTime</span><span class="o">&gt;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Tab</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">id</span>: <span class="kt">i32</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">pinned</span>: <span class="kt">bool</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">current</span>: <span class="kt">usize</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">history</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Nav</span><span class="o">&gt;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">Nav</span><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">index</span>: <span class="kt">i32</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">url</span>: <span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="k">pub</span><span class="w"> </span><span class="n">title</span>: <span class="nb">String</span> <span class="p">}</span>
+</code></pre></div>
+<p>Design guarantees baked into the types, not the docs:</p>
+<ul>
+<li>The reader <strong>opens files copy-then-read</strong> (snapshots bytes) so a live Brave
+  rewrite can't yield a torn read; the model is immutable once built.</li>
+<li>A malformed command <strong>degrades to a <code>Skipped</code> record with context</strong>, never a
+  panic and never a silent wrong value — <code>SessionStore::open_*</code> returns the model
+  plus a <code>warnings()</code> list. Fail loud, not silent.</li>
+<li>No write path exists in the API surface. The tool <strong>cannot</strong> mutate Brave's
+  store; that's structurally impossible, not merely "don't do that."</li>
+</ul>
+<hr />
+<h2 id="3-tui-midnight-commander-layout">3. TUI — Midnight Commander Layout<a class="headerlink" href="#3-tui-midnight-commander-layout" title="Permanent link">&para;</a></h2>
+<p>Two independent panes, a Norton-style function-key bar, vi navigation. The left
+pane is the <strong>navigator</strong> (a column in the Sources→Windows→Tabs→History hierarchy);
+the right pane is the <strong>viewer/preview</strong> of the selected item. <code>Tab</code> swaps the
+active pane (classic MC). Optional twin-navigator mode lets both panes browse
+independently for side-by-side compare.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a> Brave Sessions  ·  /…/Brave-Browser/Default/Sessions          12 win · 287 tabs
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>+------------------------------------+------------------------------------------+
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>| Windows  (Current Session)         | Tab 3/9  ·  github.com  · 5 history       |
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>|                                    |                                          |
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>|   Window 1   9 tabs   2m ago       |   0  chrome://newtab/      New Tab        |
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>| &gt; Window 2  41 tabs   now      &lt;== |   1  github.com/h4x0r      h4x0r          |
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>|   Window 3  12 tabs   1h ago       | &gt; 2  github.com/.../pulls  Pull requests  |
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>|   Window 4   7 tabs   3h ago       |   3  github.com/.../issues Issues         |
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>|   ----------------------------     |   4  github.com/.../wiki   Wiki          |
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>|   Recently Closed  101 entries     |                                          |
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>|   Last Session     6 windows       |   URL  https://github.com/h4x0r/.../pulls |
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>|   Apps             1 window         |   Title  Pull requests · h4x0r           |
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>|                                    |   Tab id 1885544307 · pinned: no          |
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>+------------------------------------+------------------------------------------+
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a> /pull_                                                  3 matches  ·  n/N to cycle
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a> F1 Help  F3 View  F4 Yank  F5 Export  F7 Search  F8 OpenURL  F10 Quit
+</code></pre></div>
+<p>(Mock uses plain ASCII only — the real UI uses ratatui block borders.)</p>
+<ul>
+<li><strong>Left pane</strong> drills the hierarchy: <code>l</code>/<code>Enter</code>/<code>→</code> descend
+  (Source → Window → Tab → focus its history in the right pane), <code>h</code>/<code>←</code> ascend.</li>
+<li><strong>Right pane</strong> shows the selected tab's full back/forward history with the
+  current entry marked <code>&gt;</code>, plus a detail footer (URL, title, tab id, pinned).</li>
+<li><strong>Status bar</strong> shows the live search query + match count.</li>
+<li><strong>Function bar</strong> mirrors MC's F-keys for discoverability by non-vi users.</li>
+</ul>
+<hr />
+<h2 id="4-keybindings-vi-first-mc-compatible">4. Keybindings — vi-first, MC-compatible<a class="headerlink" href="#4-keybindings-vi-first-mc-compatible" title="Permanent link">&para;</a></h2>
+<p>Both schemes are live simultaneously. vi keys are primary; F-keys and arrows are
+the discoverable fallback (cognitive-load: zero-knowledge users see the F-bar).</p>
+<h3 id="movement-vi">Movement (vi)<a class="headerlink" href="#movement-vi" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>h</code> <code>j</code> <code>k</code> <code>l</code></td>
+<td>left / down / up / right (pane-aware)</td>
+</tr>
+<tr>
+<td><code>g g</code> / <code>G</code></td>
+<td>top / bottom of list</td>
+</tr>
+<tr>
+<td><code>Ctrl-d</code> / <code>Ctrl-u</code></td>
+<td>half-page down / up</td>
+</tr>
+<tr>
+<td><code>Ctrl-f</code> / <code>Ctrl-b</code></td>
+<td>page down / up</td>
+</tr>
+<tr>
+<td><code>{</code> / <code>}</code></td>
+<td>previous / next window (jump across groups)</td>
+</tr>
+<tr>
+<td><code>Tab</code></td>
+<td>swap active pane (MC)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="search-vi">Search (vi)<a class="headerlink" href="#search-vi" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/</code></td>
+<td>incremental search forward (URL + title, all sources)</td>
+</tr>
+<tr>
+<td><code>?</code></td>
+<td>incremental search backward</td>
+</tr>
+<tr>
+<td><code>n</code> / <code>N</code></td>
+<td>next / previous match</td>
+</tr>
+<tr>
+<td><code>*</code></td>
+<td>search the hostname under cursor</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>clear search / leave search mode</td>
+</tr>
+</tbody>
+</table>
+<h3 id="actions">Actions<a class="headerlink" href="#actions" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>F-key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>o</code> / <code>Enter</code>*</td>
+<td>F8</td>
+<td>open URL in default browser (<code>open</code> crate)</td>
+</tr>
+<tr>
+<td><code>y</code></td>
+<td>F4</td>
+<td>yank URL to clipboard; <code>Y</code> yanks title + URL</td>
+</tr>
+<tr>
+<td><code>e</code></td>
+<td>F5</td>
+<td>export current node → JSON / Markdown</td>
+</tr>
+<tr>
+<td><code>v</code></td>
+<td>F3</td>
+<td>view: expand full history / raw metadata of selection</td>
+</tr>
+<tr>
+<td><code>/</code></td>
+<td>F7</td>
+<td>search</td>
+</tr>
+<tr>
+<td><code>?</code></td>
+<td>F1</td>
+<td>help overlay (full keymap)</td>
+</tr>
+<tr>
+<td><code>r</code></td>
+<td>—</td>
+<td>reload from disk (re-snapshot live files)</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>—</td>
+<td>cycle sort: recency / title / url / tab-count</td>
+</tr>
+<tr>
+<td><code>q</code> / <code>Ctrl-c</code></td>
+<td>F10</td>
+<td>quit</td>
+</tr>
+</tbody>
+</table>
+<p>*<code>Enter</code> descends in the left pane, opens-URL in the right pane (context-aware,
+so the common path needs the fewest decisions).</p>
+<h3 id="selection-bulk-mc-style">Selection / bulk (MC-style)<a class="headerlink" href="#selection-bulk-mc-style" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Space</code></td>
+<td>tag / untag current row</td>
+</tr>
+<tr>
+<td><code>+</code> / <code>-</code></td>
+<td>tag / untag by glob (e.g. <code>*github.com*</code>)</td>
+</tr>
+<tr>
+<td><code>y</code> on a tag-set</td>
+<td>yank all tagged URLs (newline-joined)</td>
+</tr>
+<tr>
+<td><code>e</code> on a tag-set</td>
+<td>export all tagged</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-robustness-edge-cases-distrust-the-happy-path">5. Robustness &amp; Edge Cases (distrust the happy path)<a class="headerlink" href="#5-robustness-edge-cases-distrust-the-happy-path" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Live rewrite / rotation</strong> — files are snapshotted (read fully into a buffer)
+  before decode; <code>r</code> re-discovers by glob+mtime. A half-written tail just truncates
+  the command stream cleanly.</li>
+<li><strong>File lock</strong> — Brave holds these open; on macOS reads still succeed. If a read
+  errors, surface it as a per-source warning and keep the other sources usable.</li>
+<li><strong>Malformed commands</strong> — unknown <code>command_id</code>, bad Pickle length, non-UTF-8 URL,
+  odd-length <code>string16</code>: each becomes a counted, contextual <code>warning</code>, never a
+  panic or a silently-wrong row. (<code>?</code>/replacement chars shown, not hidden.)</li>
+<li><strong>Huge sessions</strong> — 4 MB / 14 k commands parse in well under a frame; lists are
+  virtualized (render only visible rows) so 287 tabs scroll smoothly.</li>
+<li><strong>Empty / missing dir</strong> — clear message + the resolved path, not a stack trace.</li>
+<li><strong>Non-default profiles</strong> — <code>open_dir</code> accepts any <code>Sessions</code> dir, incl. a
+  forensic copy mounted read-only.</li>
+</ul>
+<hr />
+<h2 id="6-build-milestones-strict-tdd-red-then-green-per-step">6. Build Milestones (strict TDD — RED then GREEN per step)<a class="headerlink" href="#6-build-milestones-strict-tdd-red-then-green-per-step" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong><code>snss-core</code> record reader</strong> — parse <code>(size,id,payload)</code> to EOF; fixtures from a
+   <em>copied</em> real <code>Session_*</code> (never the live file). RED: assert command histogram
+   matches the verified counts; GREEN: implement.</li>
+<li><strong>Pickle decoder</strong> — <code>int32</code>/<code>string</code>/<code>string16</code> with 4-byte alignment. RED:
+   golden URLs/titles from §1.3; GREEN: decode.</li>
+<li><strong>Replay engine</strong> — log → <code>Source/Window/Tab/Nav</code> tree; recency + index logic.</li>
+<li><strong><code>bravesess</code> skeleton</strong> — ratatui two-pane, left navigator, right viewer,
+   <code>Tab</code> swap, <code>q</code> quit.</li>
+<li><strong>vi keymap + F-bar</strong> — movement, <code>gg/G</code>, pane awareness.</li>
+<li><strong>Search</strong> — incremental <code>/ ? n N *</code> across all sources.</li>
+<li><strong>Actions</strong> — <code>o</code> open, <code>y/Y</code> yank, <code>e</code> export JSON/MD, <code>r</code> reload, <code>s</code> sort.</li>
+<li><strong>Tagging / bulk</strong> — <code>Space</code>, glob <code>+/-</code>, bulk yank/export.</li>
+</ol>
+<p>Validation per the Doer-Checker rule: every parser milestone is checked against the
+<strong>real on-disk bytes</strong> (copied to a fixture), not synthetic Pickles I hand-built.</p>
+<hr />
+<h2 id="7-out-of-scope-v1-flagged-not-built">7. Out of Scope (v1) — flagged, not built<a class="headerlink" href="#7-out-of-scope-v1-flagged-not-built" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Decoding referrer / transition-type / favicon / scroll-offset fields (present in
+  the Pickle, unused by the UI). Add to <code>Nav</code> when a consumer needs them.</li>
+<li>Writing/restoring sessions back into Brave (would require careful, lock-aware
+  append; deliberately excluded to keep the tool read-only and safe).</li>
+<li>Cross-profile aggregation and a <code>snss-forensic</code> anomaly analyzer (natural next
+  crate; same reader, different consumer).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.tabs", "navigation.sections", "navigation.top", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

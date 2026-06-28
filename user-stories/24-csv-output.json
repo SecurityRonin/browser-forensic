@@ -1,0 +1,19 @@
+[
+  {
+    "description": "CSV output format works correctly for all CLI subcommands",
+    "steps": [
+      "crates/bw-cli/src/format.rs has TIMELINE_CSV_HEADER = 'timestamp,browser,artifact,source,description'",
+      "event_to_csv_row(&BrowserEvent) -> String produces exactly 5 comma-separated fields",
+      "csv_escape() wraps values containing commas or double-quotes in double-quotes, escapes internal double-quotes by doubling",
+      "format_timestamp_ns(ns: i64) -> String returns a valid RFC3339 datetime string",
+      "Unit test: csv_escape_plain_string — 'hello' -> 'hello'",
+      "Unit test: csv_escape_string_with_comma — 'a,b' -> '\"a,b\"'",
+      "Unit test: csv_escape_string_with_double_quote — 'say \"hi\"' -> '\"say \"\"hi\"\"\"'",
+      "Unit test: format_timestamp_ns_is_rfc3339 — result contains 'T' and ends with Z or offset",
+      "Unit test: event_to_csv_row_has_five_fields — split by comma count >= 5",
+      "CLI integration: bw timeline --format csv <chrome_history_file> first line contains 'timestamp,browser,artifact'",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]

@@ -1,0 +1,1033 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://securityronin.github.io/browser-forensic/plans/browsing-context-bridge/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Brave Sessions → Local Browsing-Context Layer — Enhancement Design - browser-forensic</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#brave-sessions-local-browsing-context-layer-enhancement-design" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="browser-forensic" class="md-header__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            browser-forensic
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Brave Sessions → Local Browsing-Context Layer — Enhancement Design
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../privacy/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Privacy Policy
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../terms/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Terms of Service
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="browser-forensic" class="md-nav__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    browser-forensic
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terms of Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#executive-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executive Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-reframing-what-this-tool-is-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Reframing — what this tool is now
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-personas-use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Personas &amp; use cases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Personas &amp; use cases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#worked-example-split-by-version-the-v1v2-honesty-the-critique-demanded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worked example — split by version (the v1/v2 honesty the critique demanded)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-ai-agent-bridge-mcp-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The AI-agent bridge — MCP first
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. The AI-agent bridge — MCP first">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tool-surface-digest-first-bounded-provenance-tagged" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool surface (digest-first, bounded, provenance-tagged)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-reading-history-decision-corrected-technical-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Reading history — decision &amp; corrected technical path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-reuse-strategy-depend-dont-copy-contribute-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Reuse strategy — depend, don't copy; contribute back
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-architecture-one-enforced-path-explicit-policy-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Architecture — one enforced path, explicit policy modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-privacy-threat-model-the-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Privacy &amp; threat model (the gate)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-repository-strategy-decision-point" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Repository strategy (decision point)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-roadmap-resequenced-by-valuerisk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Roadmap — resequenced by value/risk
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-minimum-viable-first-deliverable-codex-endorsed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Minimum-viable first deliverable (Codex-endorsed)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-what-changed-after-the-codex-critique" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. What changed after the Codex critique
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-out-of-scope-for-now-revisit-after-the-bridge-is-proven" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Out of scope for now (revisit after the bridge is proven)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="brave-sessions-local-browsing-context-layer-enhancement-design">Brave Sessions → Local Browsing-Context Layer — Enhancement Design<a class="headerlink" href="#brave-sessions-local-browsing-context-layer-enhancement-design" title="Permanent link">&para;</a></h1>
+<p><em>Validated against an adversarial Codex critique; §11 lists what changed.</em></p>
+<h2 id="executive-summary">Executive Summary<a class="headerlink" href="#executive-summary" title="Permanent link">&para;</a></h2>
+<p><strong>Recommendation.</strong> Grow this project from "a TUI that reads SNSS session files" into a
+<strong>local, allow-list-gated browsing-context provider for AI agents</strong>, with the existing
+TUI as the human surface. The enabler is in-house: <code>~/src/browser-forensic</code> is your own
+SecurityRonin fleet whose <code>browser-chrome</code> reads the Chromium History DB, and which has
+<strong>no SNSS session reader</strong> — the exact gap <code>snss-core</code> already fills. The two repos are
+complementary halves of one capability.</p>
+<p><strong>The feature you asked for</strong> — making an AI agent aware that "the user was browsing this
+site 10 minutes ago" — ships as <strong>one explicit MCP tool first</strong>, not an ambient hook.
+The minimum viable deliverable is a single opt-in command/tool that reads open + recently
+-closed tabs (<code>snss-core</code>) plus the last <em>N</em> minutes of the History <strong><code>visits</code></strong> table,
+behind an <strong>allow-list</strong>, returning a small structured digest with provenance. Everything
+else (TUI history browsing, ambient hooks, forensic analysis, embeddings) waits until that
+proves trustworthy.</p>
+<p><strong>Should we read the whole browsing history? Yes — locally, for the human; never wholesale
+for the agent.</strong> The local TUI (you) may see everything; the agent sees only allow-listed,
+bounded, provenance-tagged digests. These are different <em>policy modes</em> of one enforced path.</p>
+<p><strong>Three reversals from the first draft, forced by the critique:</strong>
+1. <strong>Allow-list by default for agent surfaces</strong>, not deny-list. Sensitive material appears
+   on GitHub, Slack, Google Docs, localhost, employer SSO, shortened URLs — un-deny-listable.
+2. <strong>MCP-pull first; ambient prompt-injection hook last and off by default.</strong> Pushing
+   browsing context into <em>every</em> prompt is the largest, least-scoped exposure surface.
+3. <strong>The <code>visits</code> table is in the first deliverable</strong>, not Phase 4. <code>urls.last_visit_time</code>
+   collapses repeat visits into one row and cannot reconstruct a 10-minute timeline.</p>
+<p><strong>Top risks (detail in §7):</strong> (1) AI exfiltration of sensitive domains; (2) <strong>prompt
+injection carried <em>inside</em> visited page titles/URLs</strong> that an agent later ingests; (3)
+plaintext history residue from snapshot copies; (4) scope creep. Each has a concrete
+mitigation. Privacy is the gate, not a preference.</p>
+<hr />
+<h2 id="1-reframing-what-this-tool-is-now">1. Reframing — what this tool is now<a class="headerlink" href="#1-reframing-what-this-tool-is-now" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>"Where have I been, and where am I now, on the web — queryable locally, by me or by my
+AI, with nothing leaving my machine, and only what I've allow-listed reaching the AI."</strong></p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Crate</th>
+<th>Answers</th>
+<th>Granularity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SNSS sessions</td>
+<td><code>snss-core</code> (built)</td>
+<td>What's open now / just closed</td>
+<td>Live tab/window state</td>
+</tr>
+<tr>
+<td>History <code>visits</code></td>
+<td><code>browser-chrome</code> + new <code>parse_visits</code></td>
+<td>What I visited, <em>when</em>, in sequence</td>
+<td>Per-visit events (36,989)</td>
+</tr>
+<tr>
+<td>History <code>urls</code></td>
+<td><code>browser-chrome::parse_history</code> (drop-in)</td>
+<td>Has this URL ever been seen; how often; last-seen</td>
+<td>Per-URL aggregate (22,919)</td>
+</tr>
+</tbody>
+</table>
+<p>The agent-context goal needs <strong><code>visits</code></strong> for chronology; <code>urls</code> only answers
+"ever/last/how-often." SNSS supplies the live window layout.</p>
+<hr />
+<h2 id="2-personas-use-cases">2. Personas &amp; use cases<a class="headerlink" href="#2-personas-use-cases" title="Permanent link">&para;</a></h2>
+<p>Focused on the two personas the bridge actually serves. P4 (forensic) and P5 (semantic
+recall) are deliberately moved to the out-of-scope appendix (§12) — they pull toward the
+whole forensic fleet before the basic agent path is proven.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Persona</th>
+<th>Need</th>
+<th>Job to be done</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>P1</strong></td>
+<td>The Recaller (you, human, local)</td>
+<td>Find a tab/URL you remember</td>
+<td>"That issue I had open an hour ago?"</td>
+</tr>
+<tr>
+<td><strong>P2</strong></td>
+<td><strong>The AI Agent</strong> (primary new user)</td>
+<td>Bounded, provenance-tagged context</td>
+<td>"What was I just looking at?" — answered without asking you</td>
+</tr>
+<tr>
+<td><strong>P3</strong></td>
+<td><strong>The Privacy Auditor</strong> (you, security hat)</td>
+<td>Prove + control what the AI sees</td>
+<td>"Can my agent see my bank? Prove nothing leaks."</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Also explicitly in scope (the critique flagged these as missing):</strong> multiple profiles,
+non-Brave Chromium (Chrome/Edge/Opera/Vivaldi share the format), and <strong>shared/multi-user
+machines</strong> — every artifact (snapshot, log, config) is bound to the current OS user with
+<code>0600</code> permissions, and profile discovery is restricted to the current user's browser dir.</p>
+<h3 id="worked-example-split-by-version-the-v1v2-honesty-the-critique-demanded">Worked example — split by version (the v1/v2 honesty the critique demanded)<a class="headerlink" href="#worked-example-split-by-version-the-v1v2-honesty-the-critique-demanded" title="Permanent link">&para;</a></h3>
+<p>User asks Claude: <em>"summarize the Tokio article I was just reading."</em></p>
+<p><strong>v1 (<code>visits</code> + SNSS, what ships first):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>timeline_basis: &quot;history.visits (redirect chains collapsed)&quot;
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>open_tabs:   [tokio.rs/tokio/tutorial]                       # source: snss
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>recent:      [{url: tokio.rs/.../channels, visited: 9m ago,  # source: history.visits
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>               source: &quot;visits&quot;, matched_on: &quot;time_window&quot;}]
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>omitted_by_policy: 4                                          # 4 visits not allow-listed
+</code></pre></div>
+<strong>v2 (after <code>from_visit</code>/<code>transition</code>/search enrichment):</strong> adds referral ("from a Google
+search for 'tokio mpsc'") and <code>visit_duration</code> — <em>labelled with units and a caveat that it
+is navigation-to-navigation time, not read time, and is not a ranking signal.</em></p>
+<hr />
+<h2 id="3-the-ai-agent-bridge-mcp-first">3. The AI-agent bridge — MCP first<a class="headerlink" href="#3-the-ai-agent-bridge-mcp-first" title="Permanent link">&para;</a></h2>
+<p><strong>Surface order (reversed from the draft):</strong> MCP pull first (explicit, per-call, auditable,
+relevance-gated by the agent). The ambient <code>UserPromptSubmit</code> hook digest is a <strong>later,
+off-by-default, allow-list-only</strong> option — its blast radius (browsing data into every
+unrelated prompt, sub-agent, and transcript) makes it unsuitable as the first bridge.</p>
+<h3 id="tool-surface-digest-first-bounded-provenance-tagged">Tool surface (digest-first, bounded, provenance-tagged)<a class="headerlink" href="#tool-surface-digest-first-bounded-provenance-tagged" title="Permanent link">&para;</a></h3>
+<p>Every response carries provenance so the agent does not over-trust weak signals:
+<code>source</code> (snss | history.visits | history.urls), <code>matched_on</code>, <code>timeline_basis</code>,
+<code>omitted_by_policy_count</code>, and an explicit <strong><code>untrusted_evidence: true</code></strong> marker on all
+free-text fields (titles, URLs, search terms).</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Returns</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>browsing_context(minutes=15)</code></td>
+<td>Open tabs + recent <code>visits</code> (redirect-collapsed) + recent searches, allow-listed &amp; capped</td>
+<td>"What is the user doing right now?"</td>
+</tr>
+<tr>
+<td><code>did_user_visit(query, within?)</code></td>
+<td>Allow-listed matches with last-seen + visit_count</td>
+<td>The literal "have they been on X"</td>
+</tr>
+<tr>
+<td><code>find_in_history(query, limit=10, since?)</code></td>
+<td>Ranked allow-listed url/title matches</td>
+<td>"That article about…"</td>
+</tr>
+<tr>
+<td><code>open_tabs()</code> / <code>recently_closed()</code></td>
+<td>SNSS tab lists (allow-listed)</td>
+<td>Live/closed state</td>
+</tr>
+</tbody>
+</table>
+<p>No <code>dump_all_history</code>. No tool returns unbounded or un-allow-listed data.</p>
+<hr />
+<h2 id="4-reading-history-decision-corrected-technical-path">4. Reading history — decision &amp; corrected technical path<a class="headerlink" href="#4-reading-history-decision-corrected-technical-path" title="Permanent link">&para;</a></h2>
+<p><strong>Decision: read it locally; gate hard for the agent.</strong> Required for the headline goal and
+a major TUI upgrade for P1. Corrected facts (the draft was wrong here):</p>
+<ul>
+<li><code>parse_history</code> (urls-only, <code>last_visit_time</code>) answers <strong><code>did_user_visit</code></strong> and aggregate
+  counts — <strong>not</strong> "last 10 minutes." Repeat visits collapse to one row.</li>
+<li>The <strong><code>visits</code></strong> table (<code>visit_time, visit_duration, from_visit, transition</code>) is the
+  timeline source and must back any recency tool. A minimal <strong><code>parse_visits(since)</code></strong> is
+  part of the first deliverable. Per your own rule, <strong>add it to <code>browser-chrome</code></strong> (your
+  crate), don't fork.</li>
+<li><strong>Redirect collapse:</strong> decode <code>transition</code>; collapse <code>SERVER_REDIRECT</code>/<code>CLIENT_REDIRECT</code>
+  chains into one logical page view, or counts and recency are polluted.</li>
+<li><strong><code>visit_duration</code>:</strong> microseconds, navigation-to-next-navigation, <strong>includes idle and
+  background tabs — not read time.</strong> Surface with units + caveat; never rank on it.</li>
+<li><strong>Live-DB / WAL:</strong> <code>immutable=1</code> can return stale data against an un-checkpointed WAL.
+  Use the <strong>SQLite backup API</strong> from a read-only connection, or atomically copy
+  <code>History</code> + <code>History-wal</code> + <code>History-shm</code> together, into a <code>0600</code> app-owned temp path
+  with <strong>panic-safe cleanup</strong>. Test against a live Brave profile with uncheckpointed WAL.</li>
+</ul>
+<hr />
+<h2 id="5-reuse-strategy-depend-dont-copy-contribute-back">5. Reuse strategy — depend, don't copy; contribute back<a class="headerlink" href="#5-reuse-strategy-depend-dont-copy-contribute-back" title="Permanent link">&para;</a></h2>
+<p><code>browser-forensic</code> is yours (SecurityRonin, Apache-2.0). State <strong>both repos' licenses</strong> and
+prefer cross-crate dependency over copying (preserve notices if anything moves).</p>
+<ul>
+<li><strong>Available today:</strong> <code>browser-chrome::parse_history</code> (urls) + <code>browser-core</code> timestamp
+  primitives. <strong>Not yet:</strong> per-visit <code>visits</code>, search terms as an API, and an SNSS reader —
+  these are <strong>new APIs to contribute</strong>, not existing capability. (The draft overstated this.)</li>
+<li><strong>Give back:</strong> promote <code>snss-core</code> into the fleet as <code>browser-chrome::session</code> (or sibling
+  <code>browser-snss</code>) — it is the missing Chrome session reader.</li>
+<li><strong>Dependency weight is a real cost, not a footnote.</strong> <code>browser-chrome</code> pulls <code>rusqlite</code>
+  (bundled SQLite) + <code>forensicnomicon</code>, against this repo's "single static binary, no runtime
+  deps" posture. <strong>MVP avoids the whole graph</strong>: read the two History tables through a narrow
+  reader (or a <code>history-only</code> feature of <code>browser-chrome</code> with no <code>forensicnomicon</code>). Measure
+  binary size / build time before accepting the full fleet dependency.</li>
+<li><strong>Linking:</strong> use a <strong>git dependency pinned to a revision</strong> (or <code>[patch]</code> for active local
+  dev), never a bare <code>path = "~/src/..."</code> — path deps break CI, packaging, and other machines.</li>
+</ul>
+<hr />
+<h2 id="6-architecture-one-enforced-path-explicit-policy-modes">6. Architecture — one enforced path, explicit policy modes<a class="headerlink" href="#6-architecture-one-enforced-path-explicit-policy-modes" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>flowchart TB
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    subgraph consumers[Consumers]
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>      TUI[bravesess TUI · human]
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>      MCP[bravesess-mcp · agent]
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>      HOOK[context hook · later, off by default]
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    end
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    subgraph policy[Policy gate · enforced for every consumer]
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>      MODE{PolicyMode}
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>      HF[HumanFull · local TUI only]
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>      AF[AgentFiltered · allow-list + caps + redirect-collapse + untrusted labels]
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>      PV[Preview · what the agent WOULD see]
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    end
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    subgraph readers[Readers]
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>      SNSS[snss-core · tabs]
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>      VIS[parse_visits · recent timeline]
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>      URL[parse_history · urls aggregate]
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    end
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    TUI --&gt; MODE --&gt; HF
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    MCP --&gt; MODE --&gt; AF
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>    HOOK --&gt; MODE --&gt; AF
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    TUI -.preview.-&gt; PV
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>    HF --&gt; readers
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    AF --&gt; readers
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>    PV --&gt; readers
+</code></pre></div>
+<p>The policy gate is the <strong>only</strong> path to data, with explicit modes — <code>HumanFull</code>,
+<code>AgentFiltered</code>, <code>Preview</code>. The draft's inconsistency ("chokepoint, but the TUI bypasses
+it") is fixed: the TUI uses <code>HumanFull</code>, agents <em>cannot construct</em> anything but
+<code>AgentFiltered</code>. No crate reachable by agent code exposes a raw unfiltered API. <strong>YAGNI:</strong>
+this is a <strong>policy module in the binary</strong> at MVP; extract a <code>browsing-context</code> crate only
+when a second consumer actually exists.</p>
+<hr />
+<h2 id="7-privacy-threat-model-the-gate">7. Privacy &amp; threat model (the gate)<a class="headerlink" href="#7-privacy-threat-model-the-gate" title="Permanent link">&para;</a></h2>
+<p><strong>Threats.</strong> (T1) Cloud AI exfiltrates sensitive domains. (T2) <strong>Prompt injection embedded
+in visited page titles/URLs/search terms</strong> that the agent later ingests as if instructions.
+(T3) Ambient injection multiplies exposure. (T4) Snapshot copy leaves a plaintext history
+file. (T5) Audit log itself leaks domains/terms. (T6) Shared-machine cross-user exposure.</p>
+<p><strong>Mitigations (secure-by-default):</strong>
+1. <strong>Allow-list is the floor</strong> for every agent surface. Default exposes <em>nothing</em> until you
+   permit domains. eTLD+1 matching; strip query strings by default; resolve/treat shortened
+   URLs; handle redirect chains. Deny-lists are an <em>additional</em> layer, never the boundary.
+2. <strong>All browsing text is untrusted evidence.</strong> Titles, URLs, search terms, referrers are
+   returned in structured fields tagged <code>untrusted_evidence</code>, control-chars stripped,
+   length-capped, with an output rule that they are data, not instructions.
+3. <strong>No dump primitive; every tool bounded</strong> (row cap + optional window).
+4. <strong>Read-only, snapshot via SQLite backup API or atomic WAL+SHM copy</strong> to a <code>0600</code>
+   app-owned temp path, deleted even on panic.
+5. <strong>MCP over stdio, opt-in install, allow-listed tools only.</strong> Default state exposes nothing.
+6. <strong>Audit log</strong> under a <code>0600</code> user-private path: tool + result <em>count</em>; <strong>args redacted</strong>
+   unless explicit debug; configurable retention; can be disabled.
+7. <strong><code>Preview</code> mode</strong> in the TUI: show exactly what the agent would receive for a query.
+8. <strong>OS-user binding:</strong> all artifacts current-user-only; refuse world-readable config/logs.
+9. Incognito visits are already excluded (Chromium doesn't persist them).</p>
+<hr />
+<h2 id="8-repository-strategy-decision-point">8. Repository strategy (decision point)<a class="headerlink" href="#8-repository-strategy-decision-point" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Option C — hybrid (recommended).</strong> Keep <code>snss-core</code> standalone <em>and</em> let the fleet depend
+  on it (or contribute <code>browser-chrome::session</code>). Build the policy module + <code>bravesess-mcp</code>
+  here, reading History through a narrow reader / <code>history-only</code> feature. Reuse without a
+  migration; both repos benefit.</li>
+<li><strong>Option A — this repo only.</strong> Add everything here, git-dep on <code>browser-chrome</code>.</li>
+<li><strong>Option B — consolidate into <code>browser-forensic</code>.</strong> Largest migration; unifies the fleet.</li>
+</ul>
+<hr />
+<h2 id="9-roadmap-resequenced-by-valuerisk">9. Roadmap — resequenced by value/risk<a class="headerlink" href="#9-roadmap-resequenced-by-valuerisk" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Phase 0 — done.</strong> <code>snss-core</code> + <code>bravesess</code> TUI, 69 tests.</li>
+<li><strong>Phase 1 — policy model + allow-list config + <code>Preview</code>.</strong> The gate must exist before any
+  exposure. (Was Phase 3; the critique correctly moved it first.)</li>
+<li><strong>Phase 2 — the MVP bridge (§10).</strong> One <code>bravesess context</code> command → one MCP
+  <code>browsing_context</code> tool, backed by <code>snss-core</code> + minimal <code>parse_visits</code>. <strong>The thing you
+  asked for.</strong></li>
+<li><strong>Phase 3 — bridge breadth.</strong> <code>did_user_visit</code>, <code>find_in_history</code>, <code>recent_searches</code>;
+  enrichment (<code>from_visit</code>, <code>transition</code>, duration with caveats).</li>
+<li><strong>Phase 4 — human surfaces.</strong> History as a TUI source for P1; ambient hook (off by default,
+  allow-list-only) once the policy model is proven.</li>
+<li><strong>Out of scope for now (§12):</strong> forensic integrity/carving, <code>snss-forensic</code>, embeddings.</li>
+</ul>
+<hr />
+<h2 id="10-minimum-viable-first-deliverable-codex-endorsed">10. Minimum-viable first deliverable (Codex-endorsed)<a class="headerlink" href="#10-minimum-viable-first-deliverable-codex-endorsed" title="Permanent link">&para;</a></h2>
+<p>One explicit, opt-in command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>bravesess context --recent 15m --profile default --allowlist domains.txt [--json]
+</code></pre></div>
+<p>Reads open + recently-closed tabs (<code>snss-core</code>) plus the last <em>N</em> minutes of
+<code>history.visits</code> (minimal <code>parse_visits</code>, redirect-collapsed), filtered through the
+allow-list, returning a small structured digest: <code>source</code>, <code>timeline_basis</code>, <code>open_tab</code>
+flag, url, title, <code>visited_at</code>, <code>untrusted_evidence</code>, <code>omitted_by_policy_count</code>.</p>
+<p><strong>Explicitly NOT in the MVP:</strong> ambient hook, automatic injection, TUI history browser,
+downloads/integrity/carving, embeddings, a <code>browsing-context</code> crate, and the
+<code>forensicnomicon</code> dependency. Allow-list <strong>required</strong>; deny-list optional. Once this output
+is trustworthy and reviewable, wire it to a single MCP <code>browsing_context</code> tool. Hook last.</p>
+<hr />
+<h2 id="11-what-changed-after-the-codex-critique">11. What changed after the Codex critique<a class="headerlink" href="#11-what-changed-after-the-codex-critique" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Draft said</th>
+<th>Final says (why)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Deny-list default</td>
+<td><strong>Allow-list floor</strong> for agents (deny-lists leak via GitHub/Slack/localhost/redirects)</td>
+</tr>
+<tr>
+<td>CLI ambient hook first</td>
+<td><strong>MCP pull first; hook last, off by default</strong> (ambient = largest blast radius)</td>
+</tr>
+<tr>
+<td><code>urls</code> table "unlocks 10 min ago"</td>
+<td><strong><code>visits</code> in the first deliverable</strong> (<code>urls</code> collapses repeat visits)</td>
+</tr>
+<tr>
+<td>Threat model omitted it</td>
+<td>Added <strong>prompt injection <em>from</em> browsing data</strong> + untrusted-evidence labeling</td>
+</tr>
+<tr>
+<td>"read 4m12s"</td>
+<td><code>visit_duration</code> <strong>is not read time</strong>; labelled with caveat, never ranked on</td>
+</tr>
+<tr>
+<td><code>browsing-context</code> crate up front</td>
+<td><strong>Policy module first</strong>; extract a crate only at a 2nd consumer (YAGNI)</td>
+</tr>
+<tr>
+<td><code>path = "~/src/..."</code> dep</td>
+<td><strong>git dep pinned to a rev</strong> (path deps break CI/packaging)</td>
+</tr>
+<tr>
+<td>TUI bypasses the chokepoint</td>
+<td><strong>Explicit policy modes</strong>; agents cannot construct an unfiltered path</td>
+</tr>
+<tr>
+<td>Tools return facts</td>
+<td>Tools return <strong>provenance</strong> (<code>source</code>, <code>matched_on</code>, <code>timeline_basis</code>, <code>omitted…</code>)</td>
+</tr>
+<tr>
+<td>Single-user assumption</td>
+<td><strong>Multi-profile / shared-machine</strong>: OS-user binding, <code>0600</code>, scoped discovery</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-out-of-scope-for-now-revisit-after-the-bridge-is-proven">12. Out of scope for now (revisit after the bridge is proven)<a class="headerlink" href="#12-out-of-scope-for-now-revisit-after-the-bridge-is-proven" title="Permanent link">&para;</a></h2>
+<p>P4 forensic synergy (<code>browser-integrity</code> history-cleared detection, <code>browser-carve</code> deleted-
+visit recovery, a <code>snss-forensic</code> Observation analyzer) and P5 semantic recall (embeddings
+over history via your existing pinecone/context-mode). Valuable, but each pulls the roadmap
+toward the full forensic fleet before the core agent-context path is validated and safe.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.tabs", "navigation.sections", "navigation.top", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

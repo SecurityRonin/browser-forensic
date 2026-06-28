@@ -1,0 +1,25 @@
+[
+  {
+    "description": "Firefox session parser decompresses sessionstore.jsonlz4 (LZ4 block) and emits BrowserEvent per open tab",
+    "steps": [
+      "Add lz4_flex = '0.11' to [workspace.dependencies] in root Cargo.toml",
+      "Add lz4_flex = { workspace = true } to crates/browser-firefox/Cargo.toml [dependencies]",
+      "Create crates/browser-firefox/src/session.rs with parse_session(path: &Path) -> Result<Vec<BrowserEvent>>",
+      "Export parse_session from crates/browser-firefox/src/lib.rs",
+      "Read file bytes. Verify first 8 bytes == b'mozLz40\\0' else return error",
+      "Bytes 8-12: u32 little-endian = uncompressed size",
+      "Bytes 12+: LZ4 block compressed data — decompress with lz4_flex::block::decompress(&data[12..], uncompressed_size)",
+      "Parse decompressed bytes as serde_json::Value",
+      "Walk: json['windows'] array -> each window['tabs'] array -> each tab['entries'] array (take last entry)",
+      "Timestamp: tab['lastAccessed'] (i64 ms) * 1_000_000 (ms to ns)",
+      "Set browser = BrowserFamily::Firefox, artifact = ArtifactKind::Session",
+      "Description: entry title or url. Attrs: url, title",
+      "Test factory: compress known JSON with lz4_flex::block::compress(), prepend magic + u32 LE size, write to NamedTempFile",
+      "Test: parse_empty_session_returns_empty — windows with empty tabs yields empty vec",
+      "Test: parse_session_with_single_tab — attrs[url] correct, ts_ns = lastAccessed * 1_000_000",
+      "Test: parse_session_invalid_magic_fails — file with wrong header returns Err",
+      "cargo test --workspace passes with 0 failures"
+    ],
+    "passes": true
+  }
+]
