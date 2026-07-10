@@ -68,7 +68,7 @@ fn apply_interpretation_sets_attr() {
         Some("Searched for \"how to wipe a disk\"")
     );
     // A plain example.com URL has no query, so no interpretation.
-    assert!(events[1].attrs.get("interpretation").is_none());
+    assert!(!events[1].attrs.contains_key("interpretation"));
 }
 
 #[test]
