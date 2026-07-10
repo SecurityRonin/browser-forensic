@@ -7,10 +7,37 @@
 use std::path::Path;
 
 use anyhow::Result;
-#[allow(unused_imports)]
 use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
-#[allow(unused_imports)]
 use serde_json::json;
+
+/// Parse one `user_pref("key", value);` statement into `(key, value)`.
+///
+/// Quoted string values are unquoted; `true`/`false`/integers are returned as
+/// their literal text. Returns `None` for lines that are not `user_pref` calls
+/// or are malformed.
+fn parse_user_pref(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    let inner = line.strip_prefix("user_pref(")?;
+    let inner = inner.trim_end();
+    let inner = inner.strip_suffix(';')?.trim_end();
+    let inner = inner.strip_suffix(')')?;
+
+    // Key is the first double-quoted token.
+    let rest = inner.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let key_end = rest.find('"')?;
+    let key = &rest[..key_end];
+
+    // Value follows the comma after the closing key quote.
+    let after_key = &rest[key_end + 1..];
+    let value_part = after_key.trim_start().strip_prefix(',')?.trim();
+    let value = if let Some(s) = value_part.strip_prefix('"') {
+        s.strip_suffix('"').unwrap_or(s).to_string()
+    } else {
+        value_part.to_string()
+    };
+    Some((key.to_string(), value))
+}
 
 /// Parse a Firefox `prefs.js` (or `user.js`) file.
 ///
@@ -21,9 +48,26 @@ use serde_json::json;
 /// # Errors
 ///
 /// Returns an error if the file cannot be read.
-#[allow(unused_variables)]
-pub fn parse_preferences(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    Ok(Vec::new())
+pub fn parse_preferences(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let data = std::fs::read_to_string(path)?;
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+    for line in data.lines() {
+        if let Some((key, value)) = parse_user_pref(line) {
+            events.push(
+                BrowserEvent::new(
+                    0,
+                    BrowserFamily::Firefox,
+                    ArtifactKind::Preferences,
+                    &source,
+                    format!("{key} = {value}"),
+                )
+                .with_attr("key", json!(key))
+                .with_attr("value", json!(value)),
+            );
+        }
+    }
+    Ok(events)
 }
 
 #[cfg(test)]
