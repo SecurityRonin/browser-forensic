@@ -88,7 +88,10 @@ SQLite marks deleted rows as free pages rather than overwriting them immediately
 | WAL recovery | ✅ | — | — | — |
 | Memory byte-pattern scanning | ✅ | — | — | — |
 | Embeddable Rust library | ✅ | — | — | — |
-| JSON / JSONL / CSV output | ✅ | — | ✅ | partial |
+| URL / cookie interpretation | ✅ | ✅ | — | — |
+| Preferences parsing | ✅ | ✅ | — | ✅ |
+| Correlated XLSX / SQLite export | ✅ | ✅ | — | partial |
+| JSON / JSONL / CSV output | ✅ | ✅ | ✅ | partial |
 
 ---
 
@@ -107,6 +110,7 @@ SQLite marks deleted rows as free pages rather than overwriting them immediately
 | Session State | ✅ | ✅ | — |
 | Top Sites | — | — | ✅ |
 | Profile Metadata (Local State) | ✅ | — | — |
+| Preferences | ✅ | ✅ | — |
 | Integrity indicators | ✅ | ✅ | ✅ |
 | SQLite free-page carving | ✅ | ✅ | ✅ |
 | WAL recovery | ✅ | ✅ | ✅ |
@@ -152,6 +156,48 @@ The triage report includes:
 
 ---
 
+## Interpretation
+
+`--interpret` adds a human-readable interpretation to each event, decoding the
+artifacts that carry hidden structure:
+
+- **Google searches** — extracts the query and search options from
+  `google.*/search` URLs (`Searched for "how to wipe a disk"`).
+- **Query strings** — decodes any URL's parameters into `key: value` pairs.
+- **Google Analytics cookies** — `__utma` / `__utmb` / `__utmc` / `__utmv` /
+  `__utmz` / `_ga` (visitor IDs, first/last visit times, campaign sources).
+- **Tracking / infrastructure cookies** — F5 BIG-IP `BIGipServer*` (decodes the
+  backend `IP:port`), Quantcast `__qca`, and a generic embedded-timestamp scan.
+
+Timestamps are inferred by magnitude (Unix seconds/millis/micros or WebKit),
+matching the ground truth without the caller declaring units. Cookie
+interpretation runs where a plaintext value is available (Firefox); Chrome cookie
+values stay encrypted and are never surfaced.
+
+```bash
+br4n6 export /mnt/evidence/Users/jsmith --interpret --format jsonl \
+  | jq 'select(.interpretation | test("Searched for"))'
+```
+
+## Correlated Export
+
+`br4n6 export` collects a single correlated timeline from a profile or home
+directory and writes it in the format an analyst wants:
+
+```bash
+# XLSX workbook (one Timeline sheet), timestamps in the examiner's timezone
+br4n6 export /mnt/evidence/Users/jsmith \
+  --format xlsx -o timeline.xlsx --timezone America/New_York --interpret
+
+# SQLite database with a single `timeline` table for ad-hoc SQL
+br4n6 export /mnt/evidence/Users/jsmith --format sqlite -o timeline.sqlite
+```
+
+Formats: `xlsx`, `sqlite` (both require `-o FILE`), and streaming `jsonl` / `csv`
+/ `text`. `--timezone` accepts any IANA name for human-facing timestamps.
+
+---
+
 ## Output Schema
 
 All commands share the same `BrowserEvent` envelope:
@@ -171,7 +217,7 @@ All commands share the same `BrowserEvent` envelope:
 }
 ```
 
-`timestamp_ns` is always Unix nanoseconds. `artifact` is the artifact kind (`History`, `Cookies`, `Downloads`, `Bookmarks`, `Autofill`, `LoginData`, `Extensions`, `Cache`, `Session`, `Integrity`, `Carved`, `Memory`).
+`timestamp_ns` is always Unix nanoseconds. `artifact` is the artifact kind (`History`, `Cookies`, `Downloads`, `Bookmarks`, `Autofill`, `LoginData`, `Extensions`, `Cache`, `Session`, `Preferences`, `LocalStorage`, `Integrity`, `Carved`, `Memory`).
 
 ---
 
