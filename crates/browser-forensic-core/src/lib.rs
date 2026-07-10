@@ -306,6 +306,18 @@ mod tests {
     }
 
     #[test]
+    fn artifact_kind_has_preferences_variant() {
+        let _p = ArtifactKind::Preferences;
+        assert_eq!(format!("{}", ArtifactKind::Preferences), "Preferences");
+    }
+
+    #[test]
+    fn artifact_kind_has_local_storage_variant() {
+        let _ls = ArtifactKind::LocalStorage;
+        assert_eq!(format!("{}", ArtifactKind::LocalStorage), "LocalStorage");
+    }
+
+    #[test]
     fn forensic_meta_lookup_chrome_history() {
         let meta = ForensicMeta::lookup("browser_chrome_history");
         assert!(meta.is_some());
