@@ -9,6 +9,7 @@ pub mod downloads;
 pub mod extensions;
 pub mod history;
 pub mod login_data;
+pub mod preferences;
 pub mod session;
 
 pub use autofill::parse_autofill;
@@ -19,4 +20,5 @@ pub use downloads::parse_downloads;
 pub use extensions::parse_extensions;
 pub use history::parse_history;
 pub use login_data::parse_login_data;
+pub use preferences::parse_preferences as parse_firefox_preferences;
 pub use session::parse_session;
