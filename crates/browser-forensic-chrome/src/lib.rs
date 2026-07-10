@@ -10,6 +10,7 @@ pub mod extensions;
 pub mod history;
 pub mod local_state;
 pub mod login_data;
+pub mod preferences;
 pub mod session;
 pub mod visits;
 
@@ -22,5 +23,6 @@ pub use extensions::parse_extensions;
 pub use history::parse_history;
 pub use local_state::parse_local_state;
 pub use login_data::parse_login_data;
+pub use preferences::parse_preferences;
 pub use session::parse_session;
 pub use visits::{collapse_redirects, parse_visits};

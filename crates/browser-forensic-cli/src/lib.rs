@@ -12,6 +12,7 @@ mod render;
 pub use render::draw;
 
 pub mod cli;
+pub mod export;
 
 /// The outcome of feeding one key to a single-line text prompt (the search and
 /// glob input loops). The loop owns the actual `event::read`/`draw`; this maps a

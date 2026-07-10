@@ -3,7 +3,15 @@ targets = []
 
 [advisories]
 version = 2
-ignore = []
+# Interim: quick-xml < 0.41 DoS advisories (quadratic attr check / unbounded
+# namespace allocation). Reached only transitively via `plist` 1.9, which pins
+# `quick-xml = "^0.39"` — so the tree cannot bump to 0.41 until `plist` releases.
+# Both are denial-of-service (resource exhaustion in XML parsing), not memory
+# unsafety/RCE. Drop these once `plist` widens its quick-xml requirement.
+ignore = [
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
 
 [licenses]
 version = 2

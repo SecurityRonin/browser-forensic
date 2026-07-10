@@ -24,6 +24,7 @@ browser-forensic-discovery = { version = "0.2.0", path = "../browser-forensic-di
 browser-forensic-integrity = { version = "0.2.0", path = "../browser-forensic-integrity" }
 browser-forensic-carve = { version = "0.2.0", path = "../browser-forensic-carve" }
 browser-forensic-triage = { version = "0.2.0", path = "../browser-forensic-triage" }
+browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-interpret" }
 ratatui = "0.30"
 crossterm = "0.29"
 arboard = "3.6"
@@ -31,15 +32,18 @@ open = "5"
 anyhow = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 dirs = { workspace = true }
+rusqlite = { workspace = true }
+rust_xlsxwriter = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
-rusqlite = { workspace = true }
 tempfile = { workspace = true }
 lz4_flex = { workspace = true }
+calamine = { workspace = true }
 
 [lints]
 workspace = true

@@ -7,6 +7,7 @@ members = [
     "crates/browser-forensic-discovery",
     "crates/browser-forensic-integrity",
     "crates/browser-forensic-carve",
+    "crates/browser-forensic-interpret",
     "crates/browser-forensic-memory",
     "crates/browser-forensic-triage",
     "crates/browser-forensic-cli",
@@ -36,6 +37,9 @@ assert_cmd = "2"
 tempfile = "3"
 forensicnomicon = { version = "1", features = ["serde"] }
 thiserror = "2"
+rust_xlsxwriter = "0.96"
+chrono-tz = "0.10"
+calamine = "0.34"
 
 [workspace.lints.rust]
 # Forbid unsafe across the suite — these crates parse untrusted browser artifacts;
