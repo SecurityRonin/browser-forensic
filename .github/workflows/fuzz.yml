@@ -26,7 +26,10 @@ jobs:
           components: rust-src
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - run: cargo install cargo-fuzz --locked
-      - run: cargo fuzz build
+      # `+nightly` beats the rust-toolchain.toml pin: cargo-fuzz's sanitizer -Z
+      # flags are nightly-only, and the toml pins a stable version that a bare
+      # `@nightly` action loses to.
+      - run: cargo +nightly fuzz build
       - name: Smoke-fuzz every target (30s each)
         run: |
           for t in fuzz_firefox_session fuzz_carve_sqlite fuzz_sqlite_history \
