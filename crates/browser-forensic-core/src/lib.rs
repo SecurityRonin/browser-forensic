@@ -53,6 +53,8 @@ pub enum ArtifactKind {
     Integrity,
     Carved,
     Memory,
+    Preferences,
+    LocalStorage,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -70,6 +72,8 @@ impl std::fmt::Display for ArtifactKind {
             Self::Integrity => write!(f, "Integrity"),
             Self::Carved => write!(f, "Carved"),
             Self::Memory => write!(f, "Memory"),
+            Self::Preferences => write!(f, "Preferences"),
+            Self::LocalStorage => write!(f, "LocalStorage"),
         }
     }
 }
