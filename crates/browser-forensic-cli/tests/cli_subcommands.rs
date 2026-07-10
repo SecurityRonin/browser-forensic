@@ -304,3 +304,104 @@ fn analyze_chrome_history_succeeds() {
         .assert()
         .success();
 }
+
+// ---- preferences ----
+
+#[test]
+fn preferences_chrome_json_parses() {
+    let dir = TempDir::new().unwrap();
+    let profile = dir.path().join("google-chrome").join("Default");
+    std::fs::create_dir_all(&profile).unwrap();
+    let prefs = profile.join("Preferences");
+    std::fs::write(
+        &prefs,
+        r#"{"homepage":"https://start.example.com/","download":{"default_directory":"/tmp/dl"}}"#,
+    )
+    .unwrap();
+    let output = br4n6()
+        .args(["preferences", prefs.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("start.example.com"), "got: {stdout}");
+}
+
+#[test]
+fn preferences_firefox_prefs_js_parses() {
+    let dir = TempDir::new().unwrap();
+    let prefs = dir.path().join("prefs.js");
+    std::fs::write(
+        &prefs,
+        "user_pref(\"browser.startup.homepage\", \"https://ff.example.com\");\n",
+    )
+    .unwrap();
+    let output = br4n6()
+        .args(["preferences", prefs.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("ff.example.com"), "got: {stdout}");
+}
+
+// ---- export ----
+
+#[test]
+fn export_jsonl_stream_from_chrome_home() {
+    let (_dir, path) = create_chrome_history();
+    let profile = path.parent().unwrap();
+    let output = br4n6()
+        .args(["export", profile.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .expect("run");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("example.com"), "got: {stdout}");
+}
+
+#[test]
+fn export_sqlite_writes_timeline_table() {
+    let (dir, path) = create_chrome_history();
+    let profile = path.parent().unwrap();
+    let out = dir.path().join("timeline.sqlite");
+    br4n6()
+        .args([
+            "export",
+            profile.to_str().unwrap(),
+            "--format",
+            "sqlite",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let conn = Connection::open(&out).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM timeline", [], |r| r.get(0))
+        .unwrap();
+    assert!(count >= 1, "timeline should have at least one event");
+}
+
+#[test]
+fn export_rejects_unknown_timezone() {
+    let (dir, _path) = create_chrome_history();
+    br4n6()
+        .args([
+            "export",
+            dir.path().to_str().unwrap(),
+            "--timezone",
+            "Bogus/Zone",
+            "--format",
+            "jsonl",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn export_sqlite_requires_output() {
+    let (dir, _path) = create_chrome_history();
+    br4n6()
+        .args(["export", dir.path().to_str().unwrap(), "--format", "sqlite"])
+        .assert()
+        .failure();
+}

@@ -105,6 +105,26 @@ enum Command {
     Session(ArtifactArgs),
     /// Parse browser cache.
     Cache(ArtifactArgs),
+    /// Parse browser preferences (Chrome `Preferences` / Firefox `prefs.js`).
+    Preferences(ArtifactArgs),
+    /// Export a correlated timeline for a profile/home to one file.
+    Export {
+        /// A profile directory or home directory to collect events from.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Export format.
+        #[arg(long, value_enum, default_value_t = crate::export::ExportFormat::Xlsx)]
+        format: crate::export::ExportFormat,
+        /// Output file (required for xlsx/sqlite; defaults to stdout otherwise).
+        #[arg(long, short = 'o', value_name = "FILE")]
+        output: Option<PathBuf>,
+        /// Render timestamps in this IANA timezone (e.g. `America/New_York`).
+        #[arg(long, value_name = "TZ")]
+        timezone: Option<String>,
+        /// Add an interpretation column (search terms, tracking cookies, …).
+        #[arg(long)]
+        interpret: bool,
+    },
     /// Discover browser profiles on this system (bw-style output).
     Profiles {
         /// Output format.
@@ -171,6 +191,20 @@ where
         Some(Command::Autofill(a)) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
+        Some(Command::Preferences(a)) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
+        Some(Command::Export {
+            path,
+            format,
+            output,
+            timezone,
+            interpret,
+        }) => run_export(
+            &path,
+            format,
+            output.as_deref(),
+            timezone.as_deref(),
+            interpret,
+        ),
         Some(Command::Profiles { format }) => run_profiles(format),
         Some(Command::Analyze { path, cap }) => run_analyze(&path, cap),
         Some(Command::Integrity(a)) => run_integrity(&a.path, a.format),
@@ -680,6 +714,19 @@ pub enum ArtifactType {
     Autofill,
     Session,
     Cache,
+    Preferences,
+}
+
+/// Infer a browser family from a preferences file name: `prefs.js`/`user.js` →
+/// Firefox, `Preferences`/`Secure Preferences` → Chromium. Returns `None` for
+/// anything else.
+#[must_use]
+pub fn preferences_family(path: &Path) -> Option<BrowserFamily> {
+    match path.file_name()?.to_string_lossy().to_lowercase().as_str() {
+        "prefs.js" | "user.js" => Some(BrowserFamily::Firefox),
+        "preferences" | "secure preferences" => Some(BrowserFamily::Chromium),
+        _ => None,
+    }
 }
 
 /// `br4n6 <artifact> PATH` — detect the browser family, parse the requested
@@ -694,6 +741,7 @@ pub fn run_artifact(path: &Path, artifact: ArtifactType, format: OutputFormat) -
 
     let family = detect_browser(path)
         .or_else(|| infer_browser_from_filename(path))
+        .or_else(|| preferences_family(path))
         .with_context(|| format!("cannot determine browser from path: {}", path.display()))?;
 
     let mut events = match (family, artifact) {
@@ -783,6 +831,16 @@ pub fn run_artifact(path: &Path, artifact: ArtifactType, format: OutputFormat) -
         (BrowserFamily::Safari, ArtifactType::Cache) => {
             anyhow::bail!("Safari cache not supported");
         }
+
+        (BrowserFamily::Chromium, ArtifactType::Preferences) => {
+            browser_forensic_chrome::parse_preferences(path)?
+        }
+        (BrowserFamily::Firefox, ArtifactType::Preferences) => {
+            browser_forensic_firefox::parse_firefox_preferences(path)?
+        }
+        (BrowserFamily::Safari, ArtifactType::Preferences) => {
+            anyhow::bail!("Safari preferences not supported");
+        }
     };
 
     events.sort_by_key(|e| e.timestamp_ns);
@@ -810,6 +868,89 @@ fn print_events(events: &[BrowserEvent], format: OutputFormat) {
             }
         }
     }
+}
+
+/// Detect a browser family from the artifact files directly inside a single
+/// profile directory: `History` → Chromium, `places.sqlite` → Firefox,
+/// `History.db` → Safari. Returns `None` if none is present.
+#[must_use]
+pub fn profile_family(dir: &Path) -> Option<BrowserFamily> {
+    if dir.join("History").is_file() {
+        Some(BrowserFamily::Chromium)
+    } else if dir.join("places.sqlite").is_file() {
+        Some(BrowserFamily::Firefox)
+    } else if dir.join("History.db").is_file() {
+        Some(BrowserFamily::Safari)
+    } else {
+        None
+    }
+}
+
+/// `br4n6 export` — collect a correlated timeline for a profile/home directory
+/// and write it as one file (XLSX / SQLite) or stream (JSONL / CSV / text), with
+/// an optional interpretation column and an IANA timezone for timestamps.
+///
+/// # Errors
+/// Returns an error if the timezone is unknown, collection fails, a file-only
+/// format is requested without `--output`, or writing fails.
+pub fn run_export(
+    path: &Path,
+    format: crate::export::ExportFormat,
+    output: Option<&Path>,
+    timezone: Option<&str>,
+    interpret: bool,
+) -> Result<()> {
+    use crate::export::{self, ExportFormat};
+
+    let tz = match timezone {
+        Some(name) => Some(
+            name.parse::<chrono_tz::Tz>()
+                .map_err(|_| anyhow::anyhow!("unknown IANA timezone: {name}"))?,
+        ),
+        None => None,
+    };
+
+    // Try a home-directory scan first (discovers profiles under `path`); if that
+    // finds nothing, fall back to treating `path` itself as a single profile
+    // directory (the Hindsight "point at a profile" model).
+    let mut report = browser_forensic_triage::triage(path)
+        .with_context(|| format!("collecting timeline from {}", path.display()))?;
+    if report.profiles.is_empty() && report.events.is_empty() {
+        if let Some(family) = profile_family(path) {
+            report = browser_forensic_triage::triage_profile(path, family)
+                .with_context(|| format!("collecting timeline from profile {}", path.display()))?;
+        }
+    }
+    let mut events = report.events;
+    if interpret {
+        export::apply_interpretation(&mut events);
+    }
+    events.sort_by_key(|e| e.timestamp_ns);
+
+    match format {
+        ExportFormat::Sqlite => {
+            let out = output.context("--output FILE is required for --format sqlite")?;
+            export::write_sqlite(&events, tz, out)?;
+            eprintln!("wrote {} events to {}", events.len(), out.display());
+        }
+        ExportFormat::Xlsx => {
+            let out = output.context("--output FILE is required for --format xlsx")?;
+            export::write_xlsx(&events, tz, out)?;
+            eprintln!("wrote {} events to {}", events.len(), out.display());
+        }
+        ExportFormat::Text | ExportFormat::Jsonl | ExportFormat::Csv => {
+            if let Some(p) = output {
+                let mut f = std::fs::File::create(p)
+                    .with_context(|| format!("creating {}", p.display()))?;
+                export::write_stream(&events, format, tz, &mut f)?;
+            } else {
+                let stdout = std::io::stdout();
+                let mut lock = stdout.lock();
+                export::write_stream(&events, format, tz, &mut lock)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `br4n6 profiles` — discover browser profiles under the current user's home,
