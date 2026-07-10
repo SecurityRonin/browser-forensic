@@ -306,6 +306,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser-forensic-interpret"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "url",
+]
+
+[[package]]
 name = "browser-forensic-mcp"
 version = "0.2.0"
 dependencies = [

@@ -1,0 +1,15 @@
+[package]
+name = "browser-forensic-interpret"
+version = "0.2.0"
+description = "Interpretation plugins for browser artifacts (search terms, tracking cookies, timestamps)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+url = { workspace = true }
+
+[lints]
+workspace = true
