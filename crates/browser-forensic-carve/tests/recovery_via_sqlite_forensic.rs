@@ -7,6 +7,8 @@
 //! Fixture is built by the real SQLite engine via rusqlite (already a dep), so the
 //! ground truth is derived from the documented construction, not a hand fixture.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::collections::HashMap;
 
 use browser_forensic_carve::carve_sqlite_free_pages;

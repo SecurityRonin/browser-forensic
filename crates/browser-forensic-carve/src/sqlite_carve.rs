@@ -1,79 +1,65 @@
-//! SQLite free-page carving for deleted record recovery.
+//! SQLite deleted-record recovery.
+//!
+//! Delegated to the validated [`sqlite_forensic`] carver rather than a hand-rolled
+//! free-page byte scan. `sqlite-forensic` reconstructs deleted rows from every
+//! free-space substrate — freelist pages, **in-page freeblocks** (the dominant
+//! browser-history deletion pattern, invisible to a free-page-only scan),
+//! coalesced freeblocks, and overflow chains — under a structural
+//! **0-false-positive exclusion invariant** (a still-live row is never reported as
+//! deleted), and is fuzzed + tier-1 validated against the NIST/Nemetz corpora. The
+//! public [`carve_sqlite_free_pages`] contract is unchanged; the recovery beneath
+//! it is a strict upgrade over the previous `http`-substring page scan.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use sqlite_core::{Database, Value};
+use sqlite_forensic::{attribute_records, carve_all_deleted_records, Attribution};
 
 use crate::{CarveResult, CarveStats, CarvedRecord, RecoveryMethod, RecoveryQuality};
-use forensicnomicon::sqlite::{
-    SQLITE_FREELIST_TRUNK_OFFSET, SQLITE_HEADER_SIZE, SQLITE_MAGIC, SQLITE_PAGE_SIZE_OFFSET,
-};
+
+/// Confidence at or above which a recovered record is graded [`RecoveryQuality::Complete`]
+/// (a full, high-confidence row reconstruction); below it the recovery is
+/// [`RecoveryQuality::Partial`] (e.g. a freeblock-reconstructed row whose clobbered
+/// header was re-derived).
+const COMPLETE_CONFIDENCE: f32 = 0.7;
 
 pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
     let data = std::fs::read(path)
         .with_context(|| format!("failed to read SQLite file: {}", path.display()))?;
+    let bytes_scanned = data.len() as u64;
 
-    if data.len() < SQLITE_HEADER_SIZE {
-        anyhow::bail!("file too small to be a valid SQLite database");
-    }
+    // sqlite-core validates the header (magic, page-size range, structure) and
+    // returns an error — never panics — on a malformed or non-SQLite file, so the
+    // adversarial-header guards the old hand-rolled path carried live here too.
+    let db =
+        Database::open(data).map_err(|e| anyhow::anyhow!("not a valid SQLite database: {e:?}"))?;
 
-    if &data[..SQLITE_MAGIC.len()] != SQLITE_MAGIC {
-        anyhow::bail!("not a SQLite database (bad magic)");
-    }
+    let carved = carve_all_deleted_records(&db);
+    let attributions = attribute_records(&db, &carved);
+    let page_size = u64::from(db.header().page_size.max(1));
 
-    let page_size = {
-        let raw = u16::from_be_bytes([
-            data[SQLITE_PAGE_SIZE_OFFSET],
-            data[SQLITE_PAGE_SIZE_OFFSET + 1],
-        ]) as usize;
-        if raw == 1 {
-            65536
+    let mut records = Vec::with_capacity(carved.len());
+    let mut records_recovered = 0usize;
+    let mut records_partial = 0usize;
+    for (rec, attr) in carved.iter().zip(attributions.iter()) {
+        let mapped = map_carved_record(rec, attr, page_size);
+        if matches!(mapped.quality, RecoveryQuality::Complete) {
+            records_recovered += 1;
         } else {
-            raw
+            records_partial += 1;
         }
-    };
-
-    // The SQLite file format (sqlite.org/fileformat2.html §1.3.2) defines the page
-    // size as a power of two between 512 and 65536 inclusive. An attacker-controlled
-    // header can carry anything: 0 would divide-by-zero below, and a non-zero value
-    // under 8 leaves a freelist-trunk page shorter than its 8-byte prelude, reading
-    // out of bounds. Enforce the spec range up front so every page calculation and
-    // trunk read downstream is structurally safe.
-    if !(512..=65536).contains(&page_size) || !page_size.is_power_of_two() {
-        anyhow::bail!("invalid SQLite page size ({page_size})");
+        records.push(mapped);
     }
 
-    let freelist_trunk = u32::from_be_bytes([
-        data[SQLITE_FREELIST_TRUNK_OFFSET],
-        data[SQLITE_FREELIST_TRUNK_OFFSET + 1],
-        data[SQLITE_FREELIST_TRUNK_OFFSET + 2],
-        data[SQLITE_FREELIST_TRUNK_OFFSET + 3],
-    ]) as usize;
-
-    let total_pages = data.len() / page_size;
-
-    let mut stats = CarveStats {
-        bytes_scanned: data.len() as u64,
-        pages_scanned: total_pages as u32,
-        free_pages_found: 0,
-        records_recovered: 0,
-        records_partial: 0,
+    let stats = CarveStats {
+        bytes_scanned,
+        pages_scanned: db.file_page_count(),
+        free_pages_found: db.freelist_count(),
+        records_recovered,
+        records_partial,
     };
-
-    let mut records = Vec::new();
-    let free_pages = collect_free_pages(&data, freelist_trunk, page_size);
-    stats.free_pages_found = free_pages.len() as u32;
-
-    for &page_num in &free_pages {
-        let page_offset = (page_num - 1) * page_size;
-        if page_offset + page_size > data.len() {
-            continue;
-        }
-        let page_data = &data[page_offset..page_offset + page_size];
-        let recovered = scan_page_for_urls(page_data, page_offset as u64);
-        stats.records_recovered += recovered.len();
-        records.extend(recovered);
-    }
 
     Ok(CarveResult {
         records,
@@ -82,80 +68,76 @@ pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
     })
 }
 
-fn collect_free_pages(data: &[u8], first_trunk: usize, page_size: usize) -> Vec<usize> {
-    let mut free_pages = Vec::new();
-    let mut trunk_page = first_trunk;
+/// Map a [`sqlite_forensic`] carved record plus its table attribution onto the
+/// browser-forensic [`CarvedRecord`] the CLI and triage consume.
+fn map_carved_record(
+    rec: &sqlite_forensic::CarvedRecord,
+    attr: &Attribution,
+    page_size: u64,
+) -> CarvedRecord {
+    // Absolute byte offset of the cell: a 1-based page number → 0-based file offset.
+    let offset = u64::from(rec.page.saturating_sub(1))
+        .saturating_mul(page_size)
+        .saturating_add(rec.offset as u64);
 
-    while trunk_page > 0 {
-        let offset = (trunk_page - 1) * page_size;
-        if offset + page_size > data.len() {
-            break;
-        }
-        free_pages.push(trunk_page);
-        let trunk = &data[offset..offset + page_size];
-        let next_trunk = u32::from_be_bytes([trunk[0], trunk[1], trunk[2], trunk[3]]) as usize;
-        let leaf_count = u32::from_be_bytes([trunk[4], trunk[5], trunk[6], trunk[7]]) as usize;
+    let table = match attr {
+        Attribution::Known(name) => name.clone(),
+        Attribution::Inferred { guess, .. } => guess.clone(),
+        Attribution::Unattributed => "unknown".to_string(),
+    };
 
-        for i in 0..leaf_count {
-            let leaf_offset = 8 + i * 4;
-            if leaf_offset + 4 > page_size {
-                break;
-            }
-            let leaf_page = u32::from_be_bytes([
-                trunk[leaf_offset],
-                trunk[leaf_offset + 1],
-                trunk[leaf_offset + 2],
-                trunk[leaf_offset + 3],
-            ]) as usize;
-            if leaf_page > 0 {
-                free_pages.push(leaf_page);
-            }
-        }
-
-        trunk_page = next_trunk;
+    // Every recovered column, keyed positionally (`col0`, `col1`, …) — the actual
+    // values the deleted row held, not just a URL byte-match.
+    let mut fields: HashMap<String, serde_json::Value> = HashMap::with_capacity(rec.values.len());
+    for (i, value) in rec.values.iter().enumerate() {
+        fields.insert(format!("col{i}"), value_to_json(value));
     }
-    free_pages
+
+    CarvedRecord {
+        offset,
+        table,
+        fields,
+        // `carve_sqlite_free_pages` opens the main database only (no `-wal`, no
+        // `-journal`), so every recovered record comes from an on-disk free-space
+        // class (freelist page / in-page freeblock / freeblock reconstruction /
+        // dropped-table residue / prior version) — all reported as `FreePage`. WAL
+        // and rollback-journal recovery are the separate `recover_from_wal` path.
+        method: RecoveryMethod::FreePage,
+        quality: if rec.confidence >= COMPLETE_CONFIDENCE {
+            RecoveryQuality::Complete
+        } else {
+            RecoveryQuality::Partial
+        },
+    }
 }
 
-fn scan_page_for_urls(page_data: &[u8], page_offset: u64) -> Vec<CarvedRecord> {
-    let mut records = Vec::new();
-    let needle = b"http";
-
-    let mut i = 0;
-    while i + needle.len() <= page_data.len() {
-        if &page_data[i..i + needle.len()] != needle {
-            i += 1;
-            continue;
-        }
-        // Found "http" at byte index i — scan forward for end of printable ASCII
-        let end = page_data[i..]
-            .iter()
-            .position(|&b| !(0x20..=0x7e).contains(&b))
-            .map_or(page_data.len(), |pos| i + pos);
-
-        if end > i + 10 {
-            if let Ok(url) = std::str::from_utf8(&page_data[i..end]) {
-                if url.starts_with("http://") || url.starts_with("https://") {
-                    let mut fields = std::collections::HashMap::new();
-                    fields.insert("url".to_string(), serde_json::json!(url));
-                    records.push(CarvedRecord {
-                        offset: page_offset + i as u64,
-                        table: "unknown".to_string(),
-                        fields,
-                        method: RecoveryMethod::FreePage,
-                        quality: RecoveryQuality::Partial,
-                    });
-                }
-            }
-        }
-        i += 1;
+/// Decode a SQLite [`Value`] to JSON for the recovered-record field map. A BLOB is
+/// hex-encoded so the value round-trips as a JSON string rather than being lost.
+fn value_to_json(value: &Value) -> serde_json::Value {
+    match value {
+        Value::Null => serde_json::Value::Null,
+        Value::Integer(n) => serde_json::json!(n),
+        Value::Real(r) => serde_json::json!(r),
+        Value::Text(t) => serde_json::json!(t),
+        Value::Blob(b) => serde_json::json!(hex_encode(b)),
     }
-    records
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(char::from_digit(u32::from(byte >> 4), 16).unwrap_or('0'));
+        out.push(char::from_digit(u32::from(byte & 0x0f), 16).unwrap_or('0'));
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forensicnomicon::sqlite::{
+        SQLITE_FREELIST_TRUNK_OFFSET, SQLITE_HEADER_SIZE, SQLITE_MAGIC, SQLITE_PAGE_SIZE_OFFSET,
+    };
     use rusqlite::Connection;
     use tempfile::NamedTempFile;
 
@@ -209,6 +191,22 @@ mod tests {
     fn carve_nonexistent_file_returns_error() {
         let result = carve_sqlite_free_pages(std::path::Path::new("/nonexistent/db"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_json_maps_every_sqlite_type() {
+        assert_eq!(value_to_json(&Value::Null), serde_json::Value::Null);
+        assert_eq!(value_to_json(&Value::Integer(42)), serde_json::json!(42));
+        assert_eq!(value_to_json(&Value::Real(1.5)), serde_json::json!(1.5));
+        assert_eq!(
+            value_to_json(&Value::Text("u".to_string())),
+            serde_json::json!("u")
+        );
+        // A BLOB hex-encodes so it round-trips as a JSON string, never dropped.
+        assert_eq!(
+            value_to_json(&Value::Blob(vec![0x00, 0xab, 0xff])),
+            serde_json::json!("00abff")
+        );
     }
 
     #[test]
