@@ -10,20 +10,13 @@
 //! public [`carve_sqlite_free_pages`] contract is unchanged; the recovery beneath
 //! it is a strict upgrade over the previous `http`-substring page scan.
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use sqlite_core::{Database, Value};
-use sqlite_forensic::{attribute_records, carve_all_deleted_records, Attribution};
+use sqlite_core::Database;
+use sqlite_forensic::{attribute_records, carve_all_deleted_records};
 
-use crate::{CarveResult, CarveStats, CarvedRecord, RecoveryMethod, RecoveryQuality};
-
-/// Confidence at or above which a recovered record is graded [`RecoveryQuality::Complete`]
-/// (a full, high-confidence row reconstruction); below it the recovery is
-/// [`RecoveryQuality::Partial`] (e.g. a freeblock-reconstructed row whose clobbered
-/// header was re-derived).
-const COMPLETE_CONFIDENCE: f32 = 0.7;
+use crate::{map_carved_record, CarveResult, CarveStats, RecoveryQuality};
 
 pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
     let data = std::fs::read(path)
@@ -66,70 +59,6 @@ pub fn carve_sqlite_free_pages(path: &Path) -> Result<CarveResult> {
         integrity: Vec::new(),
         stats,
     })
-}
-
-/// Map a [`sqlite_forensic`] carved record plus its table attribution onto the
-/// browser-forensic [`CarvedRecord`] the CLI and triage consume.
-fn map_carved_record(
-    rec: &sqlite_forensic::CarvedRecord,
-    attr: &Attribution,
-    page_size: u64,
-) -> CarvedRecord {
-    // Absolute byte offset of the cell: a 1-based page number → 0-based file offset.
-    let offset = u64::from(rec.page.saturating_sub(1))
-        .saturating_mul(page_size)
-        .saturating_add(rec.offset as u64);
-
-    let table = match attr {
-        Attribution::Known(name) => name.clone(),
-        Attribution::Inferred { guess, .. } => guess.clone(),
-        Attribution::Unattributed => "unknown".to_string(),
-    };
-
-    // Every recovered column, keyed positionally (`col0`, `col1`, …) — the actual
-    // values the deleted row held, not just a URL byte-match.
-    let mut fields: HashMap<String, serde_json::Value> = HashMap::with_capacity(rec.values.len());
-    for (i, value) in rec.values.iter().enumerate() {
-        fields.insert(format!("col{i}"), value_to_json(value));
-    }
-
-    CarvedRecord {
-        offset,
-        table,
-        fields,
-        // `carve_sqlite_free_pages` opens the main database only (no `-wal`, no
-        // `-journal`), so every recovered record comes from an on-disk free-space
-        // class (freelist page / in-page freeblock / freeblock reconstruction /
-        // dropped-table residue / prior version) — all reported as `FreePage`. WAL
-        // and rollback-journal recovery are the separate `recover_from_wal` path.
-        method: RecoveryMethod::FreePage,
-        quality: if rec.confidence >= COMPLETE_CONFIDENCE {
-            RecoveryQuality::Complete
-        } else {
-            RecoveryQuality::Partial
-        },
-    }
-}
-
-/// Decode a SQLite [`Value`] to JSON for the recovered-record field map. A BLOB is
-/// hex-encoded so the value round-trips as a JSON string rather than being lost.
-fn value_to_json(value: &Value) -> serde_json::Value {
-    match value {
-        Value::Null => serde_json::Value::Null,
-        Value::Integer(n) => serde_json::json!(n),
-        Value::Real(r) => serde_json::json!(r),
-        Value::Text(t) => serde_json::json!(t),
-        Value::Blob(b) => serde_json::json!(hex_encode(b)),
-    }
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(char::from_digit(u32::from(byte >> 4), 16).unwrap_or('0'));
-        out.push(char::from_digit(u32::from(byte & 0x0f), 16).unwrap_or('0'));
-    }
-    out
 }
 
 #[cfg(test)]
@@ -191,22 +120,6 @@ mod tests {
     fn carve_nonexistent_file_returns_error() {
         let result = carve_sqlite_free_pages(std::path::Path::new("/nonexistent/db"));
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn value_to_json_maps_every_sqlite_type() {
-        assert_eq!(value_to_json(&Value::Null), serde_json::Value::Null);
-        assert_eq!(value_to_json(&Value::Integer(42)), serde_json::json!(42));
-        assert_eq!(value_to_json(&Value::Real(1.5)), serde_json::json!(1.5));
-        assert_eq!(
-            value_to_json(&Value::Text("u".to_string())),
-            serde_json::json!("u")
-        );
-        // A BLOB hex-encodes so it round-trips as a JSON string, never dropped.
-        assert_eq!(
-            value_to_json(&Value::Blob(vec![0x00, 0xab, 0xff])),
-            serde_json::json!("00abff")
-        );
     }
 
     #[test]

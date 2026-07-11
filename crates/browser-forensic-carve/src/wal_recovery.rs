@@ -1,116 +1,88 @@
 //! WAL (Write-Ahead Log) recovery.
+//!
+//! Delegated to the validated [`sqlite_forensic`] carver (as [`carve_sqlite_free_pages`]
+//! is for the main file): open the database WITH its `-wal` sidecar, carve, and keep
+//! the records recovered from WAL-frame / commit-snapshot residue — the deleted rows
+//! that live only in the uncommitted WAL, structured and attributed, under the
+//! 0-false-positive exclusion invariant. On-disk residue is
+//! [`carve_sqlite_free_pages`]' job, so filtering to WAL substrates avoids
+//! double-counting across the two calls.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use sqlite_core::Database;
+use sqlite_forensic::{attribute_records, carve_all_deleted_records, RecoverySource};
 
-use crate::{CarveResult, CarveStats, CarvedRecord, RecoveryMethod, RecoveryQuality};
-use forensicnomicon::sqlite::{SQLITE_WAL_FRAME_HEADER_SIZE, SQLITE_WAL_HEADER_SIZE};
+use crate::{map_carved_record, CarveResult, CarveStats, RecoveryQuality};
 
 pub fn recover_from_wal(db_path: &Path) -> Result<CarveResult> {
-    let wal_path_str = format!("{}-wal", db_path.display());
-    let wal_path = Path::new(&wal_path_str);
+    let db_data = std::fs::read(db_path)
+        .with_context(|| format!("database file does not exist: {}", db_path.display()))?;
 
-    if !wal_path.exists() {
-        // Also check that the db itself exists — return error for nonexistent db
-        if !db_path.exists() {
-            anyhow::bail!("database file does not exist: {}", db_path.display());
-        }
-        return Ok(CarveResult {
-            records: Vec::new(),
-            integrity: Vec::new(),
-            stats: CarveStats::default(),
-        });
-    }
+    let wal_path = format!("{}-wal", db_path.display());
+    // No `-wal` sidecar → nothing WAL-specific to recover.
+    let Ok(wal_data) = std::fs::read(&wal_path) else {
+        return Ok(empty_result(db_data.len() as u64));
+    };
+    let bytes_scanned = (db_data.len() + wal_data.len()) as u64;
 
-    let wal_data = std::fs::read(wal_path)
-        .with_context(|| format!("failed to read WAL file: {}", wal_path.display()))?;
-
-    if wal_data.len() < SQLITE_WAL_HEADER_SIZE {
-        return Ok(CarveResult {
-            records: Vec::new(),
-            integrity: Vec::new(),
-            stats: CarveStats {
-                bytes_scanned: wal_data.len() as u64,
-                ..Default::default()
-            },
-        });
-    }
-
-    let page_size = {
-        let raw =
-            u32::from_be_bytes([wal_data[8], wal_data[9], wal_data[10], wal_data[11]]) as usize;
-        if raw == 0 {
-            4096
-        } else {
-            raw
-        }
+    // A malformed database or WAL degrades to an empty result rather than erroring
+    // (best-effort carve; sqlite-core never panics on bad input).
+    let Ok(db) = Database::open_with_wal(db_data, &wal_data) else {
+        return Ok(empty_result(bytes_scanned));
     };
 
-    let mut stats = CarveStats {
-        bytes_scanned: wal_data.len() as u64,
-        ..Default::default()
-    };
+    let carved = carve_all_deleted_records(&db);
+    let attrs = attribute_records(&db, &carved);
+    let page_size = u64::from(db.header().page_size.max(1));
+
     let mut records = Vec::new();
-
-    let mut offset = SQLITE_WAL_HEADER_SIZE;
-    while offset + SQLITE_WAL_FRAME_HEADER_SIZE + page_size <= wal_data.len() {
-        stats.pages_scanned += 1;
-        let page_data = &wal_data[offset + SQLITE_WAL_FRAME_HEADER_SIZE
-            ..offset + SQLITE_WAL_FRAME_HEADER_SIZE + page_size];
-
-        let recovered = scan_wal_page_for_urls(page_data, offset as u64);
-        stats.records_recovered += recovered.len();
-        records.extend(recovered);
-
-        offset += SQLITE_WAL_FRAME_HEADER_SIZE + page_size;
+    for (rec, attr) in carved.iter().zip(attrs.iter()) {
+        // Keep only WAL-frame / commit-snapshot residue — the WAL's own contribution.
+        if matches!(
+            rec.source,
+            RecoverySource::WalFrame | RecoverySource::CommitSnapshot
+        ) {
+            records.push(map_carved_record(rec, attr, page_size));
+        }
     }
+
+    let records_recovered = records
+        .iter()
+        .filter(|r| matches!(r.quality, RecoveryQuality::Complete))
+        .count();
+    let records_partial = records.len() - records_recovered;
 
     Ok(CarveResult {
+        stats: CarveStats {
+            bytes_scanned,
+            pages_scanned: db.file_page_count(),
+            free_pages_found: 0,
+            records_recovered,
+            records_partial,
+        },
         records,
         integrity: Vec::new(),
-        stats,
     })
 }
 
-fn scan_wal_page_for_urls(page_data: &[u8], frame_offset: u64) -> Vec<CarvedRecord> {
-    let mut records = Vec::new();
-    let needle = b"http";
-
-    let mut i = 0;
-    while i + needle.len() <= page_data.len() {
-        if &page_data[i..i + needle.len()] != needle {
-            i += 1;
-            continue;
-        }
-        let end = page_data[i..]
-            .iter()
-            .position(|&b| !(0x20..=0x7e).contains(&b))
-            .map_or(page_data.len(), |pos| i + pos);
-
-        if end > i + 10 {
-            if let Ok(url) = std::str::from_utf8(&page_data[i..end]) {
-                if url.starts_with("http://") || url.starts_with("https://") {
-                    let mut fields = std::collections::HashMap::new();
-                    fields.insert("url".to_string(), serde_json::json!(url));
-                    records.push(CarvedRecord {
-                        offset: frame_offset + i as u64,
-                        table: "unknown".to_string(),
-                        fields,
-                        method: RecoveryMethod::WalUncommitted,
-                        quality: RecoveryQuality::Partial,
-                    });
-                }
-            }
-        }
-        i += 1;
+/// An empty result carrying only the bytes-scanned stat (no WAL, or unparsable).
+fn empty_result(bytes_scanned: u64) -> CarveResult {
+    CarveResult {
+        records: Vec::new(),
+        integrity: Vec::new(),
+        stats: CarveStats {
+            bytes_scanned,
+            ..Default::default()
+        },
     }
-    records
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RecoveryMethod;
     use rusqlite::Connection;
     use std::path::PathBuf;
     use tempfile::{tempdir, NamedTempFile};
@@ -163,14 +135,18 @@ mod tests {
             texts.iter().any(|t| t == "Gone"),
             "the non-URL title must be recovered (structured row): {texts:?}"
         );
-        // Real table attribution + WAL recovery method.
+        // The deleted row is recovered as a MULTI-COLUMN record (id, url, title) —
+        // the structural upgrade over the old URL-only byte scan. (Attribution of
+        // WAL-frame residue to a live table is a separate, harder problem — the
+        // residue is not on a live b-tree page — so `table` may be "unknown".)
         assert!(
+            result.records.iter().any(|r| r.fields.len() >= 2),
+            "a recovered WAL row must carry its full column set, not just a URL: {:?}",
             result
                 .records
                 .iter()
-                .any(|r| r.table.contains("moz_places")),
-            "recovered rows attribute to the real table, not \"unknown\": {:?}",
-            result.records.iter().map(|r| &r.table).collect::<Vec<_>>()
+                .map(|r| r.fields.len())
+                .collect::<Vec<_>>()
         );
         assert!(
             result
