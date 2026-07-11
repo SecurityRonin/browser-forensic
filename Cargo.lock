@@ -221,6 +221,8 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sqlite-core",
+ "sqlite-forensic",
  "tempfile",
  "thiserror 2.0.18",
 ]
@@ -2422,6 +2424,25 @@ name = "snss-core"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e3785e094b7380928e000155a8973e2a7073a4e1759e504cc4e013a0887d089"
+
+[[package]]
+name = "sqlite-core"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9beb05e4966c9eb8c5b1902c08274769366295e6d046a1bf8de3872fe4df6216"
+dependencies = [
+ "forensicnomicon",
+]
+
+[[package]]
+name = "sqlite-forensic"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4039e64da317cc0ec656d480d255384592229ea900075ba9f8743311fe24cdcf"
+dependencies = [
+ "forensicnomicon",
+ "sqlite-core",
+]
 
 [[package]]
 name = "stable_deref_trait"

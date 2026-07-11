@@ -36,6 +36,8 @@ clap = { version = "4", features = ["derive"] }
 assert_cmd = "2"
 tempfile = "3"
 forensicnomicon = { version = "1", features = ["serde"] }
+sqlite-core = "0.9"
+sqlite-forensic = "0.9"
 thiserror = "2"
 rust_xlsxwriter = "0.96"
 chrono-tz = "0.10"
