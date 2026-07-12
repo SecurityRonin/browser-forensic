@@ -12,6 +12,7 @@ browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 snss-core = "0.1.0"
+url = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
