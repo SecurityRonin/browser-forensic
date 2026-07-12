@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use browser_forensic_core::BrowserFamily;
+use forensicnomicon::browser_profiles::{attribute_container, AppKind, ContainerApp};
 use serde::Serialize;
 
 /// A browser profile discovered on the filesystem.
@@ -12,6 +13,49 @@ pub struct DiscoveredProfile {
     pub browser: BrowserFamily,
     pub name: String,
     pub path: PathBuf,
+    /// Container-app attribution when the path matched a known app; `None` for a
+    /// profile-shaped directory that matched no catalog entry (still discovered,
+    /// just generically labelled).
+    pub container: Option<ContainerAttribution>,
+}
+
+/// Attribution of a discovered container to a known app, derived from
+/// [`forensicnomicon::browser_profiles::attribute_container`]. A compact view of
+/// the catalog entry (name / vendor / kind) rather than the full record, so a
+/// swept inventory stays readable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ContainerAttribution {
+    /// App name (e.g. `"Slack"`, `"OneDrive"`).
+    pub app: &'static str,
+    /// Vendor / publisher.
+    pub vendor: &'static str,
+    /// How the app embeds Chromium (`Browser` / `Electron` / `WebView2` / `Cef`).
+    pub kind: AppKind,
+}
+
+impl From<&'static ContainerApp> for ContainerAttribution {
+    fn from(a: &'static ContainerApp) -> Self {
+        Self {
+            app: a.name,
+            vendor: a.vendor,
+            kind: a.kind,
+        }
+    }
+}
+
+/// Attribute a filesystem path to a known container app, if any.
+fn attribution_for(path: &Path) -> Option<ContainerAttribution> {
+    attribute_container(&path.to_string_lossy()).map(ContainerAttribution::from)
+}
+
+/// Recursively sweep an evidence tree rooted at `root` for Chromium/Firefox
+/// profiles and embedded-Chromium containers (Electron / WebView2 / CEF),
+/// attributing each match to a known app where possible.
+///
+/// (RED: stub — implemented in the GREEN commit.)
+#[must_use]
+pub fn sweep_containers(_root: &Path) -> Vec<DiscoveredProfile> {
+    Vec::new()
 }
 
 /// Known Chromium-based browser base directories relative to `home`.
@@ -75,10 +119,12 @@ fn discover_chromium_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
                 let path = entry.path();
                 if path.is_dir() && path.join("History").is_file() {
                     let name = entry.file_name().to_string_lossy().to_string();
+                    let container = attribution_for(&path);
                     out.push(DiscoveredProfile {
                         browser: BrowserFamily::Chromium,
                         name,
                         path,
+                        container,
                     });
                 }
             }
@@ -99,10 +145,12 @@ fn discover_firefox_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
                 let path = entry.path();
                 if path.is_dir() && path.join("places.sqlite").is_file() {
                     let name = entry.file_name().to_string_lossy().to_string();
+                    let container = attribution_for(&path);
                     out.push(DiscoveredProfile {
                         browser: BrowserFamily::Firefox,
                         name,
                         path,
+                        container,
                     });
                 }
             }
@@ -115,10 +163,12 @@ fn discover_firefox_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
 fn discover_safari_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
     let safari = home.join("Library/Safari");
     if safari.join("History.db").is_file() {
+        let container = attribution_for(&safari);
         out.push(DiscoveredProfile {
             browser: BrowserFamily::Safari,
             name: "Default".to_string(),
             path: safari,
+            container,
         });
     }
 }
@@ -297,5 +347,134 @@ mod tests {
         assert!(profiles
             .iter()
             .any(|p| p.browser == BrowserFamily::Chromium));
+    }
+
+    // -- sweep_containers: structural signature sweep over an evidence tree -----
+
+    fn find<'a>(profiles: &'a [DiscoveredProfile], name: &str) -> Option<&'a DiscoveredProfile> {
+        profiles.iter().find(|p| p.name == name)
+    }
+
+    #[test]
+    fn sweep_finds_and_attributes_chrome_profile() {
+        let root = TempDir::new().unwrap();
+        let default = root
+            .path()
+            .join("Users/x/AppData/Local/Google/Chrome/User Data/Default");
+        fs::create_dir_all(&default).unwrap();
+        fs::write(default.join("History"), b"").unwrap();
+
+        let hits = sweep_containers(root.path());
+        let p = find(&hits, "Default").expect("Default profile discovered");
+        assert_eq!(p.browser, BrowserFamily::Chromium);
+        let c = p.container.expect("attributed");
+        assert_eq!(c.app, "Google Chrome");
+    }
+
+    #[test]
+    fn sweep_finds_webview2_ebwebview_container() {
+        let root = TempDir::new().unwrap();
+        // OneDrive WebView2 UDF: version folder between OneDrive and EBWebView.
+        let profile = root
+            .path()
+            .join("Users/x/AppData/Local/Microsoft/OneDrive/25.1/EBWebView/Default");
+        fs::create_dir_all(profile.join("Local Storage/leveldb")).unwrap();
+
+        let hits = sweep_containers(root.path());
+        let one = hits
+            .iter()
+            .find(|p| p.container.map(|c| c.app) == Some("OneDrive"))
+            .expect("OneDrive EBWebView discovered");
+        assert_eq!(one.container.unwrap().kind, AppKind::WebView2);
+    }
+
+    #[test]
+    fn sweep_finds_electron_slack_local_storage() {
+        let root = TempDir::new().unwrap();
+        let slack = root
+            .path()
+            .join("Users/x/Library/Application Support/Slack");
+        fs::create_dir_all(slack.join("Local Storage/leveldb")).unwrap();
+
+        let hits = sweep_containers(root.path());
+        let s = hits
+            .iter()
+            .find(|p| p.container.map(|c| c.app) == Some("Slack"))
+            .expect("Slack container discovered");
+        assert_eq!(s.container.unwrap().kind, AppKind::Electron);
+    }
+
+    #[test]
+    fn sweep_finds_firefox_profile() {
+        let root = TempDir::new().unwrap();
+        let ff = root.path().join("evidence/abc.default-release");
+        fs::create_dir_all(&ff).unwrap();
+        fs::write(ff.join("places.sqlite"), b"").unwrap();
+
+        let hits = sweep_containers(root.path());
+        let p = find(&hits, "abc.default-release").expect("Firefox profile discovered");
+        assert_eq!(p.browser, BrowserFamily::Firefox);
+    }
+
+    #[test]
+    fn sweep_discovers_unknown_chromium_dir_generically() {
+        // The generalization test: an unknown-named Chromium-shaped directory is
+        // still discovered, just without attribution (container == None).
+        let root = TempDir::new().unwrap();
+        let mystery = root.path().join("some/RandomToolThatEmbedsChromium");
+        fs::create_dir_all(&mystery).unwrap();
+        fs::write(mystery.join("Web Data"), b"").unwrap();
+
+        let hits = sweep_containers(root.path());
+        let p = find(&hits, "RandomToolThatEmbedsChromium").expect("still discovered");
+        assert_eq!(p.browser, BrowserFamily::Chromium);
+        assert!(
+            p.container.is_none(),
+            "unknown app must be generic, not attributed"
+        );
+    }
+
+    #[test]
+    fn sweep_empty_tree_is_empty() {
+        let root = TempDir::new().unwrap();
+        assert!(sweep_containers(root.path()).is_empty());
+    }
+
+    #[test]
+    fn sweep_nonexistent_root_does_not_panic() {
+        let hits = sweep_containers(Path::new("/no/such/path/hopefully"));
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn sweep_does_not_descend_into_matched_profile_artifacts() {
+        // A profile's own IndexedDB/Local Storage subtree must not be re-emitted
+        // as nested profiles.
+        let root = TempDir::new().unwrap();
+        let default = root.path().join("Chrome/User Data/Default");
+        fs::create_dir_all(default.join("IndexedDB")).unwrap();
+        fs::write(default.join("History"), b"").unwrap();
+
+        let hits = sweep_containers(root.path());
+        let chromium = hits
+            .iter()
+            .filter(|p| p.browser == BrowserFamily::Chromium)
+            .count();
+        assert_eq!(
+            chromium, 1,
+            "should emit exactly one profile, not nested ones"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sweep_does_not_follow_symlink_cycles() {
+        use std::os::unix::fs::symlink;
+        let root = TempDir::new().unwrap();
+        let sub = root.path().join("a/b");
+        fs::create_dir_all(&sub).unwrap();
+        // b/loop -> a (a cycle); sweep must terminate.
+        symlink(root.path().join("a"), sub.join("loop")).unwrap();
+        let _ = sweep_containers(root.path());
     }
 }
