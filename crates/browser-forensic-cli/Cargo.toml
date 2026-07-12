@@ -28,6 +28,7 @@ browser-forensic-cache = { version = "0.1.0", path = "../browser-forensic-cache"
 browser-forensic-reconstruct = { version = "0.1.0", path = "../browser-forensic-reconstruct" }
 browser-forensic-triage = { version = "0.2.0", path = "../browser-forensic-triage" }
 browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-interpret" }
+browser-forensic-search = { version = "0.2.0", path = "../browser-forensic-search" }
 ratatui = "0.30"
 crossterm = "0.29"
 arboard = "3.6"
