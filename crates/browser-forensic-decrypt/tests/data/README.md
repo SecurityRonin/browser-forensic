@@ -39,3 +39,36 @@ python3 -m venv env && ./env/bin/pip install pycryptodome pyasn1
 
 Regenerated files differ byte-for-byte (random salts/IVs/master key) but carry
 the same known credentials.
+
+# Windows Chromium (DPAPI + AES-256-GCM) test vectors — `win_dpapi_vectors.json`
+
+Synthetic vectors for `chromium_win` / `dpapi`, carrying **known** ground truth
+(masterkey `312a…6d9f`, 32-byte Chromium key `00010203…1e1f`, plaintext
+`session-token=SECRET42`).
+
+## Provenance / tiering
+
+* **Source / generator:** `gen_win.py` (this directory) — an independent DPAPI
+  encoder written to the `[MS-DPAPI]` masterkey/blob layout and Chromium's
+  `os_crypt_win.cc` value format.
+* **GCM `v10`/`v11` blobs — tier-2:** encrypted with **PyCryptodome** (an
+  independent oracle) under an *externally-fixed* AES-256 key (`00..1f`); the
+  Rust code recovers `session-token=SECRET42`.
+* **`NIST_GCM_*` — tier-1 for the primitive:** the NIST CAVP AES-256-GCM KAT
+  (`gcmEncryptExtIV256`, empty PT/AAD, tag `bdc1ac88…76f0`) — a published answer
+  key, not one we authored.
+* **DPAPI masterkey + blob — tier-2:** generated to the `[MS-DPAPI]` layout and
+  **confirmed by impacket's `dpapi.py` decrypt path** (an unrelated third-party
+  tool): impacket independently recovers the same masterkey and 32-byte key, and
+  rejects a wrong password. The *same bytes* are the Rust vectors.
+* **NOT tier-1 end-to-end:** these are **not** validated against a real Windows
+  profile in this environment (no Windows host). See `docs/validation.md`.
+* **License / redistribution:** wholly synthetic, no real personal data; freely
+  redistributable under this repository's licence.
+
+## Regenerate
+
+```
+python3 -m venv env && ./env/bin/pip install pycryptodome impacket
+./env/bin/python gen_win.py win_dpapi_vectors.json   # re-asserts the impacket oracle
+```

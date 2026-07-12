@@ -30,11 +30,13 @@
 
 pub mod asn1;
 pub mod chromium_macos;
+pub mod chromium_win;
 pub mod error;
 pub mod nss;
 
 pub use chromium_macos::{
     decrypt_chromium_value_macos, derive_chromium_macos_key, fetch_macos_keychain_key,
 };
+pub use chromium_win::decrypt_chromium_value_win;
 pub use error::{DecryptError, Result};
 pub use nss::{decrypt_firefox_logins, DecryptedLogin};

@@ -57,6 +57,45 @@ pub enum DecryptError {
     #[error("decrypted value is not valid UTF-8 ({0} bytes)")]
     NotUtf8(usize),
 
+    /// A Windows Chromium value carried an unrecognized version prefix (not
+    /// `v10`/`v11`/`v20`). Carries the actual leading bytes (hex) found instead.
+    #[error("unrecognized Chromium value prefix (leading bytes, hex): {0}")]
+    UnknownVersion(String),
+
+    /// A Windows Chromium value uses App-Bound Encryption (`v20`, Chrome 127+),
+    /// whose key is wrapped by the SYSTEM `elevation_service`. Offline recovery
+    /// needs the SYSTEM DPAPI master key, which was not supplied — REFUSED rather
+    /// than fabricated. Carries a diagnostic.
+    #[error("App-Bound Encryption (v20) is not decryptable without the SYSTEM key: {0}")]
+    AppBoundUnsupported(String),
+
+    /// AES-256-GCM authentication failed: the tag did not verify. The key is
+    /// wrong or the ciphertext/tag was tampered with. Loud refusal, never a
+    /// fabricated value.
+    #[error("AES-256-GCM authentication failed (wrong key or tampered data): {0}")]
+    Gcm(String),
+
+    /// A DPAPI blob or master-key file could not be parsed or decrypted. Carries
+    /// a description (and, where relevant, the offending value / offset).
+    #[error("DPAPI error: {0}")]
+    Dpapi(String),
+
+    /// The DPAPI master-key HMAC check failed: the supplied user password (or
+    /// pre-derived key) is wrong, or the master-key file is damaged. The loud
+    /// refusal that gates a wrong password — never a fabricated key.
+    #[error("DPAPI master-key password incorrect or file damaged (HMAC did not verify)")]
+    WrongDpapiPassword,
+
+    /// Chromium `Local State` could not be parsed, or its
+    /// `os_crypt.encrypted_key` was missing / not valid base64. Carries the
+    /// reason.
+    #[error("Chromium Local State error: {0}")]
+    LocalState(String),
+
+    /// A base64 field could not be decoded. Carries the reason.
+    #[error("base64 decode error: {0}")]
+    Base64(String),
+
     /// An underlying I/O failure.
     #[error("io error: {0}")]
     Io(String),

@@ -14,7 +14,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 # RustCrypto — audited primitives only; NEVER hand-roll (Paranoid Gatekeeper).
 aes = "0.8"
-cbc = { version = "0.1", features = ["alloc"] }
+aes-gcm = "0.10"
+cbc = { version = "0.1", features = ["alloc", "block-padding"] }
 des = "0.8"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 hmac = "0.12"
