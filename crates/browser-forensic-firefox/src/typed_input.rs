@@ -22,15 +22,42 @@ use serde_json::json;
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_typed_input(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub: real implementation lands in the GREEN commit.
-    let _ = (
-        open_evidence_db,
-        json!(0),
-        ArtifactKind::TypedInput,
-        BrowserFamily::Firefox,
-    );
-    Ok(Vec::new())
+pub fn parse_typed_input(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let mut stmt = conn.prepare(
+        "SELECT ih.input, p.url, ih.use_count \
+         FROM moz_inputhistory ih \
+         JOIN moz_places p ON ih.place_id = p.id \
+         ORDER BY ih.use_count DESC, ih.input ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let input: String = row.get(0)?;
+            let url: String = row.get(1)?;
+            // use_count is a decayed REAL in real profiles despite INTEGER
+            // affinity, and may be NULL; rusqlite's f64 accepts both.
+            let use_count: f64 = row.get::<_, Option<f64>>(2)?.unwrap_or(0.0);
+            Ok((input, url, use_count))
+        })?
+        .filter_map(std::result::Result::ok)
+        .map(|(input, url, use_count)| {
+            let desc = format!("typed \u{201c}{input}\u{201d} \u{2192} {url}");
+            // No per-keystroke timestamp exists in moz_inputhistory.
+            BrowserEvent::new(
+                0,
+                BrowserFamily::Firefox,
+                ArtifactKind::TypedInput,
+                &source,
+                desc,
+            )
+            .with_attr("input", json!(input))
+            .with_attr("url", json!(url))
+            .with_attr("use_count", json!(use_count))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
