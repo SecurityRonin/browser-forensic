@@ -376,6 +376,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser-forensic-correlate"
+version = "0.1.0"
+dependencies = [
+ "browser-forensic-core",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "browser-forensic-decrypt"
 version = "0.2.0"
 dependencies = [

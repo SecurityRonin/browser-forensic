@@ -1,0 +1,20 @@
+[package]
+name = "browser-forensic-correlate"
+version = "0.1.0"
+description = "Cross-artifact / cross-browser correlation: unified timeline, per-host rollup, and entity graph over the normalized BrowserEvent stream (read-only)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
