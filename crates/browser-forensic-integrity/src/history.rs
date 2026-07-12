@@ -464,6 +464,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn chromium_future_visit_timestamp_detected() {
+        let db = TestDb::new(chrome_history_schema());
+        db.insert("INSERT INTO urls(id, url, title, visit_count, last_visit_time) VALUES (1, 'https://a.com', 'A', 1, 16000000000000000)", rusqlite::params![]);
+        // Webkit micros ~1.6e16 -> ~year 2107, far past the file's mtime.
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (1, 1, 16000000000000000, 0, 0)", rusqlite::params![]);
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
+        assert!(
+            result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::TimestampInFuture { row_id: 1, .. })),
+            "a visit dated ~2107 should be flagged as future relative to acquisition, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn chromium_last_visit_time_mismatch_detected() {
+        let db = TestDb::new(chrome_history_schema());
+        // urls.last_visit_time claims a newer visit than any surviving visits row.
+        db.insert("INSERT INTO urls(id, url, title, visit_count, last_visit_time) VALUES (1, 'https://a.com', 'A', 2, 13000000005000000)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (1, 1, 13000000000000000, 0, 0)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (2, 1, 13000000001000000, 0, 0)", rusqlite::params![]);
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
+        assert!(
+            result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::LastVisitMismatch { url_id: 1, .. })),
+            "urls.last_visit_time != max(visits.visit_time) should fire, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn firefox_future_visit_timestamp_detected() {
+        let db = TestDb::new(firefox_history_schema());
+        // Unix micros ~4.1e15 -> ~year 2100.
+        db.insert(
+            "INSERT INTO moz_places VALUES (1, 'https://a.com', 'A', 1, 4100000000000000)",
+            rusqlite::params![],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits VALUES (1, 0, 1, 4100000000000000, 1)",
+            rusqlite::params![],
+        );
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Firefox).expect("check");
+        assert!(
+            result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::TimestampInFuture { .. })),
+            "a Firefox visit dated ~2100 should be flagged as future, got {result:?}"
+        );
+    }
+
     fn firefox_history_schema() -> &'static str {
         "CREATE TABLE moz_places (
             id INTEGER PRIMARY KEY,
