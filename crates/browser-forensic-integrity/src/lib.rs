@@ -5,6 +5,7 @@
 pub mod cookies;
 pub mod database;
 pub mod history;
+pub mod manual_edit;
 pub mod pages;
 pub mod sqlite_header;
 
