@@ -14,6 +14,7 @@ pub mod permissions;
 pub mod preferences;
 pub mod session;
 pub mod site_security;
+pub mod typed_input;
 pub mod visits;
 
 pub use autofill::parse_autofill;
@@ -28,4 +29,5 @@ pub use permissions::parse_permissions as parse_firefox_permissions;
 pub use preferences::parse_preferences as parse_firefox_preferences;
 pub use session::parse_session;
 pub use site_security::parse_site_security;
+pub use typed_input::parse_typed_input;
 pub use visits::parse_visits;

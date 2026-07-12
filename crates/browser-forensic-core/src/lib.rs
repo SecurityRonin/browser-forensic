@@ -81,6 +81,10 @@ pub enum ArtifactKind {
     /// Audio/video playback recorded by Chromium `Media History` (watch time,
     /// resume position, media title).
     MediaPlayback,
+    /// A string the user typed into the address bar and the page it resolved to
+    /// (Firefox `moz_inputhistory`). Direct evidence of typed intent; carries a
+    /// decayed `use_count`, not a per-keystroke timestamp.
+    TypedInput,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -109,6 +113,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::Shortcut => write!(f, "Shortcut"),
             Self::NetworkPrediction => write!(f, "NetworkPrediction"),
             Self::MediaPlayback => write!(f, "MediaPlayback"),
+            Self::TypedInput => write!(f, "TypedInput"),
         }
     }
 }
