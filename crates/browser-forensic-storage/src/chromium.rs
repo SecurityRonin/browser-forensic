@@ -302,6 +302,69 @@ mod tests {
         (dir, db_path)
     }
 
+    /// Parse an ASCII-hex string into bytes (test helper).
+    fn hx(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// UTF-16-BE encode with a leading single-byte unit count (small strings).
+    fn u16be_lp(s: &str) -> Vec<u8> {
+        let units: Vec<u16> = s.encode_utf16().collect();
+        let mut out = vec![u8::try_from(units.len()).unwrap()];
+        for u in units {
+            out.extend_from_slice(&u.to_be_bytes());
+        }
+        out
+    }
+
+    /// Build a real IndexedDB LevelDB dir: database "testdb", store "records",
+    /// one data record keyed String "k1" whose value is the real captured Reddit
+    /// blob decoding to the string "false".
+    fn build_idb_leveldb() -> (TempDir, PathBuf) {
+        let mut db_name_key = hx("00000000c9");
+        db_name_key.extend_from_slice(&u16be_lp("https_example.com_0@1"));
+        db_name_key.extend_from_slice(&u16be_lp("testdb"));
+        let store_key = hx("00010000320100");
+        let store_val: Vec<u8> = "records"
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect();
+        let mut data_key = hx("00010101");
+        data_key.push(0x01); // String key
+        data_key.push(0x02); // 2 units
+        data_key.extend_from_slice(
+            &"k1"
+                .encode_utf16()
+                .flat_map(u16::to_be_bytes)
+                .collect::<Vec<u8>>(),
+        );
+        let data_val = hx("03ff15fe000000000000000000000000ff0f220566616c7365");
+        build_leveldb(&[
+            (&db_name_key, &[0x01]),
+            (&store_key, &store_val),
+            (&data_key, &data_val),
+        ])
+    }
+
+    #[test]
+    fn parse_indexeddb_decodes_data_record() {
+        let (_dir, db_path) = build_idb_leveldb();
+        let events = parse_indexeddb(&db_path).unwrap();
+        assert_eq!(events.len(), 1, "one object-store data record");
+        let ev = &events[0];
+        assert_eq!(ev.attrs["storage_type"], json!(STORAGE_TYPE_INDEXEDDB));
+        assert_eq!(ev.attrs["db_name"], json!("testdb"));
+        assert_eq!(ev.attrs["origin"], json!("https_example.com_0@1"));
+        assert_eq!(ev.attrs["store_name"], json!("records"));
+        assert_eq!(ev.attrs["key"], json!("k1"));
+        assert_eq!(ev.attrs["value"], json!("false"));
+        assert_eq!(ev.attrs["value_decoded"], json!(true));
+        assert!(ev.description.contains("testdb"));
+    }
+
     #[test]
     fn data_record_carries_meta_timestamp_and_attrs() {
         // META webkit micros for 1s after the Unix epoch.
