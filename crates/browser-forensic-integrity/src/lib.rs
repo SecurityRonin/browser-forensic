@@ -6,6 +6,7 @@ pub mod cookies;
 pub mod database;
 pub mod history;
 pub mod pages;
+pub mod sqlite_header;
 
 pub use cookies::check_cookie_integrity;
 pub use database::{check_database_integrity, check_wal_state};
