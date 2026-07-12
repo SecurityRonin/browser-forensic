@@ -63,6 +63,34 @@ pub fn interpret_url(url: &str) -> Option<String> {
     google_searches(url).or_else(|| query_string(url))
 }
 
+/// A search-engine query recovered from a URL's parameters.
+///
+/// `engine` names the recognised provider (`"Google"`, `"Bing"`,
+/// `"DuckDuckGo"`, `"YouTube"`, `"Amazon"`) or `"Generic"` when the host is
+/// unknown but a well-known search parameter (`q`/`p`/`query`/`search`) carries
+/// a term. The `term` is the percent-decoded, `+`→space value of that
+/// parameter. This is a *fact* read out of the URL, not an inference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchQuery {
+    /// Recognised search provider, or `"Generic"`.
+    pub engine: String,
+    /// The decoded search term.
+    pub term: String,
+}
+
+/// Extract a search term from a URL by matching known search-engine hosts and
+/// their query parameters, falling back to generic `q`/`p`/`query`/`search`
+/// parameters on any host. Returns `None` when no search parameter is present.
+///
+/// Extends [`interpret_url`]'s Google-only search-term logic to Bing,
+/// DuckDuckGo, YouTube, and Amazon, and exposes the raw term (rather than a
+/// prose interpretation) for downstream entity extraction.
+#[must_use]
+pub fn search_query(_url: &str) -> Option<SearchQuery> {
+    // GREEN cycle replaces this stub with the multi-engine implementation.
+    None
+}
+
 /// Interpret a cookie `(name, value)`: GA / Quantcast / BIG-IP, then a generic
 /// embedded-timestamp scan.
 #[must_use]
