@@ -51,14 +51,53 @@ cross-checked against impacket on synthetic vectors."*
   `fuzz_decrypt_dpapi` cargo-fuzz target (must-not-panic; 10.5M runs / 91s clean
   at time of writing).
 
-## Firefox NSS + macOS Chromium (Milestone 2a)
+## macOS Chromium cookie domain-hash prefix (Milestone 2c)
+
+Chromium cookie-DB schema **v24+** prepends the raw 32-byte `SHA-256(domain)`
+digest to a cookie's plaintext value *before* `v10`/`v11` encryption, then
+verifies and strips it on load. Per Chromium
+`net/extras/sqlite/sqlite_persistent_cookie_store.cc`:
+
+* encrypt — `EncryptString(StrCat({crypto::SHA256HashString(cc.Domain()),
+  cc.Value()}), …)`;
+* load — `StartsWith(value, crypto::SHA256HashString(domain))` then
+  `value = value.substr(correct_hash.length())`, else `kHashFailed`.
+
+`domain` is the `host_key` column verbatim (the cookie's canonical `Domain()`),
+and the digest is the raw 32-byte SHA-256 output (not hex).
+
+**macOS Chromium `v10` decryption is now TIER-1.** A throwaway cookie
+`br4n6probe` on host `127.0.0.1` was written by a live Chrome, then its real
+`Cookies` ciphertext was decrypted with the real macOS login-Keychain "Chrome
+Safe Storage" key. The recovered plaintext was
+`SHA-256("127.0.0.1") || "br4n6-tier1-probe-7f3a91c2"` — the planted known value
+recovered EXACTLY behind the 32-byte domain-binding prefix. Both the value and
+the key material were authored/held outside this code (Chrome + the OS Keychain),
+so the answer key is independent. `strip_domain_hash_prefix` now removes and
+verifies that prefix; `SHA-256("127.0.0.1") =
+12ca17b49af2289436f303e0166030a21e525d266e209267433801a8fd4071a0` is confirmed
+byte-identical by two unrelated tools (`shasum -a 256` and Python `hashlib`).
+
+| Path | Validation | Tier |
+|---|---|---|
+| macOS `v10` decrypt of a live-Chrome cookie + real Keychain key | Planted value `br4n6-tier1-probe-7f3a91c2` recovered exactly behind the confirmed `SHA-256(host)` prefix | 1 |
+| `strip_domain_hash_prefix` strip+verify | Reconstructed `SHA-256(host) \|\| value` → clean value + `verified=true`; the prefix equals the independent `SHA-256("127.0.0.1")` oracle | 1 (value)/2 (oracle) |
+| Domain mismatch (moved between domains) | A 32-byte prefix that is not `SHA-256(host_key)` is surfaced RAW with `domain_bound=false` — never silently stripped | 2 |
+
+The strip is **secure by default**: it only removes the prefix when the hash
+matches, so a legitimately ≥32-byte value that is not domain-bound passes through
+intact, and a mismatch is reported (`domain_bound=false`) rather than dropped —
+consistent with the cookie value having been moved between domains.
+
+## Firefox NSS + macOS Chromium primitive (Milestone 2a)
 
 * **Firefox NSS** (`ff3des`, `ffpbes2`) — validated against the unrelated
   **firepwd** tool (tier 1 on PBES2; the 3DES login step falls back to the
   firepwd-confirmed ASN.1 decoder + standard 3DES-CBC). See
   `tests/data/README.md`.
-* **macOS Chromium `v10`** — validated against a Python `hashlib` + `cryptography`
-  oracle with an externally-fixed key (tier 2).
+* **macOS Chromium `v10` primitive** — the AES-128-CBC + PBKDF2 key derivation is
+  additionally cross-checked against a Python `hashlib` + `cryptography` oracle
+  with an externally-fixed key (tier 2); the end-to-end path is tier-1 above.
 
 ## The four hard rules (all paths)
 

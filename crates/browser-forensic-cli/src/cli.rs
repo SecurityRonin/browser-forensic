@@ -1475,10 +1475,16 @@ pub fn decrypt_chromium_cookies(path: &Path, storage_key: &[u8; 16]) -> Result<V
     for row in rows {
         let (creation_utc, host_key, name, cookie_path, encrypted) = row?;
         // A wrong key / non-v10 blob surfaces the loud reason, never a fake value.
-        let value =
+        // On success, strip Chromium's SHA-256(host_key) domain-binding prefix
+        // (schema v24+); a mismatch surfaces the raw value with domain_bound=false.
+        let (value, domain_bound) =
             match browser_forensic_decrypt::decrypt_chromium_value_macos(&encrypted, storage_key) {
-                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                Err(e) => format!("DECRYPT_FAILED: {e}"),
+                Ok(bytes) => {
+                    let (clean, bound) =
+                        browser_forensic_decrypt::strip_domain_hash_prefix(&bytes, &host_key);
+                    (String::from_utf8_lossy(&clean).into_owned(), bound)
+                }
+                Err(e) => (format!("DECRYPT_FAILED: {e}"), false),
             };
         let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
         let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
@@ -1493,7 +1499,8 @@ pub fn decrypt_chromium_cookies(path: &Path, storage_key: &[u8; 16]) -> Result<V
             .with_attr("host", json!(host_key))
             .with_attr("name", json!(name))
             .with_attr("path", json!(cookie_path))
-            .with_attr("value", json!(value)),
+            .with_attr("value", json!(value))
+            .with_attr("domain_bound", json!(domain_bound)),
         );
     }
     Ok(events)
@@ -1600,10 +1607,17 @@ pub fn decrypt_chromium_cookies_win(path: &Path, key: &[u8; 32]) -> Result<Vec<B
     let mut events = Vec::new();
     for row in rows {
         let (creation_utc, host_key, name, cookie_path, encrypted) = row?;
-        let value = match browser_forensic_decrypt::decrypt_chromium_value_win(&encrypted, key) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(e) => format!("DECRYPT_FAILED: {e}"),
-        };
+        // Strip the platform-independent SHA-256(host_key) domain-binding prefix
+        // (schema v24+) on success; a mismatch keeps the raw value, domain_bound=false.
+        let (value, domain_bound) =
+            match browser_forensic_decrypt::decrypt_chromium_value_win(&encrypted, key) {
+                Ok(bytes) => {
+                    let (clean, bound) =
+                        browser_forensic_decrypt::strip_domain_hash_prefix(&bytes, &host_key);
+                    (String::from_utf8_lossy(&clean).into_owned(), bound)
+                }
+                Err(e) => (format!("DECRYPT_FAILED: {e}"), false),
+            };
         let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
         let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
         events.push(
@@ -1617,7 +1631,8 @@ pub fn decrypt_chromium_cookies_win(path: &Path, key: &[u8; 32]) -> Result<Vec<B
             .with_attr("host", json!(host_key))
             .with_attr("name", json!(name))
             .with_attr("path", json!(cookie_path))
-            .with_attr("value", json!(value)),
+            .with_attr("value", json!(value))
+            .with_attr("domain_bound", json!(domain_bound)),
         );
     }
     Ok(events)
