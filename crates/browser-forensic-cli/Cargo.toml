@@ -45,6 +45,7 @@ assert_cmd = { workspace = true }
 tempfile = { workspace = true }
 lz4_flex = { workspace = true }
 calamine = { workspace = true }
+rusty-leveldb = "4"
 
 [lints]
 workspace = true

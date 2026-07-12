@@ -139,6 +139,10 @@ enum Command {
     RecoveredDomains(ArtifactArgs),
     /// Parse web storage (Local/Session Storage, IndexedDB).
     Storage(ArtifactArgs),
+    /// Decode a Chromium IndexedDB LevelDB directory directly: database and
+    /// object-store names, keys, and Blink/V8-serialized values. `PATH` is a
+    /// single `*.indexeddb.leveldb` directory.
+    Indexeddb(ArtifactArgs),
     /// Parse a Chromium `Favicons` database (page_url visited-URL source).
     Favicons(ArtifactArgs),
     /// Parse a Chromium `Top Sites` database (most-visited / frecency).
@@ -252,6 +256,7 @@ where
         Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
         Some(Command::RecoveredDomains(a)) => run_recovered_domains(&a.path, a.format),
         Some(Command::Storage(a)) => run_storage(&a.path, a.format),
+        Some(Command::Indexeddb(a)) => run_indexeddb(&a.path, a.format),
         Some(Command::Favicons(a)) => run_favicons(&a.path, a.format),
         Some(Command::TopSites(a)) => run_top_sites(&a.path, a.format),
         Some(Command::Shortcuts(a)) => run_shortcuts(&a.path, a.format),
@@ -1263,6 +1268,19 @@ pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 indexeddb PATH` — decode a Chromium IndexedDB LevelDB directory
+/// directly: database/object-store names, keys, and Blink/V8 values.
+///
+/// # Errors
+/// Returns an error if the directory cannot be opened or read as LevelDB.
+pub fn run_indexeddb(path: &Path, format: OutputFormat) -> Result<()> {
+    // RED stub — real handler lands in the GREEN commit.
+    anyhow::bail!(
+        "run_indexeddb not implemented ({}, {format:?})",
+        path.display()
+    );
+}
+
 /// `br4n6 permissions PATH` — surface per-site permission grants. `PATH` is a
 /// Chromium `Preferences` / `Secure Preferences` JSON file, or a Firefox
 /// `permissions.sqlite`. Metadata only; no secrets are involved.
@@ -1908,6 +1926,71 @@ mod tests {
         }
     }
 
+    /// Build a real IndexedDB LevelDB dir: database "testdb", store "records",
+    /// one data record keyed String "k1" whose value is the real captured
+    /// Reddit blob decoding to the string "false".
+    fn build_idb_leveldb_dir() -> tempfile::TempDir {
+        fn hx(s: &str) -> Vec<u8> {
+            (0..s.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+                .collect()
+        }
+        fn u16be_lp(s: &str) -> Vec<u8> {
+            let units: Vec<u16> = s.encode_utf16().collect();
+            let mut out = vec![u8::try_from(units.len()).unwrap()];
+            for u in units {
+                out.extend_from_slice(&u.to_be_bytes());
+            }
+            out
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("https_example.com_0.indexeddb.leveldb");
+        let mut db_name_key = hx("00000000c9");
+        db_name_key.extend_from_slice(&u16be_lp("https_example.com_0@1"));
+        db_name_key.extend_from_slice(&u16be_lp("testdb"));
+        let store_key = hx("00010000320100");
+        let store_val: Vec<u8> = "records"
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect();
+        let mut data_key = hx("00010101");
+        data_key.extend_from_slice(&[0x01, 0x02]);
+        data_key.extend_from_slice(
+            &"k1"
+                .encode_utf16()
+                .flat_map(u16::to_be_bytes)
+                .collect::<Vec<u8>>(),
+        );
+        let data_val = hx("03ff15fe000000000000000000000000ff0f220566616c7365");
+        let opt = rusty_leveldb::Options {
+            create_if_missing: true,
+            ..Default::default()
+        };
+        let mut db = rusty_leveldb::DB::open(&db_path, opt).unwrap();
+        db.put(&db_name_key, &[0x01]).unwrap();
+        db.put(&store_key, &store_val).unwrap();
+        db.put(&data_key, &data_val).unwrap();
+        db.flush().unwrap();
+        db.close().unwrap();
+        dir
+    }
+
+    #[test]
+    fn run_indexeddb_decodes_all_formats() {
+        let dir = build_idb_leveldb_dir();
+        let p = dir.path().join("https_example.com_0.indexeddb.leveldb");
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_indexeddb(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_indexeddb_nonexistent_errors() {
+        assert!(run_indexeddb(Path::new("/nonexistent/idb.leveldb"), OutputFormat::Text).is_err());
+    }
+
+    #[test]
     #[test]
     fn run_storage_webappsstore_all_formats() {
         let dir = tempfile::tempdir().unwrap();
