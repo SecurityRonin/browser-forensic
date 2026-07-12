@@ -20,4 +20,5 @@
 //! `ccl_chromium_indexeddb` reverse engineering (used as the differential oracle).
 
 mod key;
+mod v8;
 mod varint;
