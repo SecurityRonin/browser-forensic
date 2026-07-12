@@ -1506,6 +1506,81 @@ fn collect_profile_events(path: &Path) -> Result<Vec<BrowserEvent>> {
     Ok(events)
 }
 
+/// The history file inside a profile directory for a given family, if present.
+fn history_file_for(profile: &Path, family: BrowserFamily) -> Option<PathBuf> {
+    let name = match family {
+        BrowserFamily::Chromium => "History",
+        BrowserFamily::Firefox => "places.sqlite",
+        BrowserFamily::Safari => "History.db",
+    };
+    let candidate = profile.join(name);
+    candidate.is_file().then_some(candidate)
+}
+
+/// Per-visit history events (carrying `from_visit`/`visit_id`) for every
+/// discovered profile under `path`, so navigation reconstruction (M3) has the
+/// linkage the redirect-collapsed triage `History` view drops.
+///
+/// Chromium and Firefox record `from_visit`; Safari does not, so it is left to
+/// the collapsed view. Returns the per-visit events plus the set of families
+/// they cover (so the caller can drop the collapsed `History` only for those).
+fn collect_visit_history(path: &Path) -> (Vec<BrowserEvent>, Vec<BrowserFamily>) {
+    let mut targets: Vec<(BrowserFamily, PathBuf)> = Vec::new();
+    for profile in browser_forensic_discovery::discover_profiles(path) {
+        if let Some(hf) = history_file_for(&profile.path, profile.browser.clone()) {
+            targets.push((profile.browser, hf));
+        }
+    }
+    if targets.is_empty() {
+        if let Some(family) = profile_family(path) {
+            if let Some(hf) = history_file_for(path, family.clone()) {
+                targets.push((family, hf));
+            }
+        }
+    }
+
+    let mut events = Vec::new();
+    let mut families: Vec<BrowserFamily> = Vec::new();
+    for (family, hf) in targets {
+        let parsed = match family {
+            BrowserFamily::Chromium => browser_forensic_chrome::parse_visits(&hf),
+            BrowserFamily::Firefox => browser_forensic_firefox::parse_visits(&hf),
+            BrowserFamily::Safari => continue,
+        };
+        if let Ok(mut evts) = parsed {
+            if !evts.is_empty() {
+                events.append(&mut evts);
+                if !families.contains(&family) {
+                    families.push(family);
+                }
+            }
+        }
+    }
+    (events, families)
+}
+
+/// Collect events for `correlate`/`graph`. Same artifacts as
+/// [`collect_profile_events`], but the redirect-collapsed `History` view is
+/// replaced (per family) with the per-visit stream so referrer/redirect edges
+/// have the `from_visit` linkage M3 needs. Non-history artifacts are unchanged.
+///
+/// # Errors
+/// Returns an error if collection fails.
+fn collect_correlation_events(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let mut events = collect_profile_events(path)?;
+    let (visits, families): (Vec<BrowserEvent>, Vec<BrowserFamily>) = (Vec::new(), Vec::new()); // RED stub
+    let _ = collect_visit_history;
+    if !visits.is_empty() {
+        events.retain(|e| {
+            e.artifact != browser_forensic_core::ArtifactKind::History
+                || !families.contains(&e.browser)
+        });
+        events.extend(visits);
+        events.sort_by_key(|e| e.timestamp_ns);
+    }
+    Ok(events)
+}
+
 /// `br4n6 search` — filter collected events by substring/regex, field scope, and
 /// an inclusive time range.
 ///
@@ -2606,7 +2681,7 @@ pub fn graph_output(events: &[BrowserEvent], format: GraphFormat, window_secs: i
 /// # Errors
 /// Returns an error if the path does not exist or event collection fails.
 pub fn run_correlate(path: &Path, format: OutputFormat) -> Result<()> {
-    let events = collect_profile_events(path)?;
+    let events = collect_correlation_events(path)?;
     print!("{}", correlate_output(&events, format));
     Ok(())
 }
@@ -2623,7 +2698,7 @@ pub fn run_graph(
     out: Option<&Path>,
     window_secs: i64,
 ) -> Result<()> {
-    let events = collect_profile_events(path)?;
+    let events = collect_correlation_events(path)?;
     let rendered = graph_output(&events, format, window_secs);
     match out {
         Some(p) => {
@@ -2732,6 +2807,35 @@ mod tests {
         let dot = graph_output(&events, GraphFormat::Dot, 30);
         assert!(dot.starts_with("digraph browser_entity_graph {"));
         assert!(dot.contains("\"a.example\" -> \"b.example\""));
+    }
+
+    #[test]
+    fn correlation_collection_enriches_referrer_edges_from_firefox_visits() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("places.sqlite");
+        let conn = rusqlite::Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE moz_places(id INTEGER PRIMARY KEY, url TEXT, title TEXT);
+             CREATE TABLE moz_historyvisits(id INTEGER PRIMARY KEY, from_visit INTEGER, \
+               place_id INTEGER, visit_date INTEGER, visit_type INTEGER, session INTEGER);
+             INSERT INTO moz_places VALUES (1,'https://a.example/','A'),(2,'https://b.example/','B');
+             INSERT INTO moz_historyvisits VALUES \
+               (1,0,1,1648000000000000,1,0),(2,1,2,1648000000001000,1,0);",
+        )
+        .unwrap();
+        drop(conn);
+
+        let events = collect_correlation_events(dir.path()).unwrap();
+        // Per-visit enrichment brings the from_visit linkage the collapsed view drops.
+        assert!(events.iter().any(|e| e.attrs.contains_key("from_visit")));
+
+        let js = graph_output(&events, GraphFormat::Json, 30);
+        let v: serde_json::Value = serde_json::from_str(&js).unwrap();
+        let has_ref =
+            v["edges"].as_array().unwrap().iter().any(|e| {
+                e["kind"] == "referrer" && e["from"] == "a.example" && e["to"] == "b.example"
+            });
+        assert!(has_ref, "expected M3 referrer edge a.example -> b.example");
     }
 
     fn visit(url: &str, redirect: bool, chain_end: bool) -> BrowserEvent {
