@@ -52,3 +52,27 @@ name = "fuzz_forensic"
 path = "fuzz_targets/fuzz_forensic.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_network_persistent_state"
+path = "fuzz_targets/fuzz_network_persistent_state.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_transport_security"
+path = "fuzz_targets/fuzz_transport_security.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_reporting_and_nel"
+path = "fuzz_targets/fuzz_reporting_and_nel.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_firefox_site_security"
+path = "fuzz_targets/fuzz_firefox_site_security.rs"
+test = false
+doc = false
