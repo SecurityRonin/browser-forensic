@@ -37,16 +37,47 @@ fn value_to_json(v: rusqlite::types::Value) -> serde_json::Value {
 /// # Errors
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_annotations(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub: real implementation lands in the GREEN commit.
-    let _ = (
-        open_evidence_db,
-        unix_micros_to_nanos as fn(i64) -> i64,
-        value_to_json,
-        ArtifactKind::Annotation,
-        BrowserFamily::Firefox,
-    );
-    Ok(Vec::new())
+pub fn parse_annotations(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let mut stmt = conn.prepare(
+        "SELECT a.name, an.content, an.dateAdded, an.lastModified, p.url \
+         FROM moz_annos an \
+         JOIN moz_anno_attributes a ON an.anno_attribute_id = a.id \
+         JOIN moz_places p ON an.place_id = p.id \
+         ORDER BY an.dateAdded ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let name: String = row.get(0)?;
+            let content = value_to_json(row.get::<_, rusqlite::types::Value>(1)?);
+            let date_added_us: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
+            let last_modified_us: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
+            let url: String = row.get(4)?;
+            Ok((name, content, date_added_us, last_modified_us, url))
+        })?
+        .filter_map(std::result::Result::ok)
+        .map(|(name, content, date_added_us, last_modified_us, url)| {
+            let ts_ns = unix_micros_to_nanos(date_added_us);
+            let content_display = content
+                .as_str()
+                .map_or_else(|| content.to_string(), ToString::to_string);
+            let desc = format!("annotation \u{201c}{name}\u{201d} = {content_display} on {url}");
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Firefox,
+                ArtifactKind::Annotation,
+                &source,
+                desc,
+            )
+            .with_attr("name", json!(name))
+            .with_attr("content", content)
+            .with_attr("url", json!(url))
+            .with_attr("last_modified_us", json!(last_modified_us))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
@@ -135,19 +166,20 @@ mod tests {
     }
 
     #[test]
-    fn numeric_content_does_not_error() {
-        // Annotation content may be a non-string type (e.g. a visit-count int).
-        // The parser must surface it, not fail.
+    fn binary_content_does_not_error() {
+        // Annotation content may be a BLOB (TYPE_BINARY). BLOB is exempt from the
+        // column's TEXT affinity, so it exercises value_to_json's non-text branch:
+        // the parser must surface it as a size marker, never error.
         let db = TestDb::new(SCHEMA);
-        let (pid, aid) = seed(&db, "https://n.example/", "some/counter");
+        let (pid, aid) = seed(&db, "https://n.example/", "some/blob");
         db.insert(
             "INSERT INTO moz_annos (place_id, anno_attribute_id, content, dateAdded) \
              VALUES (?1, ?2, ?3, ?4)",
-            params![pid, aid, 42_i64, 0_i64],
+            params![pid, aid, vec![0xde_u8, 0xad, 0xbe, 0xef], 0_i64],
         );
         let events = parse_annotations(db.path()).unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].attrs["content"], json!(42));
+        assert_eq!(events[0].attrs["content"], json!("<4 bytes binary>"));
     }
 
     #[test]
