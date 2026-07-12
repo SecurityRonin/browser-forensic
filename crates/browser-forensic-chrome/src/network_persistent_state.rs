@@ -29,7 +29,7 @@ pub(crate) const CONTACTED_NOTE: &str = "contacted host, recovered independently
 /// Extract a bare hostname from a Chromium origin string. `server` entries are
 /// full origins (`https://host:443`); `broken_alternative_services[].host` is
 /// already bare. Returns `None` if no host can be parsed.
-fn host_of(origin: &str) -> Option<String> {
+pub(crate) fn host_of(origin: &str) -> Option<String> {
     if let Ok(u) = url::Url::parse(origin) {
         if let Some(h) = u.host_str() {
             return Some(h.to_string());
