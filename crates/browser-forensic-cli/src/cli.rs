@@ -265,6 +265,9 @@ enum Command {
         /// Add an interpretation column (search terms, tracking cookies, …).
         #[arg(long)]
         interpret: bool,
+        /// Also write a chain-of-custody manifest (SHA-256/MD5 of every input) here.
+        #[arg(long, value_name = "FILE")]
+        manifest: Option<PathBuf>,
     },
     /// Write a DFIR-interop / court-ready report for a profile/home directory:
     /// a TSK bodyfile, plaso l2t_csv, or a self-contained HTML report.
@@ -279,6 +282,24 @@ enum Command {
         #[arg(long = "out", short = 'o', value_name = "FILE")]
         output: Option<PathBuf>,
         /// Render timestamps in this IANA timezone (e.g. `America/New_York`).
+        #[arg(long, value_name = "TZ")]
+        timezone: Option<String>,
+        /// Also write a chain-of-custody manifest (SHA-256/MD5 of every input) here.
+        #[arg(long, value_name = "FILE")]
+        manifest: Option<PathBuf>,
+    },
+    /// Write a case-level chain-of-custody manifest (JSON): for every evidence
+    /// file read, its absolute path, size, SHA-256, MD5, and mtime, plus run
+    /// metadata (tool + version, invocation, acquisition time, host OS). Records
+    /// the integrity of the extracted inputs — not the provenance of the device.
+    Manifest {
+        /// A single evidence file, a profile directory, or a home directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Write the manifest JSON here (defaults to stdout).
+        #[arg(long = "out", short = 'o', value_name = "FILE")]
+        out: Option<PathBuf>,
+        /// Render the acquisition time in this IANA timezone (e.g. `America/New_York`).
         #[arg(long, value_name = "TZ")]
         timezone: Option<String>,
     },
@@ -505,19 +526,33 @@ where
             output,
             timezone,
             interpret,
+            manifest,
         }) => run_export(
             &path,
             format,
             output.as_deref(),
             timezone.as_deref(),
             interpret,
+            manifest.as_deref(),
         ),
         Some(Command::Report {
             path,
             format,
             output,
             timezone,
-        }) => run_report(&path, format, output.as_deref(), timezone.as_deref()),
+            manifest,
+        }) => run_report(
+            &path,
+            format,
+            output.as_deref(),
+            timezone.as_deref(),
+            manifest.as_deref(),
+        ),
+        Some(Command::Manifest {
+            path,
+            out,
+            timezone,
+        }) => run_manifest(&path, out.as_deref(), timezone.as_deref()),
         Some(Command::Search {
             path,
             regex,
@@ -2027,16 +2062,11 @@ pub fn run_export(
     output: Option<&Path>,
     timezone: Option<&str>,
     interpret: bool,
+    manifest_out: Option<&Path>,
 ) -> Result<()> {
     use crate::export::{self, ExportFormat};
 
-    let tz = match timezone {
-        Some(name) => Some(
-            name.parse::<chrono_tz::Tz>()
-                .map_err(|_| anyhow::anyhow!("unknown IANA timezone: {name}"))?,
-        ),
-        None => None,
-    };
+    let tz = parse_tz(timezone)?;
 
     // Try a home-directory scan first (discovers profiles under `path`); if that
     // finds nothing, fall back to treating `path` itself as a single profile
@@ -2078,6 +2108,12 @@ pub fn run_export(
             }
         }
     }
+    if let Some(mp) = manifest_out {
+        let json = build_manifest_json(path, tz)?;
+        std::fs::write(mp, json.as_bytes())
+            .with_context(|| format!("writing manifest {}", mp.display()))?;
+        eprintln!("wrote chain-of-custody manifest to {}", mp.display());
+    }
     Ok(())
 }
 
@@ -2094,18 +2130,13 @@ pub fn run_report(
     format: crate::report::ReportFormat,
     output: Option<&Path>,
     timezone: Option<&str>,
+    manifest_out: Option<&Path>,
 ) -> Result<()> {
     use std::io::Write as _;
 
     use crate::report::{self, ReportFormat};
 
-    let tz = match timezone {
-        Some(name) => Some(
-            name.parse::<chrono_tz::Tz>()
-                .map_err(|_| anyhow::anyhow!("unknown IANA timezone: {name}"))?,
-        ),
-        None => None,
-    };
+    let tz = parse_tz(timezone)?;
 
     // Same collection model as `export`: scan `path` as a home directory, then
     // fall back to treating it as a single profile directory.
@@ -2145,6 +2176,72 @@ pub fn run_report(
         let stdout = std::io::stdout();
         let mut lock = stdout.lock();
         lock.write_all(rendered.as_bytes())?;
+    }
+    if let Some(mp) = manifest_out {
+        let json = build_manifest_json(path, tz)?;
+        std::fs::write(mp, json.as_bytes())
+            .with_context(|| format!("writing manifest {}", mp.display()))?;
+        eprintln!("wrote chain-of-custody manifest to {}", mp.display());
+    }
+    Ok(())
+}
+
+/// Parse an optional IANA timezone name into a `chrono_tz::Tz`.
+///
+/// # Errors
+/// Returns an error naming the offending value when the timezone is unknown.
+fn parse_tz(timezone: Option<&str>) -> Result<Option<chrono_tz::Tz>> {
+    match timezone {
+        Some(name) => {
+            Ok(Some(name.parse::<chrono_tz::Tz>().map_err(|_| {
+                anyhow::anyhow!("unknown IANA timezone: {name}")
+            })?))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Enumerate the evidence under `path`, hash each input, and render the
+/// chain-of-custody manifest as deterministic JSON.
+///
+/// # Errors
+/// Returns an error if no recognized evidence files are found under `path`, or
+/// if manifest serialization fails.
+fn build_manifest_json(path: &Path, tz: Option<chrono_tz::Tz>) -> Result<String> {
+    let inputs = browser_forensic_manifest::enumerate_evidence(path);
+    if inputs.is_empty() {
+        anyhow::bail!(
+            "no recognized browser evidence files found under {}",
+            path.display()
+        );
+    }
+    let args: Vec<String> = std::env::args().collect();
+    let run = browser_forensic_manifest::RunMetadata::capture(
+        "br4n6",
+        env!("CARGO_PKG_VERSION"),
+        &args,
+        tz,
+    );
+    let manifest = browser_forensic_manifest::build_manifest(&inputs, run);
+    browser_forensic_manifest::to_json(&manifest).context("serializing manifest")
+}
+
+/// `br4n6 manifest` — write a case-level chain-of-custody manifest (SHA-256/MD5
+/// + run metadata) for every evidence file under `path`, to `out` or stdout.
+///
+/// # Errors
+/// Returns an error if the timezone is unknown, no evidence is found, or writing
+/// the manifest fails.
+pub fn run_manifest(path: &Path, out: Option<&Path>, timezone: Option<&str>) -> Result<()> {
+    let tz = parse_tz(timezone)?;
+    let json = build_manifest_json(path, tz)?;
+    match out {
+        Some(p) => {
+            std::fs::write(p, json.as_bytes())
+                .with_context(|| format!("writing {}", p.display()))?;
+            eprintln!("wrote chain-of-custody manifest to {}", p.display());
+        }
+        None => println!("{json}"),
     }
     Ok(())
 }
