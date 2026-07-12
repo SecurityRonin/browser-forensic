@@ -122,8 +122,23 @@ pub fn extract_from_text(text: &str) -> Vec<TextHit> {
     extract_btc_base58(text, &mut out);
     extract_btc_bech32(text, &mut out);
     extract_eth(text, &mut out);
+    extract_search_terms(text, &mut out);
     out.sort_by_key(|(_, _, offset, _)| *offset);
     out
+}
+
+/// Search terms read from URL query parameters. Every URL in the text (bare or
+/// embedded) is passed to browser-forensic-interpret's `search_query`; a hit
+/// yields the decoded term as the value and the engine name as the note. This
+/// is a fact read from the URL, not an inference.
+fn extract_search_terms(text: &str, out: &mut Vec<TextHit>) {
+    let mut finder = LinkFinder::new();
+    finder.kinds(&[LinkKind::Url]);
+    for link in finder.links(text) {
+        if let Some(sq) = browser_forensic_interpret::search_query(link.as_str()) {
+            out.push((IocKind::SearchTerm, sq.term, link.start(), Some(sq.engine)));
+        }
+    }
 }
 
 /// RFC-5321-shaped email addresses, found with `linkify`'s boundary-aware
