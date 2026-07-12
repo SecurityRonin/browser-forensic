@@ -1568,8 +1568,7 @@ fn collect_visit_history(path: &Path) -> (Vec<BrowserEvent>, Vec<BrowserFamily>)
 /// Returns an error if collection fails.
 fn collect_correlation_events(path: &Path) -> Result<Vec<BrowserEvent>> {
     let mut events = collect_profile_events(path)?;
-    let (visits, families): (Vec<BrowserEvent>, Vec<BrowserFamily>) = (Vec::new(), Vec::new()); // RED stub
-    let _ = collect_visit_history;
+    let (visits, families) = collect_visit_history(path);
     if !visits.is_empty() {
         events.retain(|e| {
             e.artifact != browser_forensic_core::ArtifactKind::History
