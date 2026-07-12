@@ -42,31 +42,147 @@ pub struct ReconstructReport {
     pub pages: usize,
 }
 
-/// A filename-safe stem derived from a URL (RED stub is unused here).
+/// A filename-safe stem derived from a URL: host + path, non-safe chars mapped
+/// to `_`, length-capped. Falls back to `page` for an empty result.
 fn page_stem(url: &str) -> String {
-    let _ = url;
-    String::new()
+    let core = url
+        .split_once("://")
+        .map_or(url, |(_, rest)| rest)
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url);
+    let mut stem: String = core
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    let trimmed = stem.trim_matches('_');
+    if trimmed.is_empty() {
+        stem = "page".to_string();
+    } else {
+        stem = trimmed.to_string();
+    }
+    stem
 }
 
-/// Reconstruct and write the chosen artifact to `out_dir` (RED stub — writes
-/// nothing).
+/// Reconstruct and write the chosen artifact to `out_dir`.
+///
+/// * `Html` — reconstruct `target` (or every cached HTML page when `target` is
+///   `None`), writing each self-contained page plus its `*.manifest.json`.
+/// * `Warc` — write a replayable WARC of the whole cache, or of `target`'s page
+///   and its found sub-resources when `target` is given.
+/// * `Gallery` — write a cached-image gallery (`index.html` + image files).
 ///
 /// # Errors
 /// Propagates filesystem write errors.
 pub fn reconstruct_to_dir(
-    _index: &ResourceIndex,
-    _out_dir: &Path,
-    _target: Option<&str>,
-    _format: OutputFormat,
+    index: &ResourceIndex,
+    out_dir: &Path,
+    target: Option<&str>,
+    format: OutputFormat,
 ) -> io::Result<ReconstructReport> {
-    let _ = (
-        page_stem,
-        build_gallery as fn(&ResourceIndex) -> crate::gallery::Gallery,
-        gallery_index_html as fn(&crate::gallery::Gallery) -> String,
-        reconstruct_singlefile
-            as fn(&ResourceIndex, &str) -> Option<crate::singlefile::ReconstructedPage>,
-    );
-    Ok(ReconstructReport::default())
+    fs::create_dir_all(out_dir)?;
+    let mut report = ReconstructReport::default();
+    match format {
+        OutputFormat::Html => write_html(index, out_dir, target, &mut report)?,
+        OutputFormat::Warc => write_warc_output(index, out_dir, target, &mut report)?,
+        OutputFormat::Gallery => write_gallery(index, out_dir, &mut report)?,
+    }
+    Ok(report)
+}
+
+fn write_html(
+    index: &ResourceIndex,
+    out_dir: &Path,
+    target: Option<&str>,
+    report: &mut ReconstructReport,
+) -> io::Result<()> {
+    let targets: Vec<String> = match target {
+        Some(t) => vec![t.to_string()],
+        None => index.html_entries().iter().map(|r| r.url.clone()).collect(),
+    };
+    let mut used = std::collections::HashSet::new();
+    for turl in targets {
+        let Some(page) = reconstruct_singlefile(index, &turl) else {
+            continue;
+        };
+        let mut stem = page_stem(&turl);
+        while !used.insert(stem.clone()) {
+            stem = format!("{stem}_");
+        }
+        write_file(
+            out_dir,
+            &format!("{stem}.html"),
+            page.html.as_bytes(),
+            report,
+        )?;
+        write_file(
+            out_dir,
+            &format!("{stem}.manifest.json"),
+            page.manifest.to_json().as_bytes(),
+            report,
+        )?;
+        report.found += page.manifest.found.len();
+        report.missing += page.manifest.missing.len();
+        report.pages += 1;
+    }
+    Ok(())
+}
+
+fn write_warc_output(
+    index: &ResourceIndex,
+    out_dir: &Path,
+    target: Option<&str>,
+    report: &mut ReconstructReport,
+) -> io::Result<()> {
+    // Scope: a target page + its found sub-resources, or the whole cache.
+    let resources: Vec<&crate::index::IndexedResource> = match target {
+        Some(t) => {
+            let mut urls = vec![crate::index::normalize_url(t)];
+            if let Some(page) = reconstruct_singlefile(index, t) {
+                for f in &page.manifest.found {
+                    urls.push(crate::index::normalize_url(&f.url));
+                }
+            }
+            urls.iter().filter_map(|u| index.get(u)).collect()
+        }
+        None => index.iter().collect(),
+    };
+    let mut buf = Vec::new();
+    let stats = write_warc(resources, target, &mut buf)?;
+    write_file(out_dir, "reconstruction.warc", &buf, report)?;
+    report.responses = stats.responses;
+    Ok(())
+}
+
+fn write_gallery(
+    index: &ResourceIndex,
+    out_dir: &Path,
+    report: &mut ReconstructReport,
+) -> io::Result<()> {
+    let gallery = build_gallery(index);
+    let html = gallery_index_html(&gallery);
+    write_file(out_dir, "index.html", html.as_bytes(), report)?;
+    write_file(
+        out_dir,
+        "gallery.manifest.json",
+        gallery.manifest.to_json().as_bytes(),
+        report,
+    )?;
+    for img in &gallery.images {
+        if let Some(res) = index.get(&img.url) {
+            write_file(out_dir, &img.filename, &res.body, report)?;
+        }
+    }
+    report.found = gallery.manifest.found.len();
+    report.images = gallery.images.len();
+    Ok(())
 }
 
 /// Write `bytes` to `dir/name`, recording the path.
