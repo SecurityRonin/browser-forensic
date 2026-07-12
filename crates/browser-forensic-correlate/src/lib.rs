@@ -20,4 +20,5 @@
 //! from one to the other.
 
 pub mod host;
+pub mod rollup;
 pub mod timeline;
