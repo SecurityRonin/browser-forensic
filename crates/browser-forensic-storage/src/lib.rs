@@ -21,6 +21,7 @@
 
 pub mod chromium;
 pub mod firefox;
+pub mod indexeddb;
 
 use std::path::Path;
 
