@@ -87,6 +87,18 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
     Ok(events)
 }
 
+/// Parse a Chromium `Extension Cookies` SQLite file — the cookie jar for
+/// extension background contexts. The schema is identical to `Cookies`, so this
+/// reuses the same parse path, tagging every event `cookie_store = "extension"`.
+///
+/// # Errors
+///
+/// Returns an error if the SQLite file cannot be opened or queried.
+pub fn parse_extension_cookies(_path: &Path) -> Result<Vec<BrowserEvent>> {
+    // RED stub — replaced by the shared-store reuse in GREEN.
+    Ok(Vec::new())
+}
+
 /// True when the `cookies` table has a column named `col` (used to detect the
 /// CHIPS `top_frame_site_key` partition key across schema generations).
 fn cookies_has_column(conn: &rusqlite::Connection, col: &str) -> bool {
@@ -202,6 +214,33 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].attrs["partitioned"], json!(false));
         assert_eq!(events[0].attrs["top_frame_site_key"], json!(""));
+    }
+
+    #[test]
+    fn extension_cookies_tagged_extension_store() {
+        let db = TestDb::new(SCHEMA_CHIPS);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, top_frame_site_key, name, path) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![13_327_626_000_000_000_i64, ".ext.example", "", "auth", "/"],
+        );
+        let events = parse_extension_cookies(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        let ev = &events[0];
+        assert_eq!(ev.artifact, ArtifactKind::Cookies);
+        assert_eq!(ev.attrs["cookie_store"], json!("extension"));
+        assert_eq!(ev.attrs["host"], json!(".ext.example"));
+        assert_eq!(ev.attrs["encrypted_value"], json!("ENCRYPTED"));
+    }
+
+    #[test]
+    fn main_cookies_tagged_main_store() {
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, expires_utc, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![13_327_626_000_000_000_i64, ".main.example", "n", "/", 0_i64, 0_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
+        assert_eq!(events[0].attrs["cookie_store"], json!("main"));
     }
 
     #[test]

@@ -28,7 +28,7 @@ pub mod web_data;
 pub use autofill::parse_autofill;
 pub use bookmarks::parse_bookmarks;
 pub use cache::parse_cache;
-pub use cookies::parse_cookies;
+pub use cookies::{parse_cookies, parse_extension_cookies};
 pub use dips::parse_dips;
 pub use downloads::parse_downloads;
 pub use extensions::parse_extensions;
