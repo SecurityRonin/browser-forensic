@@ -94,7 +94,7 @@ fn matches_pattern(event: &BrowserEvent, query: &EventQuery) -> bool {
 }
 
 /// Cap `text` to `MAX_FIELD_LEN` bytes on a UTF-8 char boundary.
-fn bound(text: &str) -> &str {
+pub(crate) fn bound(text: &str) -> &str {
     if text.len() <= MAX_FIELD_LEN {
         return text;
     }
@@ -105,30 +105,33 @@ fn bound(text: &str) -> &str {
     &text[..end]
 }
 
+/// The event's whole textual surface as `(field_name, text)` pairs:
+/// `description`, `source`, then every string-valued attribute (attribute order
+/// is unspecified). Non-string attributes (numbers, bools, nested JSON) are not
+/// treated as searchable text.
+#[must_use]
+pub fn text_fields(event: &BrowserEvent) -> Vec<(&str, &str)> {
+    let mut out: Vec<(&str, &str)> = Vec::with_capacity(2 + event.attrs.len());
+    out.push(("description", event.description.as_str()));
+    out.push(("source", event.source.as_str()));
+    for (key, value) in &event.attrs {
+        if let Some(s) = value.as_str() {
+            out.push((key.as_str(), s));
+        }
+    }
+    out
+}
+
 /// Invoke `pred` on each in-scope textual field, short-circuiting on the first
 /// `true`. With an empty `fields` allow-list the whole textual surface is
-/// searched: `description`, `source`, and every string-valued attribute.
+/// searched.
 fn for_each_field(
     event: &BrowserEvent,
     fields: &[String],
     mut pred: impl FnMut(&str) -> bool,
 ) -> bool {
     let want = |name: &str| fields.is_empty() || fields.iter().any(|f| f == name);
-
-    if want("description") && pred(&event.description) {
-        return true;
-    }
-    if want("source") && pred(&event.source) {
-        return true;
-    }
-    for (key, value) in &event.attrs {
-        if want(key) {
-            if let Some(s) = value.as_str() {
-                if pred(s) {
-                    return true;
-                }
-            }
-        }
-    }
-    false
+    text_fields(event)
+        .into_iter()
+        .any(|(name, text)| want(name) && pred(text))
 }

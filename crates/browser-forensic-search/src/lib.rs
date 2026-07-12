@@ -13,5 +13,7 @@
 //! never asserted to *be* a real card, wallet, or address.
 
 pub mod filter;
+pub mod ioc;
 
 pub use filter::{filter_events, EventQuery, Pattern};
+pub use ioc::{extract_iocs, IocKind, IocMatch};
