@@ -22,9 +22,46 @@ const TOP_SITES_NOTE: &str =
 /// # Errors
 ///
 /// Returns an error only if the SQLite file cannot be opened.
-pub fn parse_top_sites(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub — replaced by the real query in GREEN.
-    Ok(Vec::new())
+pub fn parse_top_sites(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let source = path.to_string_lossy().into_owned();
+
+    let sql = "SELECT url, url_rank, title FROM top_sites WHERE url <> '' ORDER BY url_rank ASC";
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return Ok(Vec::new());
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let url: String = row.get(0)?;
+        let url_rank: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or_default();
+        let title: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        Ok((url, url_rank, title))
+    }) else {
+        return Ok(Vec::new());
+    };
+
+    let events = rows
+        .filter_map(std::result::Result::ok)
+        .map(|(url, url_rank, title)| {
+            let label = if title.is_empty() {
+                url.clone()
+            } else {
+                title.clone()
+            };
+            BrowserEvent::new(
+                0,
+                BrowserFamily::Chromium,
+                ArtifactKind::TopSite,
+                &source,
+                format!("{label} (top-site rank {url_rank})"),
+            )
+            .with_attr("url", json!(url))
+            .with_attr("title", json!(title))
+            .with_attr("url_rank", json!(url_rank))
+            .with_attr("note", json!(TOP_SITES_NOTE))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]

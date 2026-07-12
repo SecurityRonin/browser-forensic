@@ -240,6 +240,13 @@ fn triage_chromium_profile(
         }
     }
 
+    let top_sites_path = path.join("Top Sites");
+    if top_sites_path.is_file() {
+        if let Ok(mut evts) = browser_forensic_chrome::parse_top_sites(&top_sites_path) {
+            events.append(&mut evts);
+        }
+    }
+
     // Credential / account metadata (secrets never decrypted). Per-artifact
     // failures are absorbed so triage stays best-effort.
     let login_data = path.join("Login Data");
@@ -470,6 +477,29 @@ mod tests {
                     && e.attrs.get("page_url")
                         == Some(&serde_json::json!("https://visited.example/x"))),
             "expected Favicon events surfacing the page_url"
+        );
+    }
+
+    #[test]
+    fn triage_chromium_includes_top_sites() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        let ts = dir.path().join("Top Sites");
+        let conn = rusqlite::Connection::open(&ts).expect("open top sites");
+        conn.execute_batch(
+            "CREATE TABLE top_sites(url TEXT NOT NULL PRIMARY KEY, url_rank INTEGER NOT NULL, title TEXT NOT NULL);
+             INSERT INTO top_sites VALUES ('https://most.example/', 0, 'Most Visited');",
+        ).expect("setup top sites");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        assert!(
+            report
+                .events
+                .iter()
+                .any(|e| e.artifact == ArtifactKind::TopSite
+                    && e.attrs.get("url") == Some(&serde_json::json!("https://most.example/"))),
+            "expected TopSite events"
         );
     }
 

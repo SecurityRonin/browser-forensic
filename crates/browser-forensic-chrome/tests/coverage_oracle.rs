@@ -90,3 +90,20 @@ fn favicons_count_matches_sqlite3_oracle() {
     );
     eprintln!("Favicons oracle matched: {oracle} bitmap mappings");
 }
+
+#[test]
+fn top_sites_count_matches_sqlite3_oracle() {
+    let Some((_profile, top_sites)) = setup("Top Sites") else {
+        return;
+    };
+    let parsed = browser_forensic_chrome::parse_top_sites(&top_sites).expect("parse Top Sites");
+    let oracle =
+        sqlite_count(&top_sites, "SELECT count(*) FROM top_sites WHERE url <> ''").expect("oracle");
+    assert_eq!(
+        parsed.len() as i64,
+        oracle,
+        "Top Sites count: parser {} vs sqlite3 {oracle}",
+        parsed.len()
+    );
+    eprintln!("Top Sites oracle matched: {oracle} sites");
+}

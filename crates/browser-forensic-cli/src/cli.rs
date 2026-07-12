@@ -141,6 +141,8 @@ enum Command {
     Storage(ArtifactArgs),
     /// Parse a Chromium `Favicons` database (page_url visited-URL source).
     Favicons(ArtifactArgs),
+    /// Parse a Chromium `Top Sites` database (most-visited / frecency).
+    TopSites(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -243,6 +245,7 @@ where
         Some(Command::RecoveredDomains(a)) => run_recovered_domains(&a.path, a.format),
         Some(Command::Storage(a)) => run_storage(&a.path, a.format),
         Some(Command::Favicons(a)) => run_favicons(&a.path, a.format),
+        Some(Command::TopSites(a)) => run_top_sites(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -1305,6 +1308,19 @@ pub fn run_favicons(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 top-sites PATH` — parse a Chromium `Top Sites` database (the
+/// profile's most-visited pages, frecency-ranked). Chromium-only.
+///
+/// # Errors
+/// Returns an error if the `Top Sites` database cannot be opened.
+pub fn run_top_sites(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_chrome::parse_top_sites(path)
+        .with_context(|| format!("parsing Top Sites from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
 /// `br4n6 recovered-domains PATH` — recover domains the user contacted that
 /// survive a history clear, from network/state artifacts. `PATH` is a profile
 /// directory (every recovered-domain source beneath it is aggregated) or a
@@ -1741,6 +1757,22 @@ mod tests {
         drop(conn);
         for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
             run_favicons(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_top_sites_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Top Sites");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE top_sites(url TEXT NOT NULL PRIMARY KEY, url_rank INTEGER NOT NULL, title TEXT NOT NULL);
+             INSERT INTO top_sites VALUES ('https://a.example/', 0, 'A');",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_top_sites(&p, fmt).unwrap();
         }
     }
 
