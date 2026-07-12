@@ -68,6 +68,134 @@ pub enum IntegrityIndicator {
     },
 }
 
+impl IntegrityIndicator {
+    /// A plain-language statement of what was *observed* in the artifact — the
+    /// raw fact, with the offending value(s), and never a conclusion. This is the
+    /// layer-1 "observed fact" of the expert-witness discipline: state what the
+    /// evidence shows, let the reader weigh it against [`Self::innocent_alternative`].
+    #[must_use]
+    pub fn observation(&self) -> String {
+        match self {
+            Self::HistoryCleared { path, .. } => format!(
+                "{}: history tables are empty (or near-empty) while the AUTOINCREMENT \
+                 counter records prior rows",
+                path.display()
+            ),
+            Self::VisitIdGap {
+                path,
+                expected_id,
+                found_id,
+            } => format!(
+                "{}: visit/row id sequence jumps from {expected_id} to {found_id} \
+                 (rows once occupied the intervening ids)",
+                path.display()
+            ),
+            Self::TimestampNonMonotonic {
+                path,
+                row_id,
+                prev_ts_ns,
+                this_ts_ns,
+            } => format!(
+                "{}: row {row_id} has timestamp {this_ts_ns} ns which is earlier than \
+                 the preceding row's {prev_ts_ns} ns despite a later id",
+                path.display()
+            ),
+            Self::CookieTimestampAnomaly {
+                path,
+                host,
+                creation_ns,
+                last_access_ns,
+            } => format!(
+                "{}: cookie for {host} has creation {creation_ns} ns after its \
+                 last-access {last_access_ns} ns",
+                path.display()
+            ),
+            Self::WalPresent { path } => format!(
+                "{}: a non-empty write-ahead log sits beside the database (uncheckpointed \
+                 page versions the main file does not yet reflect)",
+                path.display()
+            ),
+            Self::SqliteIntegrityFailure { path, message } => {
+                format!(
+                    "{}: PRAGMA integrity_check reported: {message}",
+                    path.display()
+                )
+            }
+            Self::HistoryTombstoneFound {
+                path,
+                url,
+                deleted_at_ns,
+            } => format!(
+                "{}: a deletion tombstone records the removal of {url} (at {deleted_at_ns} ns)",
+                path.display()
+            ),
+            Self::DownloadFileMissing { path, target_path } => format!(
+                "{}: a download record references {target_path}, which is not present on disk",
+                path.display()
+            ),
+            Self::AutoIncrementGap {
+                path,
+                table,
+                max_rowid,
+                auto_increment,
+            } => format!(
+                "{}: sqlite_sequence for {table} is {auto_increment} but the highest \
+                 surviving rowid is {max_rowid}",
+                path.display()
+            ),
+        }
+    }
+
+    /// At least one benign explanation that would produce the same observation.
+    /// The framing rule: SQLite id gaps, freelist growth, non-monotonic
+    /// timestamps and counter jumps are ALSO produced by ordinary deletion,
+    /// VACUUM, crashes, imports and clock skew — so a finding is *consistent with*
+    /// clearing/tampering, never proof of it (expert-witness layer 2).
+    #[must_use]
+    pub fn innocent_alternative(&self) -> &'static str {
+        match self {
+            Self::HistoryCleared { .. } => {
+                "Also consistent with the user clearing browsing data through the \
+                 browser's own UI, an expiry/retention policy, or a fresh profile whose \
+                 rows were pruned — none of which require external manipulation."
+            }
+            Self::VisitIdGap { .. } => {
+                "Gaps are normal after ordinary record deletion, history expiry, or a \
+                 rolled-back transaction; SQLite does not renumber surviving rows."
+            }
+            Self::TimestampNonMonotonic { .. } => {
+                "Can arise from clock changes (DST, NTP correction, timezone), history \
+                 imported/synced from another device, or rows inserted out of visit order."
+            }
+            Self::CookieTimestampAnomaly { .. } => {
+                "May result from a system clock adjustment between the two writes, or \
+                 from a cookie migrated/imported with a preserved creation time."
+            }
+            Self::WalPresent { .. } => {
+                "A WAL is present during normal operation whenever the database was \
+                 captured before checkpointing, or the browser was still running."
+            }
+            Self::SqliteIntegrityFailure { .. } => {
+                "Corruption is commonly produced by crashes, power loss, storage faults, \
+                 or copying a live database, independent of any deliberate edit."
+            }
+            Self::HistoryTombstoneFound { .. } => {
+                "Tombstones are created by the browser's normal sync/delete bookkeeping \
+                 when a user removes an item, and can also be seeded by cross-device sync."
+            }
+            Self::DownloadFileMissing { .. } => {
+                "A referenced file can be absent simply because the user moved, renamed, or \
+                 deleted the download, or it lived on removable/other media."
+            }
+            Self::AutoIncrementGap { .. } => {
+                "AUTOINCREMENT never reuses values, so this can arise from ordinary \
+                 deletion of the highest-id rows, or inserts rolled back by a crash, \
+                 leaving the counter ahead of the max rowid without any external editing."
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
