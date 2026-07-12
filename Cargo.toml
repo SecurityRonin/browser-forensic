@@ -2,6 +2,7 @@
 members = [
     "crates/browser-forensic-core",
     "crates/browser-forensic-chrome",
+    "crates/browser-forensic-cache",
     "crates/browser-forensic-firefox",
     "crates/browser-forensic-safari",
     "crates/browser-forensic-discovery",
@@ -43,6 +44,9 @@ thiserror = "2"
 rust_xlsxwriter = "0.96"
 chrono-tz = "0.10"
 calamine = "0.34"
+flate2 = "1"
+brotli = "8"
+ruzstd = "0.8"
 
 [workspace.lints.rust]
 # Forbid unsafe across the suite — these crates parse untrusted browser artifacts;

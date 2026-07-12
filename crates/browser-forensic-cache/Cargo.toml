@@ -1,0 +1,21 @@
+[package]
+name = "browser-forensic-cache"
+version = "0.1.0"
+description = "Chromium SimpleCache response-body extraction and panic-free HTTP decompression"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+thiserror = { workspace = true }
+flate2 = { workspace = true }
+brotli = { workspace = true }
+ruzstd = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
