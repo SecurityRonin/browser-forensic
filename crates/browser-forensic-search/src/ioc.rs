@@ -10,7 +10,12 @@
 //! field is char-safely length-bounded before scanning so an oversized value
 //! cannot dominate a run.
 
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::sync::OnceLock;
+
 use browser_forensic_core::BrowserEvent;
+use linkify::{LinkFinder, LinkKind};
+use regex::Regex;
 use serde::Serialize;
 
 use crate::filter::{bound, text_fields};
@@ -105,7 +110,61 @@ pub fn extract_iocs(events: &[BrowserEvent]) -> Vec<IocMatch> {
 /// so via [`crate::filter::bound`].
 #[must_use]
 pub fn extract_from_text(text: &str) -> Vec<TextHit> {
-    // GREEN cycle replaces this stub with the real extractors.
-    let _ = text;
-    Vec::new()
+    let mut out = Vec::new();
+    extract_emails(text, &mut out);
+    extract_ipv4(text, &mut out);
+    extract_ipv6(text, &mut out);
+    out.sort_by_key(|(_, _, offset, _)| *offset);
+    out
+}
+
+/// RFC-5321-shaped email addresses, found with `linkify`'s boundary-aware
+/// scanner (which correctly excludes trailing punctuation).
+fn extract_emails(text: &str, out: &mut Vec<TextHit>) {
+    let mut finder = LinkFinder::new();
+    finder.kinds(&[LinkKind::Email]);
+    for link in finder.links(text) {
+        out.push((
+            IocKind::Email,
+            link.as_str().to_string(),
+            link.start(),
+            None,
+        ));
+    }
+}
+
+/// Lazily compile a constant pattern into a process-wide cache. The patterns in
+/// this module are compile-time constants known to be valid; a compilation
+/// failure (which cannot occur) degrades to "no matches", never a panic.
+fn cached_regex(cell: &'static OnceLock<Option<Regex>>, pattern: &str) -> Option<&'static Regex> {
+    cell.get_or_init(|| Regex::new(pattern).ok()).as_ref()
+}
+
+/// IPv4 candidates: a dotted-quad *shape* whose octets are then validated by the
+/// std [`Ipv4Addr`] parser (the oracle), so out-of-range octets are rejected.
+fn extract_ipv4(text: &str, out: &mut Vec<TextHit>) {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(re) = cached_regex(&RE, r"\b\d{1,3}(?:\.\d{1,3}){3}\b") else {
+        return;
+    };
+    for m in re.find_iter(text) {
+        if m.as_str().parse::<Ipv4Addr>().is_ok() {
+            out.push((IocKind::Ipv4, m.as_str().to_string(), m.start(), None));
+        }
+    }
+}
+
+/// IPv6 candidates: runs of hex groups joined by two or more colons, validated
+/// by the std [`Ipv6Addr`] parser. A run that is not a syntactically valid IPv6
+/// (e.g. a MAC address or an `HH:MM:SS` time) is rejected by the parser.
+fn extract_ipv6(text: &str, out: &mut Vec<TextHit>) {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(re) = cached_regex(&RE, r"[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,}") else {
+        return;
+    };
+    for m in re.find_iter(text) {
+        if m.as_str().parse::<Ipv6Addr>().is_ok() {
+            out.push((IocKind::Ipv6, m.as_str().to_string(), m.start(), None));
+        }
+    }
 }
