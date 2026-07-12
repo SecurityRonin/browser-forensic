@@ -127,6 +127,11 @@ enum Command {
     Cache(ArtifactArgs),
     /// Parse browser preferences (Chrome `Preferences` / Firefox `prefs.js`).
     Preferences(ArtifactArgs),
+    /// List per-site permission grants (Chrome `Preferences` / Firefox `permissions.sqlite`).
+    Permissions(ArtifactArgs),
+    /// Surface stored account/payment metadata from Chromium `Web Data`
+    /// (cards, tokens, autofill profiles). Values are NEVER decrypted.
+    Credentials(ArtifactArgs),
     /// Parse web storage (Local/Session Storage, IndexedDB).
     Storage(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
@@ -226,6 +231,8 @@ where
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
         Some(Command::Preferences(a)) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
+        Some(Command::Permissions(a)) => run_permissions(&a.path, a.format),
+        Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
         Some(Command::Storage(a)) => run_storage(&a.path, a.format),
         Some(Command::Export {
             path,
@@ -1229,6 +1236,49 @@ pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
         .with_context(|| format!("parsing web storage from {}", path.display()))?;
     events.sort_by_key(|e| e.timestamp_ns);
     emit_events(&events, format);
+    Ok(())
+}
+
+/// `br4n6 permissions PATH` — surface per-site permission grants. `PATH` is a
+/// Chromium `Preferences` / `Secure Preferences` JSON file, or a Firefox
+/// `permissions.sqlite`. Metadata only; no secrets are involved.
+///
+/// # Errors
+/// Returns an error if the family cannot be determined from the file name, or
+/// the underlying parser fails.
+pub fn run_permissions(path: &Path, format: OutputFormat) -> Result<()> {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let mut events = if name == "permissions.sqlite" {
+        browser_forensic_firefox::parse_firefox_permissions(path)?
+    } else if matches!(preferences_family(path), Some(BrowserFamily::Chromium)) {
+        browser_forensic_chrome::parse_permissions(path)?
+    } else {
+        anyhow::bail!(
+            "unrecognized permissions source: {} (expected Chromium Preferences / \
+             Secure Preferences, or Firefox permissions.sqlite)",
+            path.display()
+        );
+    };
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// `br4n6 credentials PATH` — surface stored account/payment metadata from a
+/// Chromium `Web Data` database: saved cards, sync/OAuth tokens, and autofill
+/// address profiles. Card numbers and tokens are surfaced as opaque
+/// `ENCRYPTED`; they are never decrypted.
+///
+/// # Errors
+/// Returns an error if the `Web Data` database cannot be opened.
+pub fn run_credentials(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_chrome::parse_web_data(path)
+        .with_context(|| format!("parsing Web Data account metadata from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
     Ok(())
 }
 
