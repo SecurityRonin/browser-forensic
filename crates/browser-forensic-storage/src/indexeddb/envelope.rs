@@ -47,14 +47,6 @@ pub(crate) enum Wrapper<'a> {
 /// [`Malformed`]: Wrapper::Malformed
 #[must_use]
 pub(crate) fn strip_blink_wrapper(value: &[u8]) -> Wrapper<'_> {
-    let _ = value;
-    // RED stub — real stripper lands in the GREEN commit.
-    Wrapper::Malformed
-}
-
-#[allow(dead_code)]
-#[must_use]
-fn strip_blink_wrapper_impl(value: &[u8]) -> Wrapper<'_> {
     // Leading value-version varint.
     let Some((_value_version, vv_len)) = read_le_varint(value) else {
         return Wrapper::Malformed;
