@@ -33,6 +33,7 @@
 pub mod asn1;
 pub mod chromium_macos;
 pub mod chromium_win;
+pub mod domain_hash;
 pub mod dpapi;
 pub mod error;
 pub mod nss;
