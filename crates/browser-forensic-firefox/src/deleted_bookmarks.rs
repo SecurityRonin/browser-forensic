@@ -44,26 +44,103 @@ struct RecoveredBookmark {
 /// bookmark set is the prerequisite for the diff (bootstrap failure). An absent
 /// `bookmarkbackups/` directory is not an error (there is simply nothing to
 /// recover); an individual malformed backup file is skipped, not fatal.
-pub fn recover_deleted_bookmarks(_profile_dir: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub: real implementation lands in the GREEN commit.
-    let _ = (
-        current_bookmark_urls as fn(&Path) -> Result<std::collections::HashSet<String>>,
-        collect_backup_bookmarks as fn(&Path) -> Result<Vec<(String, String, i64)>>,
-        backup_date_from_name as fn(&str) -> Option<String>,
-        unix_micros_to_nanos as fn(i64) -> i64,
-        decompress_mozlz4 as fn(&[u8]) -> Result<Vec<u8>>,
-        json!(0),
-        ArtifactKind::RecoveredBookmark,
-        BrowserFamily::Firefox,
-        RecoveredBookmark {
-            url: String::new(),
-            title: String::new(),
-            date_added_us: 0,
-            source_backup: String::new(),
-            backup_date: None,
-        },
-    );
-    Ok(Vec::new())
+pub fn recover_deleted_bookmarks(profile_dir: &Path) -> Result<Vec<BrowserEvent>> {
+    let places = profile_dir.join("places.sqlite");
+    if !places.is_file() {
+        return Err(anyhow!(
+            "no places.sqlite in {} — the current bookmark set is the baseline required to diff \
+             backups (bookmark recovery cannot proceed)",
+            profile_dir.display()
+        ));
+    }
+    let current = current_bookmark_urls(&places)?;
+
+    let backups_dir = profile_dir.join("bookmarkbackups");
+    if !backups_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(&backups_dir)?
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "jsonlz4"))
+        .collect();
+    entries.sort();
+
+    // For each deleted URL, keep the newest backup (by date, then name) that
+    // still contained it — the tightest "deleted after" bound.
+    let mut recovered: BTreeMap<String, RecoveredBookmark> = BTreeMap::new();
+    for file in entries {
+        let name = file
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let backup_date = backup_date_from_name(&name);
+        // A malformed individual backup is skipped, not fatal (partial recovery).
+        let Ok(bookmarks) = collect_backup_bookmarks(&file) else {
+            continue;
+        };
+        for (url, title, date_added_us) in bookmarks {
+            if current.contains(&url) {
+                continue;
+            }
+            let cand_key = (backup_date.clone(), name.clone());
+            let keep_existing = recovered
+                .get(&url)
+                .is_some_and(|ex| (ex.backup_date.clone(), ex.source_backup.clone()) >= cand_key);
+            if keep_existing {
+                continue;
+            }
+            recovered.insert(
+                url.clone(),
+                RecoveredBookmark {
+                    url,
+                    title,
+                    date_added_us,
+                    source_backup: name.clone(),
+                    backup_date: backup_date.clone(),
+                },
+            );
+        }
+    }
+
+    let mut events: Vec<BrowserEvent> = recovered
+        .into_values()
+        .map(|r| {
+            let ts_ns = unix_micros_to_nanos(r.date_added_us);
+            let source = backups_dir
+                .join(&r.source_backup)
+                .to_string_lossy()
+                .into_owned();
+            let date_str = r
+                .backup_date
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+            let desc = format!(
+                "recovered bookmark \u{201c}{}\u{201d} {} \u{2014} present in backup {} ({}), \
+                 absent from current bookmarks (consistent with deletion after that backup)",
+                r.title, r.url, r.source_backup, date_str
+            );
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Firefox,
+                ArtifactKind::RecoveredBookmark,
+                source,
+                desc,
+            )
+            .with_attr("url", json!(r.url))
+            .with_attr("title", json!(r.title))
+            .with_attr("date_added_us", json!(r.date_added_us))
+            .with_attr("source_backup", json!(r.source_backup))
+            .with_attr(
+                "backup_date",
+                r.backup_date.map_or(serde_json::Value::Null, |d| json!(d)),
+            )
+            .with_attr("status", json!("absent from current bookmarks"))
+        })
+        .collect();
+    events.sort_by_key(|e| e.timestamp_ns);
+    Ok(events)
 }
 
 /// Read the set of current bookmark URLs (`moz_bookmarks` type=1 -> `moz_places`).
@@ -82,13 +159,53 @@ fn current_bookmark_urls(places: &Path) -> Result<std::collections::HashSet<Stri
 
 /// Decompress + walk one backup, returning its (url, title, `date_added_us`)
 /// bookmark tuples. Walk is iterative to bound stack use on hostile nesting.
-fn collect_backup_bookmarks(_file: &Path) -> Result<Vec<(String, String, i64)>> {
-    Err(anyhow!("stub"))
+fn collect_backup_bookmarks(file: &Path) -> Result<Vec<(String, String, i64)>> {
+    use serde_json::Value;
+    let data = std::fs::read(file)?;
+    let json_bytes = decompress_mozlz4(&data)?;
+    let root: Value = serde_json::from_slice(&json_bytes)
+        .with_context(|| format!("parsing bookmark backup JSON from {}", file.display()))?;
+
+    let mut out = Vec::new();
+    // Iterative DFS over borrowed nodes: bounds stack use on hostile nesting.
+    let mut stack: Vec<&Value> = vec![&root];
+    while let Some(node) = stack.pop() {
+        let is_place = node.get("typeCode").and_then(Value::as_i64) == Some(1)
+            || node.get("type").and_then(Value::as_str) == Some("text/x-moz-place");
+        if is_place {
+            if let Some(uri) = node.get("uri").and_then(Value::as_str) {
+                let title = node
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let added = node
+                    .get("dateAdded")
+                    .and_then(Value::as_i64)
+                    .unwrap_or_default();
+                out.push((uri.to_string(), title, added));
+            }
+        }
+        if let Some(children) = node.get("children").and_then(Value::as_array) {
+            for c in children {
+                stack.push(c);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Extract the `YYYY-MM-DD` date from a `bookmarks-YYYY-MM-DD_*.jsonlz4` name.
-fn backup_date_from_name(_name: &str) -> Option<String> {
-    None
+fn backup_date_from_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("bookmarks-")?;
+    let date = rest.get(..10)?;
+    let b = date.as_bytes();
+    let well_formed = b[..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && b[7] == b'-'
+        && b[8..10].iter().all(u8::is_ascii_digit);
+    well_formed.then(|| date.to_string())
 }
 
 #[cfg(test)]
