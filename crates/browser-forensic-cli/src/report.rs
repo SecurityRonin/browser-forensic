@@ -12,7 +12,19 @@ use std::fmt::Write as _;
 
 use browser_forensic_core::{ArtifactKind, BrowserEvent};
 use chrono_tz::Tz;
+use clap::ValueEnum;
 use serde_json::Value;
+
+/// Output format for `br4n6 report`.
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+pub enum ReportFormat {
+    /// TSK bodyfile (mactime 3.x) for `mactime`/`log2timeline`.
+    Bodyfile,
+    /// plaso / log2timeline `l2t_csv`.
+    L2t,
+    /// A self-contained, court-presentable HTML report.
+    Html,
+}
 
 /// Which MAC slot a browser event's single timestamp represents. A
 /// `BrowserEvent` carries exactly one time; its meaning is fixed by the
