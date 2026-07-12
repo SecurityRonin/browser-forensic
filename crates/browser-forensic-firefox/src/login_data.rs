@@ -109,6 +109,36 @@ mod tests {
     }
 
     #[test]
+    fn ff_login_emits_usage_metadata() {
+        let f = create_logins_json(&json!([{
+            "hostname": "https://bank.example.com",
+            "formSubmitURL": "https://bank.example.com/login",
+            "usernameField": "email",
+            "encryptedUsername": "OPAQUE_U",
+            "encryptedPassword": "OPAQUE_P",
+            "timesUsed": 9,
+            "timeCreated": 1_648_000_000_000_i64,
+            "timeLastUsed": 1_650_000_000_000_i64,
+            "timePasswordChanged": 1_649_000_000_000_i64
+        }]));
+        let events = parse_login_data(f.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        let ev = &events[0];
+        assert_eq!(ev.attrs["times_used"], json!(9));
+        assert_eq!(ev.attrs["time_last_used"], json!(1_650_000_000_000_i64));
+        assert_eq!(
+            ev.attrs["time_password_changed"],
+            json!(1_649_000_000_000_i64)
+        );
+        assert_eq!(ev.attrs["password"], json!("ENCRYPTED"));
+        // Neither encrypted blob leaks.
+        for v in ev.attrs.values() {
+            assert_ne!(v, &json!("OPAQUE_U"));
+            assert_ne!(v, &json!("OPAQUE_P"));
+        }
+    }
+
+    #[test]
     fn ff_login_emits_hostname() {
         let time_created_ms = 1_648_000_000_000_i64;
         let f = create_logins_json(&json!([{
