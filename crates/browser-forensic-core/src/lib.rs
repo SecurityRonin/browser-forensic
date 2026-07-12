@@ -56,6 +56,12 @@ pub enum ArtifactKind {
     Memory,
     Preferences,
     LocalStorage,
+    /// Per-site permission grant (geolocation, camera, mic, notifications, …).
+    Permission,
+    /// Stored payment-card metadata. The card number is never decrypted.
+    CreditCard,
+    /// OAuth / sync auth-token metadata. The token itself is never decrypted.
+    AuthToken,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -75,6 +81,9 @@ impl std::fmt::Display for ArtifactKind {
             Self::Memory => write!(f, "Memory"),
             Self::Preferences => write!(f, "Preferences"),
             Self::LocalStorage => write!(f, "LocalStorage"),
+            Self::Permission => write!(f, "Permission"),
+            Self::CreditCard => write!(f, "CreditCard"),
+            Self::AuthToken => write!(f, "AuthToken"),
         }
     }
 }
