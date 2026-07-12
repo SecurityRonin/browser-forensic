@@ -43,3 +43,64 @@ pub fn decrypt_firefox_logins(
         "decrypt_firefox_logins not yet implemented".into(),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::DecryptError;
+    use std::path::PathBuf;
+
+    // Known credentials baked into the fixtures (see tests/data/README.md);
+    // firepwd.py (third party) independently recovers these from ffpbes2/.
+    const KNOWN_USER: &str = "alice@example.com";
+    const KNOWN_PASS: &str = "S3cr3t-Passw0rd!";
+
+    fn fixture(scheme: &str) -> (PathBuf, PathBuf) {
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data")
+            .join(scheme);
+        (base.join("key4.db"), base.join("logins.json"))
+    }
+
+    #[test]
+    fn pbes2_recovers_username_without_password_by_default() {
+        let (k, l) = fixture("ffpbes2");
+        let logins = decrypt_firefox_logins(&k, &l, "", false).unwrap();
+        assert_eq!(logins.len(), 1);
+        assert_eq!(logins[0].username, KNOWN_USER);
+        assert_eq!(logins[0].hostname, "https://accounts.example.com");
+        // Crown-jewel guard: no password materialized without the opt-in.
+        assert_eq!(logins[0].password, None);
+    }
+
+    #[test]
+    fn pbes2_recovers_password_with_optin() {
+        let (k, l) = fixture("ffpbes2");
+        let logins = decrypt_firefox_logins(&k, &l, "", true).unwrap();
+        assert_eq!(logins[0].username, KNOWN_USER);
+        assert_eq!(logins[0].password.as_deref(), Some(KNOWN_PASS));
+    }
+
+    #[test]
+    fn three_des_recovers_known_credentials() {
+        let (k, l) = fixture("ff3des");
+        let logins = decrypt_firefox_logins(&k, &l, "", true).unwrap();
+        assert_eq!(logins.len(), 1);
+        assert_eq!(logins[0].username, KNOWN_USER);
+        assert_eq!(logins[0].password.as_deref(), Some(KNOWN_PASS));
+    }
+
+    #[test]
+    fn wrong_master_password_refuses() {
+        let (k, l) = fixture("ffpbes2");
+        let res = decrypt_firefox_logins(&k, &l, "definitely-wrong", true);
+        assert!(matches!(res, Err(DecryptError::WrongMasterPassword)));
+    }
+
+    #[test]
+    fn missing_key4_db_is_loud_error() {
+        let (_k, l) = fixture("ffpbes2");
+        let res = decrypt_firefox_logins(&PathBuf::from("/nonexistent/key4.db"), &l, "", false);
+        assert!(res.is_err());
+    }
+}
