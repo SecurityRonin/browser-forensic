@@ -1,22 +1,81 @@
-//! Firefox `permissions.sqlite` (`moz_perms`) parser (RED stub).
+//! Firefox `permissions.sqlite` (`moz_perms`) parser.
+//!
+//! Firefox's permission manager stores per-origin permission decisions in the
+//! `moz_perms` table: `origin`, `type` (e.g. `geo`, `desktop-notification`,
+//! `camera`), `permission` (1 = allow, 2 = deny, 0 = prompt), and
+//! `modificationTime` (Unix milliseconds) — a dated record of a privacy choice.
+//!
+//! Schema reference: Mozilla `PermissionManager` / `nsPermissionManager`
+//! (`extensions/permissions`), which defines `moz_perms(id, origin, type,
+//! permission, expireType, expireTime, modificationTime)`.
 
 use std::path::Path;
 
 use anyhow::Result;
-#[cfg(test)]
-use browser_forensic_core::ArtifactKind;
-use browser_forensic_core::BrowserEvent;
-#[cfg(test)]
-use browser_forensic_core::BrowserFamily;
-#[cfg(test)]
+use browser_forensic_core::sqlite::open_evidence_db;
+use browser_forensic_core::timestamp::unix_millis_to_nanos;
+use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use serde_json::json;
 
-/// RED stub — returns nothing until the GREEN implementation lands.
+/// Map a Firefox permission-manager action code to a human label.
+fn permission_label(permission: i64) -> &'static str {
+    match permission {
+        1 => "allow",
+        2 => "block",
+        0 => "prompt",
+        _ => "unknown",
+    }
+}
+
+/// Parse a Firefox `permissions.sqlite` file's `moz_perms` table.
 ///
 /// # Errors
-/// Never errors in the stub.
-pub fn parse_permissions(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    Ok(Vec::new())
+///
+/// Returns an error if the SQLite file cannot be opened or `moz_perms` cannot be
+/// queried.
+pub fn parse_permissions(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let mut stmt = conn
+        .prepare("SELECT origin, type, permission, expireTime, modificationTime FROM moz_perms")?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let origin: String = row.get::<_, Option<String>>(0)?.unwrap_or_default();
+            let perm_type: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+            let permission: i64 = row.get(2)?;
+            let expire_time: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or_default();
+            let modification_time: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or_default();
+            Ok((
+                origin,
+                perm_type,
+                permission,
+                expire_time,
+                modification_time,
+            ))
+        })?
+        .filter_map(std::result::Result::ok)
+        .map(
+            |(origin, perm_type, permission, expire_time, modification_time)| {
+                let ts_ns = unix_millis_to_nanos(modification_time);
+                let label = permission_label(permission);
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Firefox,
+                    ArtifactKind::Permission,
+                    &source,
+                    format!("{origin} — {perm_type} = {label}"),
+                )
+                .with_attr("origin", json!(origin))
+                .with_attr("permission", json!(perm_type))
+                .with_attr("setting", json!(permission))
+                .with_attr("setting_label", json!(label))
+                .with_attr("expire_time", json!(expire_time))
+                .with_attr("modification_time", json!(modification_time))
+            },
+        )
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
