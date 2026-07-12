@@ -139,7 +139,7 @@ fn decode_key_inner(data: &[u8], depth: usize) -> Option<(IdbKey, usize)> {
 
 /// Decode big-endian UTF-16 bytes, replacing malformed units with U+FFFD so a
 /// corrupt key can never panic. An odd trailing byte is dropped.
-fn decode_utf16_be(bytes: &[u8]) -> String {
+pub(super) fn decode_utf16_be(bytes: &[u8]) -> String {
     let units = bytes
         .chunks_exact(2)
         .map(|c| u16::from_be_bytes([c[0], c[1]]));
