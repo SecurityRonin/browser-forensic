@@ -1,0 +1,24 @@
+[package]
+name = "browser-forensic-reconstruct"
+version = "0.1.0"
+description = "Viewable page reconstruction from browser cache: self-contained single-file HTML, replayable WARC, and cached-image galleries, each carrying a prominent provenance manifest of found vs missing sub-resources (consistent-with, not a rendered capture)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+browser-forensic-cache = { version = "0.1.0", path = "../browser-forensic-cache" }
+url = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+lol_html = { workspace = true }
+warc = { workspace = true }
+imagesize = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

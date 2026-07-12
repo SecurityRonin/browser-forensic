@@ -161,6 +161,27 @@ enum Command {
     /// Recover Service Worker CacheStorage (Cache API) responses. `PATH` is a
     /// `Service Worker/CacheStorage` directory (or one `<origin-hash>` subdir).
     Cachestorage(ArtifactArgs),
+    /// Reconstruct viewable pages from browser cache. `PATH` is a cache
+    /// directory or a whole profile. Writes a self-contained single-file HTML
+    /// page, a replayable WARC, or a cached-image gallery to `--out`. Every
+    /// artifact carries a provenance manifest of found vs missing sub-resources:
+    /// a cache reconstruction is a *consistent-with* artifact, NOT a rendered
+    /// capture (JS/SPA/lazy-loaded/auth-gated content may be absent).
+    Reconstruct {
+        /// A cache directory or profile directory to read.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output directory for the reconstructed artifact(s).
+        #[arg(long, value_name = "DIR")]
+        out: PathBuf,
+        /// Target page URL (html/warc). Omit to reconstruct every cached page
+        /// (html) or the whole cache (warc).
+        #[arg(long, value_name = "TARGET")]
+        url: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = ReconstructFormat::Html)]
+        format: ReconstructFormat,
+    },
     /// Parse browser preferences (Chrome `Preferences` / Firefox `prefs.js`).
     Preferences(ArtifactArgs),
     /// List per-site permission grants (Chrome `Preferences` / Firefox `permissions.sqlite`).
@@ -351,6 +372,12 @@ where
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
         Some(Command::Cachestorage(a)) => run_cachestorage(&a.path, a.format),
+        Some(Command::Reconstruct {
+            path,
+            out,
+            url,
+            format,
+        }) => run_reconstruct(&path, &out, url.as_deref(), format),
         Some(Command::Preferences(a)) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
         Some(Command::Permissions(a)) => run_permissions(&a.path, a.format),
         Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
@@ -424,6 +451,18 @@ pub enum OutputFormat {
     Jsonl,
     /// Comma-separated values with a header row.
     Csv,
+}
+
+/// Reconstruction output format for `br4n6 reconstruct`.
+#[derive(Clone, Copy, Debug, ValueEnum, Default, PartialEq, Eq)]
+pub enum ReconstructFormat {
+    /// Self-contained single-file HTML page(s).
+    #[default]
+    Html,
+    /// Replayable WARC (ISO 28500) archive.
+    Warc,
+    /// Cached-image gallery.
+    Gallery,
 }
 
 /// Lowercased final path component, or `""` if there is none.
@@ -1866,6 +1905,81 @@ fn cachestorage_event(r: &browser_forensic_cache::CacheStorageResource) -> Brows
         ev = ev.with_attr("body_note", json!(note));
     }
     ev
+}
+
+/// `br4n6 reconstruct PATH --out DIR [--url TARGET] [--format ...]` — rebuild
+/// viewable pages from browser cache. `PATH` is a cache directory or a whole
+/// profile; the reconstructed artifact is written to `--out`.
+///
+/// A cache reconstruction is a *consistent-with* artifact, not a rendered
+/// capture: every output carries a provenance manifest enumerating which
+/// sub-resources were found in cache and which were referenced but missing.
+///
+/// # Errors
+/// Returns an error if the output cannot be written, or (html/warc with a
+/// `--url`) if the target page is not present in the cache.
+pub fn run_reconstruct(
+    path: &Path,
+    out: &Path,
+    url: Option<&str>,
+    format: ReconstructFormat,
+) -> Result<()> {
+    use browser_forensic_reconstruct::{reconstruct_to_dir, OutputFormat, ResourceIndex};
+
+    let index = ResourceIndex::from_cache_dir(path);
+    if index.is_empty() {
+        anyhow::bail!(
+            "no recoverable cached resources under {} (expected a Chromium Cache_Data, \
+             Firefox cache2/entries, Safari Cache.db, or Service Worker/CacheStorage path, \
+             or a profile directory containing one)",
+            path.display()
+        );
+    }
+
+    let out_format = match format {
+        ReconstructFormat::Html => OutputFormat::Html,
+        ReconstructFormat::Warc => OutputFormat::Warc,
+        ReconstructFormat::Gallery => OutputFormat::Gallery,
+    };
+
+    // For html/warc a --url must actually be in the cache; fail loud otherwise.
+    if let Some(target) = url {
+        if matches!(out_format, OutputFormat::Html | OutputFormat::Warc)
+            && index.get(target).is_none()
+        {
+            anyhow::bail!(
+                "target page {target} is not present in the cache under {}",
+                path.display()
+            );
+        }
+    }
+
+    let report = reconstruct_to_dir(&index, out, url, out_format)
+        .with_context(|| format!("writing reconstruction to {}", out.display()))?;
+
+    if report.files_written.is_empty() {
+        anyhow::bail!(
+            "nothing reconstructed from {} (no HTML pages found for html format?)",
+            path.display()
+        );
+    }
+
+    println!(
+        "Reconstructed from cached resources (consistent-with, NOT a rendered capture; \
+         JS/SPA/lazy-loaded/auth-gated content may be absent)."
+    );
+    match out_format {
+        OutputFormat::Html => println!(
+            "Wrote {} page(s): {} sub-resource(s) found in cache, {} referenced but MISSING.",
+            report.pages, report.found, report.missing
+        ),
+        OutputFormat::Warc => println!("Wrote {} WARC response record(s).", report.responses),
+        OutputFormat::Gallery => println!("Wrote a gallery of {} cached image(s).", report.images),
+    }
+    for f in &report.files_written {
+        println!("  {}", f.display());
+    }
+    Ok(())
 }
 
 /// `br4n6 indexeddb PATH` — decode a Chromium IndexedDB LevelDB directory
