@@ -18,7 +18,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
+use browser_forensic_core::timestamp::unix_secs_to_nanos;
 use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use serde_json::{json, Value};
 
@@ -120,8 +120,10 @@ pub fn parse_network_persistent_state(path: &Path) -> Result<Vec<BrowserEvent>> 
                 .get("protocol_str")
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            // `broken_until` is Unix SECONDS (Chromium `base::Time::ToTimeT()`),
+            // not WebKit microseconds — verified against real Brave data.
             let broken_until = entry.get("broken_until").and_then(webkit_value);
-            let ts_ns = broken_until.map_or(0, webkit_micros_to_unix_nanos);
+            let ts_ns = broken_until.map_or(0, unix_secs_to_nanos);
             let mut ev = BrowserEvent::new(
                 ts_ns,
                 BrowserFamily::Chromium,

@@ -2,24 +2,31 @@
 
 pub use forensicnomicon::heuristics::{CORE_DATA_EPOCH_OFFSET_SECS, WEBKIT_EPOCH_OFFSET_US};
 
+// All conversions use saturating arithmetic: untrusted browser artifacts can
+// carry extreme integer values, and a parser must clamp rather than panic on
+// overflow (never-panic invariant — CLAUDE.md robustness).
+
 pub fn webkit_micros_to_unix_nanos(webkit_us: i64) -> i64 {
-    (webkit_us - WEBKIT_EPOCH_OFFSET_US) * 1_000
+    webkit_us
+        .saturating_sub(WEBKIT_EPOCH_OFFSET_US)
+        .saturating_mul(1_000)
 }
 
 pub fn core_data_secs_to_unix_nanos(core_data_secs: f64) -> i64 {
-    ((core_data_secs as i64) + CORE_DATA_EPOCH_OFFSET_SECS) * 1_000_000_000
+    ((core_data_secs as i64).saturating_add(CORE_DATA_EPOCH_OFFSET_SECS))
+        .saturating_mul(1_000_000_000)
 }
 
 pub fn unix_micros_to_nanos(us: i64) -> i64 {
-    us * 1_000
+    us.saturating_mul(1_000)
 }
 
 pub fn unix_millis_to_nanos(ms: i64) -> i64 {
-    ms * 1_000_000
+    ms.saturating_mul(1_000_000)
 }
 
 pub fn unix_secs_to_nanos(secs: i64) -> i64 {
-    secs * 1_000_000_000
+    secs.saturating_mul(1_000_000_000)
 }
 
 /// Convert Unix epoch **seconds** carried as a floating-point value (Chromium's
