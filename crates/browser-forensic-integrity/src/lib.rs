@@ -10,6 +10,7 @@ pub mod pages;
 pub use cookies::check_cookie_integrity;
 pub use database::{check_database_integrity, check_wal_state};
 pub use history::check_history_integrity;
+pub use pages::check_page_state;
 
 use std::path::PathBuf;
 
@@ -66,6 +67,22 @@ pub enum IntegrityIndicator {
         table: String,
         max_rowid: i64,
         auto_increment: i64,
+    },
+    /// The database holds free (unallocated) pages on its freelist. Consistent
+    /// with prior deletions that were not followed by `VACUUM`; those pages may
+    /// retain recoverable deleted records.
+    FreelistGrowth {
+        path: PathBuf,
+        free_pages: u32,
+        total_pages: u32,
+    },
+    /// The in-header page count disagrees with the page count implied by the file
+    /// length. Consistent with truncation, carving, or an out-of-band edit of the
+    /// file.
+    PageCountMismatch {
+        path: PathBuf,
+        header_pages: u32,
+        file_pages: u32,
     },
 }
 
@@ -144,6 +161,24 @@ impl IntegrityIndicator {
                  surviving rowid is {max_rowid}",
                 path.display()
             ),
+            Self::FreelistGrowth {
+                path,
+                free_pages,
+                total_pages,
+            } => format!(
+                "{}: {free_pages} of {total_pages} pages are on the freelist (freed, \
+                 unallocated space)",
+                path.display()
+            ),
+            Self::PageCountMismatch {
+                path,
+                header_pages,
+                file_pages,
+            } => format!(
+                "{}: header records {header_pages} pages but the file length implies \
+                 {file_pages}",
+                path.display()
+            ),
         }
     }
 
@@ -192,6 +227,16 @@ impl IntegrityIndicator {
                 "AUTOINCREMENT never reuses values, so this can arise from ordinary \
                  deletion of the highest-id rows, or inserts rolled back by a crash, \
                  leaving the counter ahead of the max rowid without any external editing."
+            }
+            Self::FreelistGrowth { .. } => {
+                "Free pages are a normal by-product of ordinary DELETEs without VACUUM, \
+                 of the browser's own history-expiry/eviction, and of index churn — the \
+                 database reuses them for later inserts."
+            }
+            Self::PageCountMismatch { .. } => {
+                "A page-count mismatch can be produced by an interrupted write, a copy \
+                 captured mid-checkpoint, or trailing bytes appended by a backup tool, \
+                 not only by deliberate truncation."
             }
         }
     }
@@ -364,6 +409,16 @@ mod tests {
                 table: "urls".to_string(),
                 max_rowid: 10,
                 auto_increment: 500,
+            },
+            IntegrityIndicator::FreelistGrowth {
+                path: PathBuf::from("/tmp/History"),
+                free_pages: 12,
+                total_pages: 40,
+            },
+            IntegrityIndicator::PageCountMismatch {
+                path: PathBuf::from("/tmp/History"),
+                header_pages: 40,
+                file_pages: 30,
             },
         ]
     }

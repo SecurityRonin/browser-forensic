@@ -2,6 +2,70 @@
 //! page-count mismatch. Delegates the structural inspection to the validated
 //! [`sqlite_forensic`] auditor rather than re-parsing the b-tree here.
 
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use sqlite_core::Database;
+use sqlite_forensic::AnomalyKind;
+
+use crate::IntegrityIndicator;
+
+/// Inspect the page-level structure of the SQLite database at `path` for
+/// freed-page growth and header/file page-count disagreement.
+///
+/// A `-wal` sidecar, if present, is applied read-only so the freelist reflects
+/// the same view the browser would see. Reuses [`sqlite_forensic::audit`] for the
+/// structural read.
+///
+/// # Errors
+/// Returns an error if the file cannot be read or is not a valid SQLite database
+/// — a bootstrap failure surfaces loudly rather than as a silent empty result.
+pub fn check_page_state(path: &Path) -> Result<Vec<IntegrityIndicator>> {
+    let data = std::fs::read(path)
+        .with_context(|| format!("failed to read SQLite file: {}", path.display()))?;
+
+    let wal_path_str = format!("{}-wal", path.display());
+    let wal_path = Path::new(&wal_path_str);
+    let db = if wal_path.exists() {
+        let wal = std::fs::read(wal_path)
+            .with_context(|| format!("failed to read WAL: {}", wal_path.display()))?;
+        Database::open_with_wal(data, &wal)
+    } else {
+        Database::open(data)
+    }
+    .map_err(|e| anyhow::anyhow!("not a valid SQLite database: {}: {e:?}", path.display()))?;
+
+    let total_pages = db.page_count();
+    let mut indicators = Vec::new();
+    for anomaly in sqlite_forensic::audit(&db) {
+        match anomaly.kind {
+            AnomalyKind::NonEmptyFreelist { free_pages } => {
+                indicators.push(IntegrityIndicator::FreelistGrowth {
+                    path: path.to_path_buf(),
+                    free_pages,
+                    total_pages,
+                });
+            }
+            AnomalyKind::PageCountMismatch {
+                header_pages,
+                file_pages,
+            } => {
+                indicators.push(IntegrityIndicator::PageCountMismatch {
+                    path: path.to_path_buf(),
+                    header_pages,
+                    file_pages,
+                });
+            }
+            // Other audit anomalies (reserved space, WAL overlay, dropped
+            // schema) are surfaced by their own dedicated checks or by the carve
+            // path; page-state focuses on freelist + page-count.
+            _ => {}
+        }
+    }
+
+    Ok(indicators)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::IntegrityIndicator;
