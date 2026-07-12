@@ -21,7 +21,7 @@
 //! back; missing attrs are treated as "absent" (fail-open — reconstruction never
 //! drops or corrupts a visit it cannot fully link).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::json;
 
@@ -73,9 +73,24 @@ fn index_by_visit_id(events: &[BrowserEvent]) -> HashMap<i64, usize> {
 /// raw token stays available in the event's `transition` attr.
 #[must_use]
 pub fn human_transition_label(token: &str) -> &'static str {
-    // RED stub — real mapping added in the GREEN commit.
-    let _ = token;
-    "unimplemented"
+    match token {
+        "link" => "clicked link",
+        "typed" => "typed URL",
+        "auto_bookmark" | "bookmark" => "bookmark",
+        "auto_subframe" => "subframe (auto)",
+        "manual_subframe" => "subframe (manual)",
+        "generated" => "generated",
+        "auto_toplevel" | "start_page" => "start page",
+        "form_submit" => "form submit",
+        "reload" => "reload",
+        "keyword" | "keyword_generated" => "keyword search",
+        "embed" => "embedded object",
+        "redirect_permanent" => "redirect (permanent)",
+        "redirect_temporary" => "redirect (temporary)",
+        "download" => "download",
+        "framed_link" => "framed link",
+        _ => "unknown",
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -93,8 +108,44 @@ pub fn human_transition_label(token: &str) -> &'static str {
 /// Traversal is depth-bounded ([`MAX_CHAIN_DEPTH`]) and cycle-guarded: a cyclic
 /// or dangling `from_visit` graph never loops, overflows the stack, or panics.
 pub fn resolve_referrer_chains(events: &mut [BrowserEvent]) {
-    // RED stub — real implementation added in the GREEN commit.
-    let _ = events;
+    // Snapshot the linkage so the per-event mutation below has no borrow conflict.
+    let url_of: HashMap<i64, String> = events
+        .iter()
+        .filter_map(|e| {
+            let id = attr_i64(e, "visit_id")?;
+            Some((id, attr_str(e, "url").unwrap_or_default().to_string()))
+        })
+        .collect();
+    let from_of: HashMap<i64, i64> = events
+        .iter()
+        .filter_map(|e| {
+            Some((
+                attr_i64(e, "visit_id")?,
+                attr_i64(e, "from_visit").unwrap_or(0),
+            ))
+        })
+        .collect();
+
+    for e in events.iter_mut() {
+        let from = attr_i64(e, "from_visit").unwrap_or(0);
+        if from != 0 {
+            if let Some(u) = url_of.get(&from) {
+                e.attrs.insert("referrer_url".to_string(), json!(u));
+            }
+        }
+        // Depth = resolved referrer hops back to a root, bounded and cycle-guarded.
+        let mut depth: i64 = 0;
+        let mut cur = from;
+        let mut seen: HashSet<i64> = HashSet::new();
+        while cur != 0 && (depth as usize) < MAX_CHAIN_DEPTH {
+            if !url_of.contains_key(&cur) || !seen.insert(cur) {
+                break; // dangling link or a cycle — stop cleanly
+            }
+            depth += 1;
+            cur = from_of.get(&cur).copied().unwrap_or(0);
+        }
+        e.attrs.insert("nav_depth".to_string(), json!(depth));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,19 +183,112 @@ pub struct RedirectChain {
 /// that initiated it when that origin is resolvable. Client vs server flavour is
 /// read from each hop's `redirect_kind` attr. Chains are linear paths; grouping
 /// is cycle-guarded and depth-bounded.
+/// Role of a hop at `pos` in a chain of `total` members.
+fn role_for(pos: usize, total: usize) -> &'static str {
+    if total <= 1 || pos == total - 1 {
+        "landing"
+    } else if pos == 0 {
+        "start"
+    } else {
+        "hop"
+    }
+}
+
 #[must_use]
 pub fn redirect_chains(events: &[BrowserEvent]) -> Vec<RedirectChain> {
-    // RED stub — real implementation added in the GREEN commit.
-    let _ = events;
-    Vec::new()
+    let id_to_idx = index_by_visit_id(events);
+    let is_red = |i: usize| attr_bool(&events[i], "is_redirect") == Some(true);
+
+    // Redirect children keyed by their parent's visit_id (from_visit).
+    let mut redirect_children: HashMap<i64, Vec<usize>> = HashMap::new();
+    for (i, e) in events.iter().enumerate() {
+        if is_red(i) {
+            let from = attr_i64(e, "from_visit").unwrap_or(0);
+            redirect_children.entry(from).or_default().push(i);
+        }
+    }
+
+    let hop = |idx: usize, kind: Option<String>, role: &'static str| RedirectHop {
+        visit_id: attr_i64(&events[idx], "visit_id").unwrap_or(0),
+        url: attr_str(&events[idx], "url")
+            .unwrap_or_default()
+            .to_string(),
+        kind,
+        role,
+    };
+
+    let mut chains: Vec<RedirectChain> = Vec::new();
+    let mut assigned: HashSet<usize> = HashSet::new();
+    for (i, e) in events.iter().enumerate() {
+        if !is_red(i) || assigned.contains(&i) {
+            continue;
+        }
+        let from = attr_i64(e, "from_visit").unwrap_or(0);
+        let parent_idx = id_to_idx.get(&from).copied();
+        // Only a redirect whose parent is not itself a redirect starts a chain;
+        // any redirect with a redirect parent is reached forward from its head.
+        if matches!(parent_idx, Some(pi) if is_red(pi)) {
+            continue;
+        }
+
+        // Forward-follow the redirect run (linear; cycle-guarded, depth-bounded).
+        let mut run: Vec<usize> = Vec::new();
+        let mut cur = i;
+        let mut seen: HashSet<usize> = HashSet::new();
+        while run.len() < MAX_CHAIN_DEPTH && seen.insert(cur) {
+            run.push(cur);
+            assigned.insert(cur);
+            let cur_id = attr_i64(&events[cur], "visit_id").unwrap_or(0);
+            let next = redirect_children
+                .get(&cur_id)
+                .and_then(|kids| kids.iter().copied().find(|k| !seen.contains(k)));
+            match next {
+                Some(n) => cur = n,
+                None => break,
+            }
+        }
+
+        // Prepend the non-redirect origin when it is resolvable.
+        let origin = parent_idx.filter(|&pi| !is_red(pi));
+        let total = run.len() + usize::from(origin.is_some());
+        let mut hops: Vec<RedirectHop> = Vec::with_capacity(total);
+        let mut pos = 0;
+        if let Some(oi) = origin {
+            hops.push(hop(oi, None, role_for(pos, total)));
+            pos += 1;
+        }
+        for &ri in &run {
+            let kind = attr_str(&events[ri], "redirect_kind").map(str::to_string);
+            hops.push(hop(ri, kind, role_for(pos, total)));
+            pos += 1;
+        }
+        chains.push(RedirectChain {
+            id: chains.len(),
+            hops,
+        });
+    }
+    chains
 }
 
 /// Tag each event that belongs to a redirect chain with `redirect_chain_id`
 /// (usize) and `redirect_role` (`"start"`/`"hop"`/`"landing"`) attrs, via
 /// [`redirect_chains`].
 pub fn tag_redirect_chains(events: &mut [BrowserEvent]) {
-    // RED stub — real implementation added in the GREEN commit.
-    let _ = events;
+    let chains = redirect_chains(events);
+    let mut tag: HashMap<i64, (usize, &'static str)> = HashMap::new();
+    for c in &chains {
+        for h in &c.hops {
+            tag.insert(h.visit_id, (c.id, h.role));
+        }
+    }
+    for e in events.iter_mut() {
+        if let Some(id) = attr_i64(e, "visit_id") {
+            if let Some((cid, role)) = tag.get(&id) {
+                e.attrs.insert("redirect_chain_id".to_string(), json!(cid));
+                e.attrs.insert("redirect_role".to_string(), json!(role));
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -176,8 +320,33 @@ impl Default for SessionConfig {
 /// Sessions are *inferred* from the idle-gap heuristic, not recorded by the
 /// browser: report them as "sessions inferred at an N-minute idle gap".
 pub fn sessionize(events: &mut [BrowserEvent], cfg: SessionConfig) {
-    // RED stub — real implementation added in the GREEN commit.
-    let _ = (events, cfg);
+    if events.is_empty() {
+        return;
+    }
+    let mut order: Vec<usize> = (0..events.len()).collect();
+    order.sort_by_key(|&i| events[i].timestamp_ns);
+
+    let mut session: i64 = 0;
+    let mut prev_ts: Option<i64> = None;
+    let mut prev_sess: Option<Option<i64>> = None;
+    for &i in &order {
+        let ts = events[i].timestamp_ns;
+        let recorded = attr_i64(&events[i], "session");
+        if let Some(pt) = prev_ts {
+            let gap = ts.saturating_sub(pt);
+            // A recorded-session change is a boundary only when both sides record one.
+            let sess_changed =
+                prev_sess.is_some_and(|ps| ps.is_some() && recorded.is_some() && ps != recorded);
+            if gap > cfg.idle_gap_ns || sess_changed {
+                session += 1;
+            }
+        }
+        events[i]
+            .attrs
+            .insert("session_id".to_string(), json!(session));
+        prev_ts = Some(ts);
+        prev_sess = Some(recorded);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -192,9 +361,12 @@ pub fn sessionize(events: &mut [BrowserEvent], cfg: SessionConfig) {
 /// recorded activity at or before `t_ns`.
 #[must_use]
 pub fn tabs_open_at(session_events: &[BrowserEvent], t_ns: i64) -> Vec<&BrowserEvent> {
-    // RED stub — real implementation added in the GREEN commit.
-    let _ = (session_events, t_ns);
-    Vec::new()
+    session_events
+        .iter()
+        .filter(|e| {
+            e.artifact == ArtifactKind::Session && e.timestamp_ns > 0 && e.timestamp_ns <= t_ns
+        })
+        .collect()
 }
 
 #[cfg(test)]
