@@ -41,6 +41,19 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Product Requirements: prd.md
+  - Decisions:
+      - Layered multi-crate workspace: decisions/0001-layered-multi-crate-workspace.md
+      - One normalized BrowserEvent schema: decisions/0002-normalized-browserevent-schema.md
+      - Two-track SQLite access: decisions/0003-two-track-sqlite-access.md
+      - Reuse leveldb-forensic for web storage: decisions/0004-reuse-leveldb-forensic-for-web-storage.md
+      - Knowledge-as-code via forensicnomicon: decisions/0005-knowledge-as-code-forensicnomicon.md
+      - Capable by default: decisions/0006-capable-by-default-no-feature-gating.md
+      - Panic-free, fuzzed parsing: decisions/0007-panic-free-fuzzed-parsing.md
+      - Structural signature sweep: decisions/0008-structural-signature-sweep-for-containers.md
+      - Clean-room Hindsight interpretation: decisions/0009-clean-room-hindsight-interpretation.md
+      - Dual-mode CLI and TUI binary: decisions/0010-dual-mode-cli-tui-binary.md
+      - Secret-free, redacted MCP bridge: decisions/0011-secret-free-redacted-mcp-bridge.md
   - Privacy Policy: privacy.md
   - Terms of Service: terms.md
 
