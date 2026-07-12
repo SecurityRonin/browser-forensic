@@ -1,0 +1,187 @@
+//! Firefox `moz_historyvisits` — the per-visit navigation timeline.
+//!
+//! Where [`crate::history`] reads the `moz_places` aggregate (one row per URL,
+//! last-visit only), this reads `moz_historyvisits` joined to `moz_places` to
+//! recover every individual visit with its time, visit-type, `from_visit`
+//! referrer link, and `session` — the Firefox counterpart to Chromium's
+//! `visits` table. It is the input the browser-agnostic reconstruction layer
+//! ([`browser_forensic_core::reconstruct`]) consumes to rebuild referrer and
+//! redirect chains.
+
+use std::path::Path;
+
+use anyhow::Result;
+use browser_forensic_core::sqlite::open_evidence_db;
+use browser_forensic_core::timestamp::unix_micros_to_nanos;
+use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::json;
+
+/// Map a Firefox `visit_type` to a normalized transition token.
+///
+/// Values per `toolkit/components/places/nsINavHistoryService.idl`
+/// (`TRANSITION_*`): 1=LINK, 2=TYPED, 3=BOOKMARK, 4=EMBED,
+/// 5=REDIRECT_PERMANENT, 6=REDIRECT_TEMPORARY, 7=DOWNLOAD, 8=FRAMED_LINK,
+/// 9=RELOAD.
+#[must_use]
+pub fn visit_type_token(visit_type: i64) -> &'static str {
+    // RED stub — real mapping added in the GREEN commit.
+    let _ = visit_type;
+    "unimplemented"
+}
+
+/// Whether a Firefox `visit_type` is a redirect.
+///
+/// Firefox records only server-side HTTP redirects (301 → `REDIRECT_PERMANENT`,
+/// 302 → `REDIRECT_TEMPORARY`) as visit types 5/6; it has no distinct
+/// client/meta-redirect visit type, so every redirect here is server-side.
+#[must_use]
+pub fn is_redirect(visit_type: i64) -> bool {
+    // RED stub — real predicate added in the GREEN commit.
+    let _ = visit_type;
+    false
+}
+
+/// Parse `moz_historyvisits` (joined to `moz_places`) into one [`BrowserEvent`]
+/// ([`ArtifactKind::History`]) per visit, ascending by `visit_date`.
+///
+/// Each event carries the raw linkage the reconstruction layer needs:
+/// `visit_id`, `from_visit`, the `transition` token, `is_redirect`/`redirect_kind`
+/// for redirects, and `session` when the profile records one.
+///
+/// # Errors
+/// Returns an error if the SQLite file cannot be opened or queried.
+pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
+    // RED stub — opens the DB (so the signature is real) but emits nothing.
+    let _db = open_evidence_db(path)?;
+    Ok(Vec::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use browser_forensic_core::test_utils::sqlite::TestDb;
+    use serde_json::json;
+
+    const SCHEMA: &str = "
+        CREATE TABLE moz_places (
+            id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT,
+            visit_count INTEGER DEFAULT 0, last_visit_date INTEGER);
+        CREATE TABLE moz_historyvisits (
+            id INTEGER PRIMARY KEY, from_visit INTEGER, place_id INTEGER,
+            visit_date INTEGER, visit_type INTEGER, session INTEGER);
+    ";
+
+    fn seed_place(db: &TestDb, id: i64, url: &str, title: &str) {
+        db.insert(
+            "INSERT INTO moz_places (id,url,title) VALUES (?1,?2,?3)",
+            rusqlite::params![id, url, title],
+        );
+    }
+
+    #[test]
+    fn visit_type_token_decodes_all_known_types() {
+        assert_eq!(visit_type_token(1), "link");
+        assert_eq!(visit_type_token(2), "typed");
+        assert_eq!(visit_type_token(3), "bookmark");
+        assert_eq!(visit_type_token(4), "embed");
+        assert_eq!(visit_type_token(5), "redirect_permanent");
+        assert_eq!(visit_type_token(6), "redirect_temporary");
+        assert_eq!(visit_type_token(7), "download");
+        assert_eq!(visit_type_token(8), "framed_link");
+        assert_eq!(visit_type_token(9), "reload");
+        assert_eq!(visit_type_token(99), "unknown");
+    }
+
+    #[test]
+    fn is_redirect_true_only_for_5_and_6() {
+        assert!(is_redirect(5));
+        assert!(is_redirect(6));
+        assert!(!is_redirect(1));
+        assert!(!is_redirect(2));
+        assert!(!is_redirect(9));
+    }
+
+    #[test]
+    fn emits_event_per_visit_in_time_order() {
+        let db = TestDb::new(SCHEMA);
+        seed_place(&db, 1, "https://example.com", "Example");
+        seed_place(&db, 2, "https://later.example", "Later");
+        db.insert(
+            "INSERT INTO moz_historyvisits (id,from_visit,place_id,visit_date,visit_type,session) \
+             VALUES (10,0,2,1648000002000000,1,7)",
+            [],
+        ); // later, link
+        db.insert(
+            "INSERT INTO moz_historyvisits (id,from_visit,place_id,visit_date,visit_type,session) \
+             VALUES (11,0,1,1648000001000000,2,7)",
+            [],
+        ); // earlier, typed
+        let events = parse_visits(db.path()).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].artifact, ArtifactKind::History);
+        assert_eq!(events[0].browser, BrowserFamily::Firefox);
+        assert!(events[0].timestamp_ns <= events[1].timestamp_ns);
+        assert_eq!(events[0].attrs["transition"], json!("typed"));
+        assert_eq!(events[0].attrs["visit_id"], json!(11));
+        assert_eq!(events[0].attrs["url"], json!("https://example.com"));
+        assert_eq!(events[1].attrs["transition"], json!("link"));
+        assert_eq!(events[1].attrs["visit_id"], json!(10));
+    }
+
+    #[test]
+    fn from_visit_and_session_are_carried() {
+        let db = TestDb::new(SCHEMA);
+        seed_place(&db, 1, "https://a.example", "A");
+        seed_place(&db, 2, "https://b.example", "B");
+        db.insert(
+            "INSERT INTO moz_historyvisits (id,from_visit,place_id,visit_date,visit_type,session) \
+             VALUES (1,0,1,1648000001000000,2,42)",
+            [],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits (id,from_visit,place_id,visit_date,visit_type,session) \
+             VALUES (2,1,2,1648000002000000,1,42)",
+            [],
+        );
+        let events = parse_visits(db.path()).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1].attrs["from_visit"], json!(1));
+        assert_eq!(events[1].attrs["session"], json!(42));
+    }
+
+    #[test]
+    fn redirect_visit_is_flagged_as_server() {
+        let db = TestDb::new(SCHEMA);
+        seed_place(&db, 1, "https://redir.example", "Redir");
+        db.insert(
+            "INSERT INTO moz_historyvisits (id,from_visit,place_id,visit_date,visit_type,session) \
+             VALUES (1,0,1,1648000001000000,5,0)",
+            [],
+        );
+        let events = parse_visits(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].attrs["is_redirect"], json!(true));
+        assert_eq!(events[0].attrs["redirect_kind"], json!("server"));
+        assert_eq!(events[0].attrs["transition"], json!("redirect_permanent"));
+        // session 0 is "no session" — not carried.
+        assert!(!events[0].attrs.contains_key("session"));
+    }
+
+    #[test]
+    fn skips_zero_visit_date() {
+        let db = TestDb::new(SCHEMA);
+        seed_place(&db, 1, "https://ok.example", "Ok");
+        db.insert(
+            "INSERT INTO moz_historyvisits (id,from_visit,place_id,visit_date,visit_type,session) \
+             VALUES (1,0,1,0,1,0)",
+            [],
+        );
+        db.insert(
+            "INSERT INTO moz_historyvisits (id,from_visit,place_id,visit_date,visit_type,session) \
+             VALUES (2,0,1,1648000001000000,1,0)",
+            [],
+        );
+        let events = parse_visits(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+    }
+}
