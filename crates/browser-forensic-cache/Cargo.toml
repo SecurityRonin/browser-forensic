@@ -14,6 +14,7 @@ brotli = { workspace = true }
 ruzstd = { workspace = true }
 rusqlite = { workspace = true }
 plist = { workspace = true }
+protobuf-forensic-core = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -33,6 +33,57 @@
 //!     Cache API does not persist POST request bodies. This module surfaces the
 //!     request *method* and *headers*; a request body is not recoverable here.
 
+use protobuf_forensic_core::{decode, Field, FieldValue};
+
+/// Decode protobuf bytes into a flat field list; malformed input yields an empty
+/// list (best-effort recovery, never a panic).
+fn fields(bytes: &[u8]) -> Vec<Field> {
+    decode(bytes).unwrap_or_default()
+}
+
+/// The raw payload of the first length-delimited (`LEN`) field with this number.
+fn len_raw<'a>(fields: &'a [Field], number: u64) -> Option<&'a [u8]> {
+    fields.iter().find_map(|f| match &f.value {
+        FieldValue::Len(lv) if f.number == number => Some(lv.raw.as_slice()),
+        _ => None,
+    })
+}
+
+/// A length-delimited field read as a lossy-UTF-8 string.
+fn str_field(fields: &[Field], number: u64) -> Option<String> {
+    len_raw(fields, number).map(|b| String::from_utf8_lossy(b).into_owned())
+}
+
+/// The first varint field with this number.
+fn varint_field(fields: &[Field], number: u64) -> Option<u64> {
+    fields.iter().find_map(|f| match &f.value {
+        FieldValue::Varint(v) if f.number == number => Some(*v),
+        _ => None,
+    })
+}
+
+/// Raw payloads of *every* length-delimited field with this number (a repeated
+/// `LEN` field — repeated submessages or repeated strings).
+fn repeated_len_raw<'a>(fields: &'a [Field], number: u64) -> impl Iterator<Item = &'a [u8]> {
+    fields.iter().filter_map(move |f| match &f.value {
+        FieldValue::Len(lv) if f.number == number => Some(lv.raw.as_slice()),
+        _ => None,
+    })
+}
+
+/// Decode a `bytes` field holding a UTF-16LE string (Chromium `u16string_name`).
+fn utf16le_field(fields: &[Field], number: u64) -> Option<String> {
+    let raw = len_raw(fields, number)?;
+    if raw.len() < 2 {
+        return None;
+    }
+    let units: Vec<u16> = raw
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    Some(String::from_utf16_lossy(&units))
+}
+
 /// One named cache listed in a CacheStorage `index.txt`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheEntry {
@@ -70,9 +121,25 @@ impl CacheStorageIndex {
 /// recovered (possibly none), never an error or panic — a partial index still
 /// lets the caller walk the cache directories that *are* present on disk.
 #[must_use]
-pub fn parse_cachestorage_index(_bytes: &[u8]) -> CacheStorageIndex {
-    // GREEN in the next commit.
-    CacheStorageIndex::default()
+pub fn parse_cachestorage_index(bytes: &[u8]) -> CacheStorageIndex {
+    let top = fields(bytes);
+    // repeated Cache cache = 1
+    let caches = repeated_len_raw(&top, 1)
+        .filter_map(|raw| {
+            let cf = fields(raw);
+            let cache_dir = str_field(&cf, 2)?; // cache_dir = 2 (the UUID)
+                                                // Prefer u16string_name (7) over the legacy UTF-8 name (1).
+            let name = utf16le_field(&cf, 7)
+                .or_else(|| str_field(&cf, 1))
+                .unwrap_or_default();
+            Some(CacheEntry { name, cache_dir })
+        })
+        .collect();
+    CacheStorageIndex {
+        storage_key: str_field(&top, 3), // storage_key = 3
+        origin: str_field(&top, 2),      // origin = 2 (deprecated)
+        caches,
+    }
 }
 
 #[cfg(test)]
