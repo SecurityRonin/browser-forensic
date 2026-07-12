@@ -429,6 +429,8 @@ mod tests {
             cached_time_ns: Some(1_700_000_000_000_000_000),
             content_type: Some(ct.to_string()),
             http_status: Some(200),
+            status_line: Some("HTTP/1.1 200 OK".to_string()),
+            headers: Vec::new(),
             body: body.to_vec(),
             source_file: PathBuf::from("/tmp/x_0"),
         }

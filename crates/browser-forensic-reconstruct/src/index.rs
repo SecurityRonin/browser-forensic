@@ -47,6 +47,11 @@ pub struct IndexedResource {
     pub content_type: Option<String>,
     /// HTTP status code, if known.
     pub http_status: Option<u16>,
+    /// The full HTTP status line (e.g. `HTTP/1.1 200 OK`), if recovered.
+    pub status_line: Option<String>,
+    /// Response headers in the order recovered from the cache. Carried so a
+    /// WARC `response` record can reproduce the original HTTP response block.
+    pub headers: Vec<(String, String)>,
     /// The usable (decoded) resource body.
     pub body: Vec<u8>,
     /// The on-disk file this resource came from.
@@ -194,6 +199,8 @@ mod tests {
             cached_time_ns: Some(1_700_000_000_000_000_000),
             content_type: Some(ct.to_string()),
             http_status: Some(200),
+            status_line: Some("HTTP/1.1 200 OK".to_string()),
+            headers: Vec::new(),
             body: body.to_vec(),
             source_file: PathBuf::from("/tmp/x_0"),
         }
