@@ -1,5 +1,6 @@
 //! `br4n6 cachestorage PATH` — end-to-end CLI test over a synthetic Service
 //! Worker CacheStorage tree built from proto + SimpleCache wire bytes.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::Path;
 
