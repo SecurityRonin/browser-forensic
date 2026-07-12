@@ -8,10 +8,10 @@ use rusqlite::Connection;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// A Chrome `History` under a Chrome-looking home dir, seeded with URLs/titles
-/// carrying an email, an IPv4, a Google search term, and a blocklisted host.
-/// Returns the *home* dir to point subcommands at.
-fn ioc_history() -> TempDir {
+/// A Chrome `History` seeded with URLs/titles carrying an email, an IPv4, a
+/// Google search term, and a blocklisted host. Returns `(TempDir, profile_dir)`;
+/// the profile dir is what the analysis subcommands point at.
+fn ioc_history() -> (TempDir, PathBuf) {
     let dir = TempDir::new().unwrap();
     let profile_dir = dir.path().join("google-chrome").join("Default");
     std::fs::create_dir_all(&profile_dir).unwrap();
@@ -32,7 +32,7 @@ fn ioc_history() -> TempDir {
           ('https://good.example.org/news', 'Good News', 1, 13327629000000000);",
     )
     .unwrap();
-    dir
+    (dir, profile_dir)
 }
 
 fn br4n6() -> Command {
@@ -52,11 +52,11 @@ fn help_exits_zero_for_new_subcommands() {
 
 #[test]
 fn search_regex_filters_events() {
-    let home = ioc_history();
+    let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
             "search",
-            home.path().to_str().unwrap(),
+            home.to_str().unwrap(),
             "--regex",
             r"8\.8\.8\.8",
             "--format",
@@ -80,11 +80,11 @@ fn search_regex_filters_events() {
 
 #[test]
 fn search_substring_matches_title() {
-    let home = ioc_history();
+    let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
             "search",
-            home.path().to_str().unwrap(),
+            home.to_str().unwrap(),
             "--substring",
             "Tracker",
             "--format",
@@ -101,12 +101,12 @@ fn search_substring_matches_title() {
 
 #[test]
 fn search_time_range_excludes_future() {
-    let home = ioc_history();
+    let (_dir, home) = ioc_history();
     // All fixture visits are in 2023; a 2100 lower bound excludes everything.
     let out = br4n6()
         .args([
             "search",
-            home.path().to_str().unwrap(),
+            home.to_str().unwrap(),
             "--from",
             "2100-01-01",
             "--format",
@@ -123,11 +123,11 @@ fn search_time_range_excludes_future() {
 
 #[test]
 fn search_time_range_includes_past() {
-    let home = ioc_history();
+    let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
             "search",
-            home.path().to_str().unwrap(),
+            home.to_str().unwrap(),
             "--from",
             "2000-01-01",
             "--format",
@@ -149,14 +149,9 @@ fn search_time_range_includes_past() {
 
 #[test]
 fn extract_iocs_finds_email_ip_and_search_term() {
-    let home = ioc_history();
+    let (_dir, home) = ioc_history();
     let out = br4n6()
-        .args([
-            "extract-iocs",
-            home.path().to_str().unwrap(),
-            "--format",
-            "jsonl",
-        ])
+        .args(["extract-iocs", home.to_str().unwrap(), "--format", "jsonl"])
         .assert()
         .success()
         .get_output()
@@ -173,14 +168,9 @@ fn extract_iocs_finds_email_ip_and_search_term() {
 
 #[test]
 fn extract_iocs_jsonl_is_valid_json() {
-    let home = ioc_history();
+    let (_dir, home) = ioc_history();
     let out = br4n6()
-        .args([
-            "extract-iocs",
-            home.path().to_str().unwrap(),
-            "--format",
-            "jsonl",
-        ])
+        .args(["extract-iocs", home.to_str().unwrap(), "--format", "jsonl"])
         .assert()
         .success()
         .get_output()
@@ -209,13 +199,13 @@ fn extract_iocs_missing_path_errors() {
 
 #[test]
 fn match_domains_flags_blocklisted_host() {
-    let home = ioc_history();
-    let list = home.path().join("blocklist.txt");
+    let (_dir, home) = ioc_history();
+    let list = home.join("blocklist.txt");
     std::fs::write(&list, "# bad domains\nevil.com\n").unwrap();
     let out = br4n6()
         .args([
             "match-domains",
-            home.path().to_str().unwrap(),
+            home.to_str().unwrap(),
             "--list",
             list.to_str().unwrap(),
             "--format",
@@ -240,11 +230,11 @@ fn match_domains_flags_blocklisted_host() {
 
 #[test]
 fn match_domains_missing_list_errors() {
-    let home = ioc_history();
+    let (_dir, home) = ioc_history();
     br4n6()
         .args([
             "match-domains",
-            home.path().to_str().unwrap(),
+            home.to_str().unwrap(),
             "--list",
             "/no/such/list.txt",
         ])
@@ -254,13 +244,13 @@ fn match_domains_missing_list_errors() {
 
 #[test]
 fn match_domains_empty_list_errors_loudly() {
-    let home = ioc_history();
-    let list = home.path().join("empty.txt");
+    let (_dir, home) = ioc_history();
+    let list = home.join("empty.txt");
     std::fs::write(&list, "# only comments\n\n").unwrap();
     br4n6()
         .args([
             "match-domains",
-            home.path().to_str().unwrap(),
+            home.to_str().unwrap(),
             "--list",
             list.to_str().unwrap(),
         ])

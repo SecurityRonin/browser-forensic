@@ -1141,6 +1141,11 @@ pub fn profile_family(dir: &Path) -> Option<BrowserFamily> {
 /// # Errors
 /// Returns an error if collection fails.
 fn collect_profile_events(path: &Path) -> Result<Vec<BrowserEvent>> {
+    // Bootstrap check: a nonexistent path is a loud error, not a silent empty
+    // result (which would be indistinguishable from a genuinely empty profile).
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
     let mut report = browser_forensic_triage::triage(path)
         .with_context(|| format!("collecting events from {}", path.display()))?;
     if report.profiles.is_empty() && report.events.is_empty() {
@@ -1169,8 +1174,52 @@ pub fn run_search(
     to: Option<&str>,
     format: OutputFormat,
 ) -> Result<()> {
-    let _ = (path, regex, substring, fields, from, to, format);
-    anyhow::bail!("run_search not yet implemented")
+    use browser_forensic_search::{filter_events, EventQuery, Pattern};
+
+    let pattern = match (regex, substring) {
+        (Some(_), Some(_)) => {
+            anyhow::bail!("pass only one of --regex or --substring, not both")
+        }
+        (Some(pat), None) => {
+            Some(Pattern::regex(pat).with_context(|| format!("invalid regex: {pat}"))?)
+        }
+        (None, Some(s)) => Some(Pattern::substring(s)),
+        (None, None) => None,
+    };
+
+    let query = EventQuery {
+        pattern,
+        fields: fields.to_vec(),
+        from_ns: from.map(parse_timestamp_ns).transpose()?,
+        to_ns: to.map(parse_timestamp_ns).transpose()?,
+    };
+
+    let events = collect_profile_events(path)?;
+    let matched: Vec<BrowserEvent> = filter_events(&events, &query)
+        .into_iter()
+        .cloned()
+        .collect();
+    emit_events(&matched, format);
+    Ok(())
+}
+
+/// Parse a timestamp argument to Unix nanoseconds: an RFC3339 datetime, a
+/// `YYYY-MM-DD` date (midnight UTC), or a raw integer already in nanoseconds.
+fn parse_timestamp_ns(s: &str) -> Result<i64> {
+    use chrono::{DateTime, NaiveDate};
+
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.timestamp_nanos_opt().unwrap_or(0));
+    }
+    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        if let Some(dt) = date.and_hms_opt(0, 0, 0) {
+            return Ok(dt.and_utc().timestamp_nanos_opt().unwrap_or(0));
+        }
+    }
+    if let Ok(ns) = s.parse::<i64>() {
+        return Ok(ns);
+    }
+    anyhow::bail!("unrecognized timestamp {s:?} (want RFC3339, YYYY-MM-DD, or Unix nanoseconds)")
 }
 
 /// `br4n6 extract-iocs` — extract candidate entities from collected events.
@@ -1178,8 +1227,17 @@ pub fn run_search(
 /// # Errors
 /// Returns an error if collection fails.
 pub fn run_extract_iocs(path: &Path, format: OutputFormat) -> Result<()> {
-    let _ = (path, format);
-    anyhow::bail!("run_extract_iocs not yet implemented")
+    let events = collect_profile_events(path)?;
+    let iocs = browser_forensic_search::extract_iocs(&events);
+    emit_iocs(&iocs, &events, format);
+    // Honesty note on the human view only; machine streams stay data-only.
+    if matches!(format, OutputFormat::Text) {
+        eprintln!(
+            "{} candidate entities (shape/checksum matches, not confirmed identifiers)",
+            iocs.len()
+        );
+    }
+    Ok(())
 }
 
 /// `br4n6 match-domains` — flag events whose host matches a blocklist file.
@@ -1187,8 +1245,127 @@ pub fn run_extract_iocs(path: &Path, format: OutputFormat) -> Result<()> {
 /// # Errors
 /// Returns an error if the list is missing/empty or collection fails.
 pub fn run_match_domains(path: &Path, list: &Path, format: OutputFormat) -> Result<()> {
-    let _ = (path, list, format);
-    anyhow::bail!("run_match_domains not yet implemented")
+    use browser_forensic_search::DomainMatcher;
+
+    let text = std::fs::read_to_string(list)
+        .with_context(|| format!("reading blocklist {}", list.display()))?;
+    let domains = DomainMatcher::parse_blocklist(&text);
+    let matcher = DomainMatcher::new(&domains).with_context(|| {
+        format!(
+            "blocklist {} contains no usable domains (empty after removing blanks/comments)",
+            list.display()
+        )
+    })?;
+
+    let events = collect_profile_events(path)?;
+    let hits = matcher.match_events(&events);
+    emit_domain_hits(&hits, &events, format);
+    Ok(())
+}
+
+/// Render IOC matches. Human `text` shows type, full value, provenance, and the
+/// honesty note; machine `jsonl`/`csv` stay faithful and round-trippable.
+fn emit_iocs(
+    iocs: &[browser_forensic_search::IocMatch],
+    events: &[BrowserEvent],
+    format: OutputFormat,
+) {
+    match format {
+        OutputFormat::Text => {
+            for m in iocs {
+                let ts = events
+                    .get(m.event_index)
+                    .map_or_else(String::new, |e| format_ts(e.timestamp_ns));
+                let note = m
+                    .note
+                    .as_deref()
+                    .map(|n| format!(" ({n})"))
+                    .unwrap_or_default();
+                println!(
+                    "{kind}\t{value}{note}\t[{ts} {field}@{offset}]",
+                    kind = m.kind.label(),
+                    value = m.value,
+                    field = m.field,
+                    offset = m.offset,
+                );
+            }
+        }
+        OutputFormat::Jsonl => {
+            for m in iocs {
+                let ts = events.get(m.event_index).map(|e| format_ts(e.timestamp_ns));
+                let mut obj = serde_json::to_value(m).unwrap_or_else(|_| json!({}));
+                if let (Some(map), Some(ts)) = (obj.as_object_mut(), ts) {
+                    map.insert("timestamp".to_string(), json!(ts));
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string())
+                );
+            }
+        }
+        OutputFormat::Csv => {
+            println!("kind,value,event_index,field,offset,note");
+            for m in iocs {
+                println!(
+                    "{},{},{},{},{},{}",
+                    csv_escape(m.kind.label()),
+                    csv_escape(&m.value),
+                    m.event_index,
+                    csv_escape(&m.field),
+                    m.offset,
+                    csv_escape(m.note.as_deref().unwrap_or_default()),
+                );
+            }
+        }
+    }
+}
+
+/// Render blocklist domain hits in text/jsonl/csv.
+fn emit_domain_hits(
+    hits: &[browser_forensic_search::DomainHit],
+    events: &[BrowserEvent],
+    format: OutputFormat,
+) {
+    match format {
+        OutputFormat::Text => {
+            for h in hits {
+                let ts = events
+                    .get(h.event_index)
+                    .map_or_else(String::new, |e| format_ts(e.timestamp_ns));
+                println!(
+                    "{domain}\t{host}\t[{ts} {field}]",
+                    domain = h.blocklisted_domain,
+                    host = h.host,
+                    field = h.field,
+                );
+            }
+        }
+        OutputFormat::Jsonl => {
+            for h in hits {
+                let ts = events.get(h.event_index).map(|e| format_ts(e.timestamp_ns));
+                let mut obj = serde_json::to_value(h).unwrap_or_else(|_| json!({}));
+                if let (Some(map), Some(ts)) = (obj.as_object_mut(), ts) {
+                    map.insert("timestamp".to_string(), json!(ts));
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string())
+                );
+            }
+        }
+        OutputFormat::Csv => {
+            println!("blocklisted_domain,host,event_index,field");
+            for h in hits {
+                println!(
+                    "{},{},{},{}",
+                    csv_escape(&h.blocklisted_domain),
+                    csv_escape(&h.host),
+                    h.event_index,
+                    csv_escape(&h.field),
+                );
+            }
+        }
+    }
 }
 
 /// `br4n6 export` — collect a correlated timeline for a profile/home directory
