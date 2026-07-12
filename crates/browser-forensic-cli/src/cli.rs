@@ -132,6 +132,11 @@ enum Command {
     /// Surface stored account/payment metadata from Chromium `Web Data`
     /// (cards, tokens, autofill profiles). Values are NEVER decrypted.
     Credentials(ArtifactArgs),
+    /// Recover domains contacted even after history is cleared, from
+    /// network/state artifacts (Network Persistent State, Reporting and NEL,
+    /// DIPS/BTM, TransportSecurity, Firefox HSTS). `PATH` is a profile directory
+    /// or a single such artifact file.
+    RecoveredDomains(ArtifactArgs),
     /// Parse web storage (Local/Session Storage, IndexedDB).
     Storage(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
@@ -233,6 +238,7 @@ where
         Some(Command::Preferences(a)) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
         Some(Command::Permissions(a)) => run_permissions(&a.path, a.format),
         Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
+        Some(Command::RecoveredDomains(a)) => run_recovered_domains(&a.path, a.format),
         Some(Command::Storage(a)) => run_storage(&a.path, a.format),
         Some(Command::Export {
             path,
@@ -1280,6 +1286,50 @@ pub fn run_credentials(path: &Path, format: OutputFormat) -> Result<()> {
     events.sort_by_key(|e| e.timestamp_ns);
     print_events(&events, format);
     Ok(())
+}
+
+/// `br4n6 recovered-domains PATH` — recover domains the user contacted that
+/// survive a history clear, from network/state artifacts. `PATH` is a profile
+/// directory (every recovered-domain source beneath it is aggregated) or a
+/// single artifact file (`Network Persistent State`, `Reporting and NEL`,
+/// `DIPS`, `TransportSecurity`, or Firefox `SiteSecurityServiceState.txt`).
+///
+/// Read-only, no secrets. Chromium HSTS hosts are hashed and surfaced as
+/// non-enumerable; every other source yields cleartext hosts, labelled
+/// "contacted (may be a subresource/third-party), recovered independently of
+/// history".
+///
+/// # Errors
+/// Returns an error only for a single file whose name is not a recognized
+/// recovered-domain source. A directory with no such sources yields no events.
+pub fn run_recovered_domains(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = if path.is_dir() {
+        browser_forensic_triage::collect_recovered_domains(path)
+    } else {
+        recovered_domains_for_file(path)?
+    };
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// Dispatch a single recovered-domain artifact file to its parser by file name.
+fn recovered_domains_for_file(path: &Path) -> Result<Vec<BrowserEvent>> {
+    match file_name_lower(path).as_str() {
+        "network persistent state" => Ok(browser_forensic_chrome::parse_network_persistent_state(
+            path,
+        )?),
+        "reporting and nel" => Ok(browser_forensic_chrome::parse_reporting_and_nel(path)?),
+        "dips" => Ok(browser_forensic_chrome::parse_dips(path)?),
+        "transportsecurity" => Ok(browser_forensic_chrome::parse_transport_security(path)?),
+        "sitesecurityservicestate.txt" => Ok(browser_forensic_firefox::parse_site_security(path)?),
+        _ => anyhow::bail!(
+            "unrecognized recovered-domain source: {} (expected a profile directory, or one of: \
+             Network Persistent State / Reporting and NEL / DIPS / TransportSecurity / \
+             SiteSecurityServiceState.txt)",
+            path.display()
+        ),
+    }
 }
 
 /// `br4n6 carve PATH` — recover deleted records from free pages and the WAL.
