@@ -39,15 +39,29 @@ pub const STORAGE_TYPE_INDEXEDDB: &str = "indexeddb";
 
 /// Lowercase-hex encode raw bytes (used to surface raw keys/values verbatim).
 pub(crate) fn to_hex(bytes: &[u8]) -> String {
-    let _ = bytes;
-    String::new()
+    use std::fmt::Write as _;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        // Writing to a String is infallible.
+        let _ = write!(s, "{b:02x}");
+    }
+    s
 }
 
 /// True if `dir` looks like a LevelDB directory (has a `CURRENT` file or any
 /// `.ldb`/`.sst`/`.log` file).
 pub(crate) fn is_leveldb_dir(dir: &Path) -> bool {
-    let _ = dir;
-    false
+    if dir.join("CURRENT").is_file() {
+        return true;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        e.path()
+            .extension()
+            .is_some_and(|ext| ext == "ldb" || ext == "sst" || ext == "log")
+    })
 }
 
 /// Auto-detect the web-storage backend at `path` and parse it.
@@ -64,8 +78,60 @@ pub(crate) fn is_leveldb_dir(dir: &Path) -> bool {
 /// Returns an error if `path` does not exist, is an unrecognized file, or is a
 /// directory holding no recognized web storage.
 pub fn parse_path(path: &Path) -> Result<Vec<BrowserEvent>> {
-    let _ = path;
-    Ok(Vec::new())
+    if !path.exists() {
+        anyhow::bail!("web-storage path does not exist: {}", path.display());
+    }
+    if path.is_file() {
+        return parse_file(path);
+    }
+    if is_leveldb_dir(path) {
+        return parse_leveldb_dir(path);
+    }
+    // Treat any other directory as a profile directory and aggregate.
+    let mut events = collect_chromium_web_storage(path);
+    events.extend(collect_firefox_web_storage(path));
+    if events.is_empty() {
+        anyhow::bail!(
+            "{} is not a LevelDB directory and contains no recognized web storage \
+             (Local Storage/leveldb, Session Storage, IndexedDB/*.leveldb, \
+             webappsstore.sqlite, storage/default/*/idb/*.sqlite)",
+            path.display()
+        );
+    }
+    Ok(events)
+}
+
+/// Route a single web-storage *file* to the matching Firefox parser.
+fn parse_file(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if name == "webappsstore.sqlite" {
+        return parse_firefox_local_storage(path);
+    }
+    if name.ends_with(".sqlite") {
+        // Firefox IndexedDB lives at storage/default/*/idb/*.sqlite; any other
+        // .sqlite is attempted as IndexedDB and fails loud if it lacks the table.
+        return parse_firefox_indexeddb(path);
+    }
+    anyhow::bail!(
+        "unrecognized web-storage file {} (name {name:?}); expected \
+         webappsstore.sqlite or an IndexedDB *.sqlite",
+        path.display()
+    );
+}
+
+/// Classify a LevelDB directory by its enclosing path and parse it.
+fn parse_leveldb_dir(dir: &Path) -> Result<Vec<BrowserEvent>> {
+    let lower = dir.to_string_lossy().to_lowercase();
+    if lower.contains("session storage") {
+        parse_session_storage(dir)
+    } else if lower.contains("indexeddb") {
+        parse_indexeddb(dir)
+    } else {
+        parse_local_storage(dir)
+    }
 }
 
 /// Aggregate every Chromium web-storage source found under a profile directory:
@@ -73,8 +139,35 @@ pub fn parse_path(path: &Path) -> Result<Vec<BrowserEvent>> {
 /// A single unreadable source is skipped; the rest are still returned.
 #[must_use]
 pub fn collect_chromium_web_storage(profile_dir: &Path) -> Vec<BrowserEvent> {
-    let _ = profile_dir;
-    Vec::new()
+    let mut events = Vec::new();
+
+    let local = profile_dir.join("Local Storage").join("leveldb");
+    if is_leveldb_dir(&local) {
+        if let Ok(mut e) = parse_local_storage(&local) {
+            events.append(&mut e);
+        }
+    }
+
+    let session = profile_dir.join("Session Storage");
+    if is_leveldb_dir(&session) {
+        if let Ok(mut e) = parse_session_storage(&session) {
+            events.append(&mut e);
+        }
+    }
+
+    let idb_root = profile_dir.join("IndexedDB");
+    if let Ok(entries) = std::fs::read_dir(&idb_root) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && is_leveldb_dir(&p) {
+                if let Ok(mut e) = parse_indexeddb(&p) {
+                    events.append(&mut e);
+                }
+            }
+        }
+    }
+
+    events
 }
 
 /// Aggregate every Firefox web-storage source found under a profile directory:
@@ -82,8 +175,35 @@ pub fn collect_chromium_web_storage(profile_dir: &Path) -> Vec<BrowserEvent> {
 /// A single unreadable source is skipped; the rest are still returned.
 #[must_use]
 pub fn collect_firefox_web_storage(profile_dir: &Path) -> Vec<BrowserEvent> {
-    let _ = profile_dir;
-    Vec::new()
+    let mut events = Vec::new();
+
+    let local = profile_dir.join("webappsstore.sqlite");
+    if local.is_file() {
+        if let Ok(mut e) = parse_firefox_local_storage(&local) {
+            events.append(&mut e);
+        }
+    }
+
+    // storage/default/<origin>/idb/<db>.sqlite
+    let default_root = profile_dir.join("storage").join("default");
+    if let Ok(origins) = std::fs::read_dir(&default_root) {
+        for origin in origins.flatten() {
+            let idb = origin.path().join("idb");
+            let Ok(files) = std::fs::read_dir(&idb) else {
+                continue;
+            };
+            for f in files.flatten() {
+                let p = f.path();
+                if p.extension().is_some_and(|x| x == "sqlite") {
+                    if let Ok(mut e) = parse_firefox_indexeddb(&p) {
+                        events.append(&mut e);
+                    }
+                }
+            }
+        }
+    }
+
+    events
 }
 
 #[cfg(test)]
@@ -205,8 +325,10 @@ mod tests {
     /// Build a real on-disk LevelDB directory at `path`.
     fn build_real_leveldb(path: &Path, entries: &[(&[u8], &[u8])]) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let mut opt = rusty_leveldb::Options::default();
-        opt.create_if_missing = true;
+        let opt = rusty_leveldb::Options {
+            create_if_missing: true,
+            ..Default::default()
+        };
         let mut db = rusty_leveldb::DB::open(path, opt).unwrap();
         for (k, v) in entries {
             db.put(k, v).unwrap();

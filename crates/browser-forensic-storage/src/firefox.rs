@@ -28,8 +28,37 @@ use crate::{to_hex, STORAGE_TYPE_INDEXEDDB, STORAGE_TYPE_LOCAL};
 /// Returns an error if the SQLite file cannot be opened or the `webappsstore2`
 /// table cannot be queried.
 pub fn parse_firefox_local_storage(path: &Path) -> Result<Vec<BrowserEvent>> {
-    let _ = path;
-    Ok(Vec::new())
+    let db = open_evidence_db(path)?;
+    let source = path.to_string_lossy().into_owned();
+    let mut stmt = db
+        .conn
+        .prepare("SELECT scope, key, value FROM webappsstore2")?;
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let scope: String = row.get(0)?;
+            let key: String = row.get(1)?;
+            let value: String = row.get(2)?;
+            Ok((scope, key, value))
+        })?
+        .filter_map(std::result::Result::ok)
+        .map(|(scope, key, value)| {
+            let host = descope_host(&scope);
+            BrowserEvent::new(
+                0,
+                BrowserFamily::Firefox,
+                ArtifactKind::LocalStorage,
+                &source,
+                format!("{host} \u{2014} {key} = {value}"),
+            )
+            .with_attr("storage_type", json!(STORAGE_TYPE_LOCAL))
+            .with_attr("record", json!("data"))
+            .with_attr("scope", json!(scope))
+            .with_attr("host", json!(host))
+            .with_attr("key", json!(key))
+            .with_attr("value", json!(value))
+        })
+        .collect();
+    Ok(events)
 }
 
 /// Parse a Firefox IndexedDB `*.sqlite` file into opaque [`BrowserEvent`]s.
@@ -45,8 +74,51 @@ pub fn parse_firefox_local_storage(path: &Path) -> Result<Vec<BrowserEvent>> {
 /// Returns an error if the SQLite file cannot be opened or lacks an
 /// `object_data` table.
 pub fn parse_firefox_indexeddb(path: &Path) -> Result<Vec<BrowserEvent>> {
-    let _ = path;
-    Ok(Vec::new())
+    let db = open_evidence_db(path)?;
+    let source = path.to_string_lossy().into_owned();
+
+    // Database name is best-effort context; absent on some schema versions.
+    let db_name: Option<String> = db
+        .conn
+        .query_row("SELECT name FROM database LIMIT 1", [], |row| row.get(0))
+        .optional()
+        .unwrap_or(None);
+
+    let mut stmt = db
+        .conn
+        .prepare("SELECT object_store_id, key, length(data) FROM object_data")?;
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let store_id: i64 = row.get(0)?;
+            let key: Vec<u8> = row.get(1)?;
+            let data_len: i64 = row.get(2)?;
+            Ok((store_id, key, data_len))
+        })?
+        .filter_map(std::result::Result::ok)
+        .map(|(store_id, key, data_len)| {
+            let ev = BrowserEvent::new(
+                0,
+                BrowserFamily::Firefox,
+                ArtifactKind::LocalStorage,
+                &source,
+                format!(
+                    "IndexedDB record: object_store {store_id}, key {} bytes, \
+                     value {data_len} bytes (opaque, structured-clone)",
+                    key.len()
+                ),
+            )
+            .with_attr("storage_type", json!(STORAGE_TYPE_INDEXEDDB))
+            .with_attr("object_store_id", json!(store_id))
+            .with_attr("key_hex", json!(to_hex(&key)))
+            .with_attr("value_len", json!(data_len))
+            .with_attr("value_opaque", json!(true));
+            match &db_name {
+                Some(name) => ev.with_attr("database", json!(name)),
+                None => ev,
+            }
+        })
+        .collect();
+    Ok(events)
 }
 
 /// Recover a readable host from a Firefox `webappsstore2` scope string.
@@ -56,8 +128,9 @@ pub fn parse_firefox_indexeddb(path: &Path) -> Result<Vec<BrowserEvent>> {
 /// single leading dot is trimmed; a scope without a `:` is treated as a bare
 /// reversed host.
 pub(crate) fn descope_host(scope: &str) -> String {
-    let _ = scope;
-    String::new()
+    let reversed = scope.split(':').next().unwrap_or(scope);
+    let host: String = reversed.chars().rev().collect();
+    host.strip_prefix('.').unwrap_or(&host).to_string()
 }
 
 #[cfg(test)]

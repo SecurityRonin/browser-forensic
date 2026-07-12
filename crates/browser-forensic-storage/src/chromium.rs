@@ -31,8 +31,9 @@ use crate::{to_hex, STORAGE_TYPE_INDEXEDDB, STORAGE_TYPE_LOCAL, STORAGE_TYPE_SES
 ///
 /// Returns an error if the directory cannot be opened or read as LevelDB.
 pub fn parse_local_storage(dir: &Path) -> Result<Vec<BrowserEvent>> {
-    let _ = dir;
-    Ok(Vec::new())
+    let records = leveldb_forensic::decode_local_storage(dir)
+        .map_err(|e| anyhow::anyhow!("reading Local Storage LevelDB at {}: {e}", dir.display()))?;
+    Ok(local_records_to_events(&records, &dir.to_string_lossy()))
 }
 
 /// Parse a Chromium `Session Storage` LevelDB directory into [`BrowserEvent`]s.
@@ -41,8 +42,10 @@ pub fn parse_local_storage(dir: &Path) -> Result<Vec<BrowserEvent>> {
 ///
 /// Returns an error if the directory cannot be opened or read as LevelDB.
 pub fn parse_session_storage(dir: &Path) -> Result<Vec<BrowserEvent>> {
-    let _ = dir;
-    Ok(Vec::new())
+    let records = leveldb_forensic::decode_session_storage(dir).map_err(|e| {
+        anyhow::anyhow!("reading Session Storage LevelDB at {}: {e}", dir.display())
+    })?;
+    Ok(session_records_to_events(&records, &dir.to_string_lossy()))
 }
 
 /// Parse a Chromium IndexedDB LevelDB directory into opaque [`BrowserEvent`]s.
@@ -55,8 +58,40 @@ pub fn parse_session_storage(dir: &Path) -> Result<Vec<BrowserEvent>> {
 ///
 /// Returns an error if the directory cannot be opened or read as LevelDB.
 pub fn parse_indexeddb(dir: &Path) -> Result<Vec<BrowserEvent>> {
-    let _ = dir;
-    Ok(Vec::new())
+    let records = leveldb_core::read_dir(dir)
+        .map_err(|e| anyhow::anyhow!("reading IndexedDB LevelDB at {}: {e}", dir.display()))?;
+    let source = dir.to_string_lossy();
+    Ok(records
+        .iter()
+        .map(|r| indexeddb_event(&source, r, BrowserFamily::Chromium))
+        .collect())
+}
+
+/// Build an opaque IndexedDB event from a raw LevelDB record. The value is
+/// Blink/v8-serialized and is *not* decoded; its length and the raw key (hex)
+/// are surfaced so an examiner has the evidence without a fabricated decode.
+fn indexeddb_event(
+    source: &str,
+    rec: &leveldb_core::Record,
+    browser: BrowserFamily,
+) -> BrowserEvent {
+    BrowserEvent::new(
+        0,
+        browser,
+        ArtifactKind::LocalStorage,
+        source,
+        format!(
+            "IndexedDB record: key {} bytes, value {} bytes (opaque, v8-serialized)",
+            rec.key.len(),
+            rec.value.len()
+        ),
+    )
+    .with_attr("storage_type", json!(STORAGE_TYPE_INDEXEDDB))
+    .with_attr("key_hex", json!(to_hex(&rec.key)))
+    .with_attr("value_len", json!(rec.value.len()))
+    .with_attr("value_opaque", json!(true))
+    .with_attr("seq", json!(rec.seq))
+    .with_attr("deleted", json!(rec.deleted))
 }
 
 /// Map decoded Local Storage records to events, correlating each `Data` record
@@ -65,8 +100,77 @@ pub(crate) fn local_records_to_events(
     records: &[LocalStorageRecord],
     source: &str,
 ) -> Vec<BrowserEvent> {
-    let _ = (records, source);
-    Vec::new()
+    // First pass: latest live META timestamp (WebKit micros) per origin.
+    let mut meta_micros: HashMap<&str, (u64, u64)> = HashMap::new();
+    for r in records {
+        if let LocalStorageRecord::Meta {
+            origin,
+            timestamp_webkit_micros,
+            seq,
+            deleted,
+            ..
+        } = r
+        {
+            if *deleted {
+                continue;
+            }
+            let slot = meta_micros.entry(origin.as_str()).or_insert((0, 0));
+            if *seq >= slot.0 {
+                *slot = (*seq, *timestamp_webkit_micros);
+            }
+        }
+    }
+
+    let mut events = Vec::new();
+    for r in records {
+        match r {
+            LocalStorageRecord::Data {
+                origin,
+                script_key,
+                value,
+                seq,
+                deleted,
+            } => {
+                let ts_ns = meta_micros.get(origin.as_str()).map_or(0, |(_, micros)| {
+                    webkit_micros_to_unix_nanos(clamp_micros(*micros))
+                });
+                let ev = BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::LocalStorage,
+                    source,
+                    format!("{origin} \u{2014} {} = {}", script_key.text, value.text),
+                )
+                .with_attr("storage_type", json!(STORAGE_TYPE_LOCAL))
+                .with_attr("record", json!("data"))
+                .with_attr("origin", json!(origin))
+                .with_attr("key", json!(script_key.text))
+                .with_attr("seq", json!(seq))
+                .with_attr("deleted", json!(deleted));
+                events.push(attach_value(ev, value));
+            }
+            LocalStorageRecord::Other { key, seq, deleted } => {
+                events.push(other_event(
+                    source,
+                    STORAGE_TYPE_LOCAL,
+                    key,
+                    *seq,
+                    *deleted,
+                    BrowserFamily::Chromium,
+                ));
+            }
+            // META records feed the timestamp map above; they are not events.
+            LocalStorageRecord::Meta { .. } => {}
+        }
+    }
+    events
+}
+
+/// Clamp a WebKit-microsecond `u64` into the `i64` the timestamp helpers use;
+/// realistic dates are far below `i64::MAX`, so an out-of-range value (corrupt
+/// input) saturates rather than wrapping.
+fn clamp_micros(micros: u64) -> i64 {
+    i64::try_from(micros).unwrap_or(i64::MAX)
 }
 
 /// Map decoded Session Storage records to events.
@@ -74,8 +178,50 @@ pub(crate) fn session_records_to_events(
     records: &[SessionStorageRecord],
     source: &str,
 ) -> Vec<BrowserEvent> {
-    let _ = (records, source);
-    Vec::new()
+    let mut events = Vec::new();
+    for r in records {
+        match r {
+            SessionStorageRecord::Map {
+                map_id,
+                host,
+                script_key,
+                value,
+                seq,
+                deleted,
+            } => {
+                let host_str = host.as_deref().unwrap_or("<unknown host>");
+                let ev = BrowserEvent::new(
+                    0,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::LocalStorage,
+                    source,
+                    format!("{host_str} \u{2014} {script_key} = {}", value.text),
+                )
+                .with_attr("storage_type", json!(STORAGE_TYPE_SESSION))
+                .with_attr("record", json!("map"))
+                .with_attr("map_id", json!(map_id))
+                .with_attr("host", json!(host))
+                .with_attr("key", json!(script_key))
+                .with_attr("seq", json!(seq))
+                .with_attr("deleted", json!(deleted));
+                events.push(attach_value(ev, value));
+            }
+            SessionStorageRecord::Other { key, seq, deleted } => {
+                events.push(other_event(
+                    source,
+                    STORAGE_TYPE_SESSION,
+                    key,
+                    *seq,
+                    *deleted,
+                    BrowserFamily::Chromium,
+                ));
+            }
+            // Namespace records map host -> map_id; that correlation is already
+            // folded into each Map record's `host`, so they are not events.
+            SessionStorageRecord::Namespace { .. } => {}
+        }
+    }
+    events
 }
 
 /// Attach a decoded [`StorageValue`]'s text, encoding, and — when the decode was
@@ -143,8 +289,10 @@ mod tests {
     fn build_leveldb(entries: &[(&[u8], &[u8])]) -> (TempDir, PathBuf) {
         let dir = TempDir::new().unwrap();
         let db_path = dir.path().join("leveldb");
-        let mut opt = rusty_leveldb::Options::default();
-        opt.create_if_missing = true;
+        let opt = rusty_leveldb::Options {
+            create_if_missing: true,
+            ..Default::default()
+        };
         let mut db = rusty_leveldb::DB::open(&db_path, opt).unwrap();
         for (k, v) in entries {
             db.put(k, v).unwrap();
