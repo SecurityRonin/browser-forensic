@@ -81,11 +81,6 @@ fn read_u64_le(data: &[u8], off: usize) -> Option<u64> {
 ///
 /// See [`CacheError`] — every variant names the offending value and offset.
 pub fn parse_simple_entry(data: &[u8]) -> Result<SimpleEntry, CacheError> {
-    // RED stub — implementation added in the GREEN commit.
-    let _ = data;
-    return Err(CacheError::TooSmall { found: 0, need: 0 });
-
-    #[allow(unreachable_code)]
     let file_len = data.len();
     let min = HEADER_SIZE + EOF_SIZE;
     if file_len < min {
