@@ -78,6 +78,9 @@ pub enum ArtifactKind {
     /// A (often partial) omnibox string the user typed and the URL Chromium
     /// learned to predict (Chromium `Network Action Predictor`).
     NetworkPrediction,
+    /// Audio/video playback recorded by Chromium `Media History` (watch time,
+    /// resume position, media title).
+    MediaPlayback,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -105,6 +108,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::TopSite => write!(f, "TopSite"),
             Self::Shortcut => write!(f, "Shortcut"),
             Self::NetworkPrediction => write!(f, "NetworkPrediction"),
+            Self::MediaPlayback => write!(f, "MediaPlayback"),
         }
     }
 }
@@ -404,6 +408,12 @@ mod tests {
             format!("{}", ArtifactKind::NetworkPrediction),
             "NetworkPrediction"
         );
+    }
+
+    #[test]
+    fn artifact_kind_has_media_playback_variant() {
+        let _m = ArtifactKind::MediaPlayback;
+        assert_eq!(format!("{}", ArtifactKind::MediaPlayback), "MediaPlayback");
     }
 
     #[test]
