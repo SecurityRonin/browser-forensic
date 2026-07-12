@@ -9,6 +9,8 @@
 
 use serde::Serialize;
 
+use crate::util::escape_html;
+
 /// The provenance statement carried, verbatim, by every reconstructed artifact.
 pub const PROVENANCE_BANNER: &str = "Reconstructed from cached resources — partial, not a rendered capture; JS-generated/lazy-loaded/auth-gated content may be absent; component resources may carry different cache timestamps.";
 
@@ -48,33 +50,102 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// A new, empty manifest for an optional target page (RED stub).
+    /// A new, empty manifest for an optional target page. The provenance
+    /// statement is set verbatim so it can never be silently dropped.
     #[must_use]
-    pub fn new(_target_url: Option<String>) -> Self {
+    pub fn new(target_url: Option<String>) -> Self {
         Self {
-            provenance: String::new(),
-            target_url: None,
+            provenance: PROVENANCE_BANNER.to_string(),
+            target_url,
             found: Vec::new(),
             missing: Vec::new(),
         }
     }
 
-    /// Record a found sub-resource (RED stub).
-    pub fn add_found(&mut self, _found: FoundResource) {}
-
-    /// Record a missing sub-resource (RED stub).
-    pub fn add_missing(&mut self, _missing: MissingResource) {}
-
-    /// Serialize the manifest to pretty JSON (RED stub).
-    #[must_use]
-    pub fn to_json(&self) -> String {
-        String::new()
+    /// Record a found sub-resource.
+    pub fn add_found(&mut self, found: FoundResource) {
+        self.found.push(found);
     }
 
-    /// Render the human-visible provenance banner as an HTML fragment (RED stub).
+    /// Record a missing sub-resource.
+    pub fn add_missing(&mut self, missing: MissingResource) {
+        self.missing.push(missing);
+    }
+
+    /// Serialize the manifest to pretty JSON. Serialization of this plain,
+    /// owned structure cannot fail; on the impossible error path an error
+    /// object is emitted rather than panicking.
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\":\"manifest serialization failed: {e}\"}}"))
+    }
+
+    /// Render the human-visible provenance banner as a self-contained HTML
+    /// fragment: the verbatim honesty statement, then a collapsible manifest
+    /// listing every found sub-resource (URL, backend, cached timestamp) and
+    /// every referenced-but-missing one (shown as an explicit gap).
     #[must_use]
     pub fn banner_html(&self) -> String {
-        String::new()
+        let mut s = String::new();
+        s.push_str(
+            "<div style=\"all:initial;display:block;font-family:system-ui,-apple-system,\
+             sans-serif;background:#3a1d1d;color:#f6d5d5;border:2px solid #b23b3b;\
+             border-radius:6px;padding:12px 16px;margin:0 0 16px 0;line-height:1.4\">",
+        );
+        s.push_str("<strong style=\"display:block;font-size:15px;margin-bottom:6px\">");
+        s.push_str("⚠ Cache reconstruction — NOT a rendered capture</strong>");
+        s.push_str("<div style=\"font-size:13px\">");
+        s.push_str(&escape_html(PROVENANCE_BANNER));
+        s.push_str("</div>");
+        if let Some(t) = &self.target_url {
+            s.push_str("<div style=\"font-size:12px;margin-top:6px;opacity:.85\">Target page: ");
+            s.push_str(&escape_html(t));
+            s.push_str("</div>");
+        }
+
+        s.push_str("<details style=\"margin-top:8px;font-size:12px\"><summary>");
+        s.push_str(&format!(
+            "Manifest: {} sub-resource(s) found in cache, {} referenced but MISSING",
+            self.found.len(),
+            self.missing.len()
+        ));
+        s.push_str("</summary>");
+
+        if !self.found.is_empty() {
+            s.push_str("<div style=\"margin-top:6px\"><em>Found in cache:</em><ul>");
+            for f in &self.found {
+                s.push_str("<li>");
+                s.push_str(&escape_html(&f.url));
+                s.push_str(&format!(
+                    " <span style=\"opacity:.7\">[{}",
+                    escape_html(&f.source)
+                ));
+                if let Some(ts) = f.cached_time_ns {
+                    s.push_str(&format!(", cached_time_ns={ts}"));
+                }
+                s.push_str("]</span></li>");
+            }
+            s.push_str("</ul></div>");
+        }
+
+        s.push_str("<div style=\"margin-top:6px\"><em>Referenced but MISSING from cache:</em>");
+        if self.missing.is_empty() {
+            s.push_str(" <span style=\"opacity:.7\">(none)</span></div>");
+        } else {
+            s.push_str("<ul>");
+            for m in &self.missing {
+                s.push_str("<li>MISSING ");
+                s.push_str(&escape_html(&m.url));
+                s.push_str(&format!(
+                    " <span style=\"opacity:.7\">({})</span></li>",
+                    escape_html(&m.referenced_as)
+                ));
+            }
+            s.push_str("</ul></div>");
+        }
+        s.push_str("</details></div>");
+        s
     }
 }
 

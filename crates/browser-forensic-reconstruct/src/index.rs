@@ -57,22 +57,25 @@ impl IndexedResource {
     /// `true` when the resource is an HTML document.
     #[must_use]
     pub fn is_html(&self) -> bool {
-        let _ = self;
-        false
+        self.content_type
+            .as_deref()
+            .is_some_and(|c| c.starts_with("text/html") || c.starts_with("application/xhtml"))
     }
 
     /// `true` when the resource is an image.
     #[must_use]
     pub fn is_image(&self) -> bool {
-        let _ = self;
-        false
+        self.content_type
+            .as_deref()
+            .is_some_and(|c| c.starts_with("image/"))
     }
 
     /// The MIME type to use in a `data:` URI, falling back to a safe default.
     #[must_use]
     pub fn data_uri_mime(&self) -> &str {
-        let _ = self;
-        "application/octet-stream"
+        self.content_type
+            .as_deref()
+            .unwrap_or("application/octet-stream")
     }
 }
 
@@ -83,16 +86,41 @@ pub struct ResourceIndex {
     order: Vec<String>,
 }
 
-/// Normalize a URL for indexing/lookup (RED stub — not yet implemented).
+/// Normalize a URL for indexing/lookup: parse, drop the fragment, and keep the
+/// scheme, host (lower-cased by the parser), port, path, and query. On a parse
+/// failure the trimmed input is returned unchanged so opaque keys still match
+/// themselves.
 #[must_use]
 pub fn normalize_url(raw: &str) -> String {
-    raw.to_string()
+    match url::Url::parse(raw.trim()) {
+        Ok(mut u) => {
+            u.set_fragment(None);
+            u.to_string()
+        }
+        Err(_) => raw.trim().to_string(),
+    }
 }
 
-/// Resolve a possibly-relative reference against a base URL (RED stub).
+/// Resolve a possibly-relative reference against a base URL, returning the
+/// absolute, normalized form. Returns `None` when neither the reference nor the
+/// base yields a usable absolute URL.
 #[must_use]
-pub fn resolve_ref(_base: &str, _reference: &str) -> Option<String> {
-    None
+pub fn resolve_ref(base: &str, reference: &str) -> Option<String> {
+    let reference = reference.trim();
+    if reference.is_empty() {
+        return None;
+    }
+    if let Ok(base_url) = url::Url::parse(base.trim()) {
+        if let Ok(mut joined) = base_url.join(reference) {
+            joined.set_fragment(None);
+            return Some(joined.to_string());
+        }
+    }
+    // No usable base — accept the reference only if it is already absolute.
+    url::Url::parse(reference).ok().map(|mut u| {
+        u.set_fragment(None);
+        u.to_string()
+    })
 }
 
 impl ResourceIndex {
@@ -102,19 +130,27 @@ impl ResourceIndex {
         Self::default()
     }
 
-    /// Insert a resource (RED stub — does nothing).
-    pub fn insert(&mut self, _resource: IndexedResource) {}
-
-    /// Look up a resource by URL (RED stub).
-    #[must_use]
-    pub fn get(&self, _url: &str) -> Option<&IndexedResource> {
-        None
+    /// Insert a resource. A later insert for the same normalized URL replaces
+    /// the earlier one (keeps a single entry per key, insertion order stable).
+    pub fn insert(&mut self, resource: IndexedResource) {
+        let key = normalize_url(&resource.url);
+        if !self.by_url.contains_key(&key) {
+            self.order.push(key.clone());
+        }
+        self.by_url.insert(key, resource);
     }
 
-    /// Resolve a reference against `base` and look up the result (RED stub).
+    /// Look up a resource by URL (normalized internally).
     #[must_use]
-    pub fn resolve(&self, _base: &str, _reference: &str) -> Option<&IndexedResource> {
-        None
+    pub fn get(&self, url: &str) -> Option<&IndexedResource> {
+        self.by_url.get(&normalize_url(url))
+    }
+
+    /// Resolve a reference against `base` and look up the result.
+    #[must_use]
+    pub fn resolve(&self, base: &str, reference: &str) -> Option<&IndexedResource> {
+        let abs = resolve_ref(base, reference)?;
+        self.by_url.get(&normalize_url(&abs))
     }
 
     /// Number of indexed resources.
@@ -134,16 +170,16 @@ impl ResourceIndex {
         self.order.iter().filter_map(move |k| self.by_url.get(k))
     }
 
-    /// Every indexed HTML document, in insertion order (RED stub).
+    /// Every indexed HTML document, in insertion order.
     #[must_use]
     pub fn html_entries(&self) -> Vec<&IndexedResource> {
-        Vec::new()
+        self.iter().filter(|r| r.is_html()).collect()
     }
 
-    /// Every indexed image, in insertion order (RED stub).
+    /// Every indexed image, in insertion order.
     #[must_use]
     pub fn images(&self) -> Vec<&IndexedResource> {
-        Vec::new()
+        self.iter().filter(|r| r.is_image()).collect()
     }
 }
 
