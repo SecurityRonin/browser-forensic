@@ -6,8 +6,85 @@
 //! dimensions. [`gallery_index_html`] renders a simple browsable page, and the
 //! whole set is described by a provenance [`Manifest`].
 
+use std::collections::HashSet;
+
+use imagesize::blob_size;
+
 use crate::index::ResourceIndex;
-use crate::manifest::Manifest;
+use crate::manifest::{FoundResource, Manifest};
+use crate::util::escape_html;
+
+/// Map a content-type to a conventional file extension.
+fn ext_from_content_type(content_type: Option<&str>) -> &'static str {
+    let ct = content_type
+        .and_then(|c| c.split(';').next())
+        .map_or("", str::trim)
+        .to_ascii_lowercase();
+    match ct.as_str() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/svg+xml" => "svg",
+        "image/bmp" => "bmp",
+        "image/x-icon" | "image/vnd.microsoft.icon" => "ico",
+        "image/avif" => "avif",
+        "image/tiff" => "tiff",
+        _ => "img",
+    }
+}
+
+/// The last path segment of a URL, without the query or fragment.
+fn base_name(url: &str) -> String {
+    let no_frag = url.split('#').next().unwrap_or(url);
+    let no_query = no_frag.split('?').next().unwrap_or(no_frag);
+    no_query
+        .rsplit('/')
+        .find(|s| !s.is_empty())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Keep only filename-safe characters, capping the length.
+fn sanitize(name: &str) -> String {
+    let mut out: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(64)
+        .collect();
+    if out.trim_matches(['.', '_']).is_empty() {
+        out = "image".to_string();
+    }
+    out
+}
+
+/// A sanitized, collision-free filename for image index `i`.
+fn unique_filename(
+    i: usize,
+    url: &str,
+    content_type: Option<&str>,
+    used: &mut HashSet<String>,
+) -> String {
+    let base = sanitize(&base_name(url));
+    let with_ext = if base.contains('.') {
+        base
+    } else {
+        format!("{base}.{}", ext_from_content_type(content_type))
+    };
+    let mut candidate = format!("{i:04}_{with_ext}");
+    let mut n = 1usize;
+    while !used.insert(candidate.clone()) {
+        candidate = format!("{i:04}_{n}_{with_ext}");
+        n += 1;
+    }
+    candidate
+}
 
 /// One cached image in the gallery.
 #[derive(Debug, Clone)]
@@ -39,19 +116,84 @@ pub struct Gallery {
     pub manifest: Manifest,
 }
 
-/// Build a gallery from every `image/*` resource in the index (RED stub).
+/// Build a gallery from every `image/*` resource in the index. Pixel
+/// dimensions are read cheaply from the image header (`None` when the header
+/// is unparseable — the image is still listed).
 #[must_use]
-pub fn build_gallery(_index: &ResourceIndex) -> Gallery {
-    Gallery {
-        images: Vec::new(),
-        manifest: Manifest::new(None),
+pub fn build_gallery(index: &ResourceIndex) -> Gallery {
+    let mut manifest = Manifest::new(None);
+    let mut images = Vec::new();
+    let mut used = HashSet::new();
+    for (i, res) in index.images().into_iter().enumerate() {
+        let (width, height) = match blob_size(&res.body) {
+            Ok(s) => (u32::try_from(s.width).ok(), u32::try_from(s.height).ok()),
+            Err(_) => (None, None),
+        };
+        let filename = unique_filename(i, &res.url, res.content_type.as_deref(), &mut used);
+        manifest.add_found(FoundResource {
+            url: res.url.clone(),
+            source: res.source.label().to_string(),
+            cached_time_ns: res.cached_time_ns,
+            content_type: res.content_type.clone(),
+        });
+        images.push(GalleryImage {
+            url: res.url.clone(),
+            source: res.source.label().to_string(),
+            cached_time_ns: res.cached_time_ns,
+            content_type: res.content_type.clone(),
+            width,
+            height,
+            filename,
+            byte_len: res.body.len(),
+        });
     }
+    Gallery { images, manifest }
 }
 
-/// Render the gallery as a self-contained browsable HTML index (RED stub).
+/// Render the gallery as a self-contained browsable HTML index. Images are
+/// referenced by their `filename` (written alongside this page by the caller).
 #[must_use]
-pub fn gallery_index_html(_gallery: &Gallery) -> String {
-    String::new()
+pub fn gallery_index_html(gallery: &Gallery) -> String {
+    let mut s = String::new();
+    s.push_str(
+        "<!doctype html><html><head><meta charset=\"utf-8\">\
+         <title>Cached image gallery</title><style>\
+         body{font-family:system-ui,-apple-system,sans-serif;margin:16px}\
+         .grid{display:flex;flex-wrap:wrap;gap:12px}\
+         figure{margin:0;border:1px solid #ccc;border-radius:6px;padding:8px;width:230px}\
+         img{max-width:214px;max-height:214px;display:block}\
+         figcaption{font-size:11px;word-break:break-all;margin-top:6px;color:#333}\
+         </style></head><body>",
+    );
+    s.push_str(&gallery.manifest.banner_html());
+    s.push_str(&format!(
+        "<p>{} cached image(s) recovered.</p><div class=\"grid\">",
+        gallery.images.len()
+    ));
+    for img in &gallery.images {
+        s.push_str("<figure>");
+        s.push_str(&format!(
+            "<img src=\"{}\" loading=\"lazy\" alt=\"{}\">",
+            escape_html(&img.filename),
+            escape_html(&img.url)
+        ));
+        s.push_str("<figcaption>");
+        s.push_str(&escape_html(&img.url));
+        s.push_str(&format!(
+            "<br>{} · {} bytes",
+            escape_html(&img.source),
+            img.byte_len
+        ));
+        if let (Some(w), Some(h)) = (img.width, img.height) {
+            s.push_str(&format!(" · {w}×{h}"));
+        }
+        if let Some(ts) = img.cached_time_ns {
+            s.push_str(&format!("<br>cached_time_ns={ts}"));
+        }
+        s.push_str("</figcaption></figure>");
+    }
+    s.push_str("</div></body></html>");
+    s
 }
 
 #[cfg(test)]
