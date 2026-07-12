@@ -26,3 +26,19 @@ mod v8;
 mod varint;
 
 pub(crate) use record::{decode_indexeddb, DecodedValue, IndexedDbRecord};
+
+/// Fuzz entry point for the V8 `ValueSerializer` decoder. Invariant: arbitrary
+/// bytes must never panic or exhaust memory. Not part of the stable API.
+#[doc(hidden)]
+pub fn fuzz_decode_v8(data: &[u8]) {
+    let _ = v8::decode_v8(data);
+}
+
+/// Fuzz entry point for the IndexedDB key decoder (prefix + IDBKey). Invariant:
+/// arbitrary bytes must never panic or read out of bounds. Not part of the
+/// stable API.
+#[doc(hidden)]
+pub fn fuzz_decode_idb_key(data: &[u8]) {
+    let _ = key::read_key_prefix(data);
+    let _ = key::decode_idb_key(data);
+}
