@@ -18,6 +18,7 @@ use serde_json::json;
 // Chromium transition bitmask (`ui/base/page_transition_types.h`): core type in
 // the low byte, qualifier flags in the high bits.
 const CORE_MASK: u32 = 0xFF;
+const CHAIN_START: u32 = 0x1000_0000;
 const CHAIN_END: u32 = 0x2000_0000;
 const CLIENT_REDIRECT: u32 = 0x4000_0000;
 const SERVER_REDIRECT: u32 = 0x8000_0000;
@@ -62,9 +63,18 @@ fn from_address_bar(transition: i64) -> bool {
 /// When Chromium sets both bits, server wins (the transport-level cause).
 #[must_use]
 pub fn redirect_kind(transition: i64) -> Option<&'static str> {
-    // RED stub — real classification added in the GREEN commit.
-    let _ = transition;
-    None
+    let t = transition as u32;
+    if t & SERVER_REDIRECT != 0 {
+        Some("server")
+    } else if t & CLIENT_REDIRECT != 0 {
+        Some("client")
+    } else {
+        None
+    }
+}
+
+fn is_chain_start(transition: i64) -> bool {
+    (transition as u32) & CHAIN_START != 0
 }
 
 /// Parse the `visits` table (joined to `urls`) into one [`BrowserEvent`]
@@ -78,7 +88,7 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
     let db = open_evidence_db(path)?;
     let conn = &db.conn;
     let mut stmt = conn.prepare(
-        "SELECT v.visit_time, v.transition, v.visit_duration, v.from_visit, u.url, u.title \
+        "SELECT v.visit_time, v.transition, v.visit_duration, v.from_visit, u.url, u.title, v.id \
          FROM visits v JOIN urls u ON u.id = v.url \
          ORDER BY v.visit_time ASC",
     )?;
@@ -91,6 +101,7 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
             let from_visit: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
             let url: String = row.get(4)?;
             let title: String = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+            let visit_id: i64 = row.get(6)?;
             Ok((
                 visit_time,
                 transition,
@@ -98,12 +109,13 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
                 from_visit,
                 url,
                 title,
+                visit_id,
             ))
         })?
         .filter_map(std::result::Result::ok)
         .filter(|(visit_time, ..)| *visit_time > 0)
         .map(
-            |(visit_time, transition, visit_duration, from_visit, url, title)| {
+            |(visit_time, transition, visit_duration, from_visit, url, title, visit_id)| {
                 let ts_ns = webkit_micros_to_unix_nanos(visit_time);
                 let desc = if title.is_empty() {
                     url.clone()
@@ -112,7 +124,7 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
                 };
                 // visit_duration is microseconds, navigation-to-navigation (NOT read
                 // time — it includes idle/background); surfaced raw, never ranked on.
-                BrowserEvent::new(
+                let mut ev = BrowserEvent::new(
                     ts_ns,
                     BrowserFamily::Chromium,
                     ArtifactKind::History,
@@ -123,10 +135,16 @@ pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
                 .with_attr("title", json!(title))
                 .with_attr("transition", json!(transition_core(transition)))
                 .with_attr("is_redirect", json!(is_redirect(transition)))
+                .with_attr("chain_start", json!(is_chain_start(transition)))
                 .with_attr("chain_end", json!(is_chain_end(transition)))
                 .with_attr("from_address_bar", json!(from_address_bar(transition)))
                 .with_attr("visit_duration_us", json!(visit_duration))
-                .with_attr("from_visit", json!(from_visit))
+                .with_attr("visit_id", json!(visit_id))
+                .with_attr("from_visit", json!(from_visit));
+                if let Some(kind) = redirect_kind(transition) {
+                    ev = ev.with_attr("redirect_kind", json!(kind));
+                }
+                ev
             },
         )
         .collect();
