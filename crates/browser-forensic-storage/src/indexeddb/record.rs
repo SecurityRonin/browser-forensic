@@ -80,15 +80,6 @@ pub(crate) struct IndexedDbRecord {
 /// Returns an error only if the directory cannot be opened/read as LevelDB (the
 /// bootstrap step). Individual undecodable records degrade to a surfaced note.
 pub(crate) fn decode_indexeddb(dir: &Path) -> Result<Vec<IndexedDbRecord>> {
-    // Bootstrap: opening the directory must succeed loudly. The rest of the
-    // pipeline (RED stub) lands in the GREEN commit.
-    let _records = leveldb_core::read_dir(dir)
-        .map_err(|e| anyhow::anyhow!("reading IndexedDB LevelDB at {}: {e}", dir.display()))?;
-    Ok(Vec::new())
-}
-
-#[allow(dead_code)]
-fn decode_indexeddb_impl(dir: &Path) -> Result<Vec<IndexedDbRecord>> {
     let records = leveldb_core::read_dir(dir)
         .map_err(|e| anyhow::anyhow!("reading IndexedDB LevelDB at {}: {e}", dir.display()))?;
 
