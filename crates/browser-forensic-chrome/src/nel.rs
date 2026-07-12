@@ -42,9 +42,12 @@ fn is_sqlite(path: &Path) -> bool {
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, or (JSON path) is not valid JSON.
-pub fn parse_reporting_and_nel(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub: real dispatch lands in the GREEN commit.
-    Ok(Vec::new())
+pub fn parse_reporting_and_nel(path: &Path) -> Result<Vec<BrowserEvent>> {
+    if is_sqlite(path) {
+        parse_sqlite(path)
+    } else {
+        parse_json(path)
+    }
 }
 
 /// Build one recovered-domain event for a contacted origin host.
