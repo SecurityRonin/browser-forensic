@@ -15,6 +15,20 @@ use serde_json::json;
 
 use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
 
+/// Credential metadata read from one `logins` row. `password_value` is
+/// deliberately absent — it is never selected.
+struct LoginRow {
+    origin_url: String,
+    action_url: String,
+    username: String,
+    signon_realm: String,
+    date_created: i64,
+    date_last_used: i64,
+    date_password_modified: i64,
+    times_used: i64,
+    blacklisted_by_user: bool,
+}
+
 /// Parse a Chromium `Login Data` SQLite file.
 ///
 /// CRITICAL: `password_value` is never selected or returned.
@@ -25,47 +39,51 @@ use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
 pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
     let db = open_evidence_db(path)?;
     let conn = &db.conn;
-    // CRITICAL: password_value is NEVER in this query
+    // CRITICAL: password_value is NEVER in this query.
+    // signon_realm is NOT NULL in the real schema; the timestamp/count columns
+    // carry DEFAULT 0, so read them defensively via COALESCE for older DBs.
     let mut stmt = conn.prepare(
-        "SELECT origin_url, action_url, username_value, date_created, date_last_used \
+        "SELECT origin_url, action_url, username_value, signon_realm, date_created, \
+                date_last_used, date_password_modified, times_used, blacklisted_by_user \
          FROM logins \
-         WHERE date_created > 0 \
+         WHERE date_created > 0 OR blacklisted_by_user = 1 \
          ORDER BY date_created ASC",
     )?;
     let source = path.to_string_lossy().into_owned();
     let events: Vec<BrowserEvent> = stmt
         .query_map([], |row| {
-            let origin_url: String = row.get(0)?;
-            let action_url: String = row.get(1)?;
-            let username: String = row.get(2)?;
-            let date_created: i64 = row.get(3)?;
-            let date_last_used: i64 = row.get(4)?;
-            Ok((
-                origin_url,
-                action_url,
-                username,
-                date_created,
-                date_last_used,
-            ))
+            Ok(LoginRow {
+                origin_url: row.get(0)?,
+                action_url: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                username: row.get(2)?,
+                signon_realm: row.get(3)?,
+                date_created: row.get(4)?,
+                date_last_used: row.get(5)?,
+                date_password_modified: row.get(6)?,
+                times_used: row.get(7)?,
+                blacklisted_by_user: row.get::<_, i64>(8)? != 0,
+            })
         })?
         .filter_map(std::result::Result::ok)
-        .map(
-            |(origin_url, action_url, username, date_created, date_last_used)| {
-                let ts_ns = webkit_micros_to_unix_nanos(date_created);
-                BrowserEvent::new(
-                    ts_ns,
-                    BrowserFamily::Chromium,
-                    ArtifactKind::LoginData,
-                    &source,
-                    origin_url.clone(),
-                )
-                .with_attr("origin_url", json!(origin_url))
-                .with_attr("action_url", json!(action_url))
-                .with_attr("username", json!(username))
-                .with_attr("date_last_used", json!(date_last_used))
-                .with_attr("password", json!("ENCRYPTED"))
-            },
-        )
+        .map(|r| {
+            let ts_ns = webkit_micros_to_unix_nanos(r.date_created);
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::LoginData,
+                &source,
+                r.origin_url.clone(),
+            )
+            .with_attr("origin_url", json!(r.origin_url))
+            .with_attr("action_url", json!(r.action_url))
+            .with_attr("username", json!(r.username))
+            .with_attr("signon_realm", json!(r.signon_realm))
+            .with_attr("date_last_used", json!(r.date_last_used))
+            .with_attr("date_password_modified", json!(r.date_password_modified))
+            .with_attr("times_used", json!(r.times_used))
+            .with_attr("blacklisted_by_user", json!(r.blacklisted_by_user))
+            .with_attr("password", json!("ENCRYPTED"))
+        })
         .collect();
     Ok(events)
 }
