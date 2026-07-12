@@ -12,8 +12,10 @@
 //! matches the shape (and, where cheap, a checksum) of the entity. They are
 //! never asserted to *be* a real card, wallet, or address.
 
+pub mod domains;
 pub mod filter;
 pub mod ioc;
 
+pub use domains::{DomainHit, DomainMatcher};
 pub use filter::{filter_events, EventQuery, Pattern};
 pub use ioc::{extract_iocs, IocKind, IocMatch};

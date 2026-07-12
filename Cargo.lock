@@ -431,6 +431,7 @@ dependencies = [
 name = "browser-forensic-search"
 version = "0.2.0"
 dependencies = [
+ "aho-corasick",
  "bech32",
  "browser-forensic-core",
  "browser-forensic-interpret",
@@ -439,6 +440,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "url",
 ]
 
 [[package]]
