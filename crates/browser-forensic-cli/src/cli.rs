@@ -407,9 +407,24 @@ pub fn run_history(
 /// Returns an error if the path cannot be resolved, the family lacks a per-visit
 /// table, or the history store cannot be opened/queried.
 pub fn reconstruct_history(path: &Path, idle_gap_minutes: i64) -> Result<Vec<BrowserEvent>> {
-    // RED stub — real implementation added in the GREEN commit.
-    let _ = (path, idle_gap_minutes);
-    Ok(Vec::new())
+    let (family, history) = resolve_history(path)?;
+    let mut visits = match family {
+        Family::Chromium => parse_visits(&history).with_context(|| {
+            format!("reading Chromium history visits from {}", history.display())
+        })?,
+        Family::Firefox => browser_forensic_firefox::parse_visits(&history).with_context(|| {
+            format!("reading Firefox history visits from {}", history.display())
+        })?,
+        Family::Safari => anyhow::bail!(
+            "visit-chain reconstruction needs a per-visit table (Chromium `visits` / \
+             Firefox `moz_historyvisits`); Safari `History.db` has none"
+        ),
+    };
+    resolve_referrer_chains(&mut visits);
+    tag_redirect_chains(&mut visits);
+    let idle_gap_ns = idle_gap_minutes.max(0).saturating_mul(60 * 1_000_000_000);
+    sessionize(&mut visits, SessionConfig { idle_gap_ns });
+    Ok(visits)
 }
 
 /// `br4n6 chains` — reconstruct and emit the enriched navigation timeline.
