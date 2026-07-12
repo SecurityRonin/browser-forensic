@@ -325,6 +325,36 @@ enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Correlate all collected events into a unified cross-artifact / cross-browser
+    /// timeline and a per-host (registrable-domain) rollup. `PATH` is a profile or
+    /// home directory. Correlation is co-occurrence by URL/host/time — not proof of
+    /// intent or causation.
+    Correlate {
+        /// A profile directory or home directory to collect events from.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Build an entity graph over registrable hosts: referrer/redirect edges from
+    /// recorded visit chains (M3) plus time-windowed co-occurrence edges. `PATH` is
+    /// a profile or home directory. A co-occurrence edge means "same window", never
+    /// deliberate navigation.
+    Graph {
+        /// A profile directory or home directory to collect events from.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = GraphFormat::Json)]
+        format: GraphFormat,
+        /// Output file (defaults to stdout).
+        #[arg(long = "out", short = 'o', value_name = "FILE")]
+        out: Option<PathBuf>,
+        /// Co-occurrence window in seconds (<= 0 disables co-occurrence edges).
+        #[arg(long, value_name = "SECONDS", default_value_t = browser_forensic_correlate::graph::DEFAULT_COOCCURRENCE_WINDOW_SECS)]
+        window: i64,
+    },
 }
 
 /// Parse the process arguments and dispatch. The no-subcommand and `tui` paths
@@ -451,6 +481,13 @@ where
         Some(Command::Integrity(a)) => run_integrity(&a.path, a.format),
         Some(Command::Carve(a)) => run_carve(&a.path, a.format),
         Some(Command::Triage { home, format }) => run_triage(home.as_deref(), format),
+        Some(Command::Correlate { path, format }) => run_correlate(&path, format),
+        Some(Command::Graph {
+            path,
+            format,
+            out,
+            window,
+        }) => run_graph(&path, format, out.as_deref(), window),
     }
 }
 
@@ -473,6 +510,16 @@ pub enum OutputFormat {
     Jsonl,
     /// Comma-separated values with a header row.
     Csv,
+}
+
+/// Entity-graph output format for `br4n6 graph`.
+#[derive(Clone, Copy, Debug, ValueEnum, Default, PartialEq, Eq)]
+pub enum GraphFormat {
+    /// JSON document with `nodes` and `edges` arrays.
+    #[default]
+    Json,
+    /// Graphviz DOT digraph.
+    Dot,
 }
 
 /// Reconstruction output format for `br4n6 reconstruct`.
@@ -2395,10 +2442,303 @@ pub fn run_triage(home: Option<&Path>, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// The registrable host (eTLD+1) an event is attributed to, or `""` when none
+/// can be derived from its URL/host fields.
+fn event_host(e: &BrowserEvent) -> String {
+    browser_forensic_correlate::host::primary_registrable_domain(e).unwrap_or_default()
+}
+
+/// A unified-timeline event as a human-readable line (tagged browser / artifact
+/// / host).
+fn correlate_row_text(e: &BrowserEvent) -> String {
+    format!(
+        "[{ts}] {browser}/{artifact} {host}  {desc}\n",
+        ts = format_ts(e.timestamp_ns),
+        browser = e.browser,
+        artifact = e.artifact,
+        host = event_host(e),
+        desc = e.description,
+    )
+}
+
+/// A unified-timeline event as one JSONL object (`record":"event"`).
+fn correlate_row_json(e: &BrowserEvent) -> String {
+    let obj = json!({
+        "record": "event",
+        "timestamp_ns": e.timestamp_ns,
+        "timestamp": format_ts(e.timestamp_ns),
+        "browser": e.browser.to_string(),
+        "artifact": e.artifact.to_string(),
+        "host": event_host(e),
+        "source": e.source,
+        "description": e.description,
+        "url": attr_str(e, "url"),
+    });
+    serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// A unified-timeline event as one CSV row.
+fn correlate_row_csv(e: &BrowserEvent) -> String {
+    format!(
+        "{},{},{},{},{},{},{}\n",
+        csv_escape(&format_ts(e.timestamp_ns)),
+        csv_escape(&e.browser.to_string()),
+        csv_escape(&e.artifact.to_string()),
+        csv_escape(&event_host(e)),
+        csv_escape(&e.source),
+        csv_escape(&e.description),
+        csv_escape(&attr_str(e, "url")),
+    )
+}
+
+/// Render the unified cross-artifact timeline and per-host rollup for
+/// `br4n6 correlate`.
+///
+/// - `text`: a human timeline section (untimed rows grouped) followed by the
+///   per-host rollup.
+/// - `jsonl`: a leading `timeline_summary` record, one `event` record per
+///   timeline row, then one `host` record per rollup.
+/// - `csv`: the unified timeline rows only (one clean schema); use `jsonl`/`text`
+///   for the rollup.
+#[must_use]
+pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String {
+    use browser_forensic_correlate::rollup::host_rollups;
+    use browser_forensic_correlate::timeline::unified_timeline;
+
+    if events.is_empty() || !events.is_empty() {
+        return String::new(); // RED stub
+    }
+    let tl = unified_timeline(events);
+    let rollups = host_rollups(events);
+    let mut out = String::new();
+    match format {
+        OutputFormat::Text => {
+            out.push_str(&format!(
+                "== Unified cross-artifact timeline ({total} event(s): {timed} timed, \
+                 {untimed} untimed, {dups} duplicate(s) removed) ==\n",
+                total = tl.len(),
+                timed = tl.timed.len(),
+                untimed = tl.untimed.len(),
+                dups = tl.duplicates_removed,
+            ));
+            for e in &tl.timed {
+                out.push_str(&correlate_row_text(e));
+            }
+            if !tl.untimed.is_empty() {
+                out.push_str(&format!("-- untimed ({}) --\n", tl.untimed.len()));
+                for e in &tl.untimed {
+                    out.push_str(&correlate_row_text(e));
+                }
+            }
+            out.push_str(&format!(
+                "\n== Per-host rollup ({} host(s)) ==\n",
+                rollups.len()
+            ));
+            for r in &rollups {
+                let kinds = r
+                    .counts
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let browsers = r.browsers.iter().cloned().collect::<Vec<_>>().join(", ");
+                let span = match (r.first_seen_ns, r.last_seen_ns) {
+                    (Some(f), Some(l)) => format!("{}..{}", format_ts(f), format_ts(l)),
+                    _ => "(untimed)".to_string(),
+                };
+                out.push_str(&format!(
+                    "  {host}  total={total}  {span}  [{browsers}]  {kinds}\n",
+                    host = r.host,
+                    total = r.total,
+                ));
+            }
+        }
+        OutputFormat::Jsonl => {
+            let summary = json!({
+                "record": "timeline_summary",
+                "total": tl.len(),
+                "timed": tl.timed.len(),
+                "untimed": tl.untimed.len(),
+                "duplicates_removed": tl.duplicates_removed,
+            });
+            out.push_str(&format!(
+                "{}\n",
+                serde_json::to_string(&summary).unwrap_or_else(|_| "{}".to_string())
+            ));
+            for e in tl.timed.iter().chain(tl.untimed.iter()) {
+                out.push_str(&correlate_row_json(e));
+                out.push('\n');
+            }
+            for r in &rollups {
+                let mut v = serde_json::to_value(r).unwrap_or_else(|_| json!({}));
+                if let Some(map) = v.as_object_mut() {
+                    map.insert("record".to_string(), json!("host"));
+                }
+                out.push_str(&serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()));
+                out.push('\n');
+            }
+        }
+        OutputFormat::Csv => {
+            out.push_str("timestamp,browser,artifact,host,source,description,url\n");
+            for e in tl.timed.iter().chain(tl.untimed.iter()) {
+                out.push_str(&correlate_row_csv(e));
+            }
+        }
+    }
+    out
+}
+
+/// Render the entity graph for `br4n6 graph` in the requested format.
+#[must_use]
+pub fn graph_output(events: &[BrowserEvent], format: GraphFormat, window_secs: i64) -> String {
+    use browser_forensic_correlate::graph::{entity_graph, GraphConfig};
+
+    if events.is_empty() || !events.is_empty() {
+        return String::new(); // RED stub
+    }
+    let cfg = GraphConfig {
+        cooccurrence_window_secs: window_secs,
+        ..GraphConfig::default()
+    };
+    let g = entity_graph(events, cfg);
+    match format {
+        GraphFormat::Json => browser_forensic_correlate::render::to_json(&g),
+        GraphFormat::Dot => browser_forensic_correlate::render::to_dot(&g),
+    }
+}
+
+/// `br4n6 correlate PATH` — unified cross-artifact timeline + per-host rollup.
+///
+/// # Errors
+/// Returns an error if the path does not exist or event collection fails.
+pub fn run_correlate(path: &Path, format: OutputFormat) -> Result<()> {
+    let events = collect_profile_events(path)?;
+    print!("{}", correlate_output(&events, format));
+    Ok(())
+}
+
+/// `br4n6 graph PATH` — entity graph (hosts + referrer/redirect/co-occurrence
+/// edges) as JSON or Graphviz DOT, written to `out` or stdout.
+///
+/// # Errors
+/// Returns an error if the path does not exist, event collection fails, or the
+/// output file cannot be written.
+pub fn run_graph(
+    path: &Path,
+    format: GraphFormat,
+    out: Option<&Path>,
+    window_secs: i64,
+) -> Result<()> {
+    let events = collect_profile_events(path)?;
+    let rendered = graph_output(&events, format, window_secs);
+    match out {
+        Some(p) => {
+            std::fs::write(p, &rendered)
+                .with_context(|| format!("writing entity graph to {}", p.display()))?;
+            eprintln!("wrote entity graph to {}", p.display());
+        }
+        None => print!("{rendered}"),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use browser_forensic_core::{ArtifactKind, BrowserFamily};
+
+    fn corr_event(ts: i64, browser: BrowserFamily, kind: ArtifactKind, url: &str) -> BrowserEvent {
+        BrowserEvent::new(ts, browser, kind, "/src", "desc").with_attr("url", json!(url))
+    }
+
+    #[test]
+    fn correlate_output_text_has_timeline_and_rollup() {
+        let events = vec![
+            corr_event(
+                1000,
+                BrowserFamily::Chromium,
+                ArtifactKind::History,
+                "https://www.example.com/a",
+            ),
+            corr_event(
+                2000,
+                BrowserFamily::Firefox,
+                ArtifactKind::Cookies,
+                "https://example.com/b",
+            ),
+        ];
+        let out = correlate_output(&events, OutputFormat::Text);
+        assert!(out.contains("Unified cross-artifact timeline"));
+        assert!(out.contains("Per-host rollup"));
+        assert!(out.contains("example.com"));
+        assert!(out.contains("total=2"));
+    }
+
+    #[test]
+    fn correlate_output_jsonl_typed_records() {
+        let events = vec![corr_event(
+            1000,
+            BrowserFamily::Chromium,
+            ArtifactKind::History,
+            "https://www.example.com/a",
+        )];
+        let out = correlate_output(&events, OutputFormat::Jsonl);
+        let mut kinds = std::collections::HashSet::new();
+        for line in out.lines() {
+            let v: serde_json::Value = serde_json::from_str(line).unwrap();
+            kinds.insert(v["record"].as_str().unwrap().to_string());
+        }
+        assert!(kinds.contains("timeline_summary"));
+        assert!(kinds.contains("event"));
+        assert!(kinds.contains("host"));
+    }
+
+    #[test]
+    fn correlate_output_csv_has_host_column() {
+        let events = vec![corr_event(
+            1000,
+            BrowserFamily::Chromium,
+            ArtifactKind::History,
+            "https://www.example.com/a",
+        )];
+        let out = correlate_output(&events, OutputFormat::Csv);
+        assert!(out.starts_with("timestamp,browser,artifact,host,source,description,url\n"));
+        assert!(out.contains(",example.com,"));
+    }
+
+    #[test]
+    fn graph_output_json_and_dot() {
+        let events = vec![
+            corr_event(
+                1000,
+                BrowserFamily::Chromium,
+                ArtifactKind::History,
+                "https://a.example/",
+            )
+            .with_attr("visit_id", json!(1))
+            .with_attr("from_visit", json!(0)),
+            corr_event(
+                2000,
+                BrowserFamily::Chromium,
+                ArtifactKind::History,
+                "https://b.example/",
+            )
+            .with_attr("visit_id", json!(2))
+            .with_attr("from_visit", json!(1)),
+        ];
+        let js = graph_output(&events, GraphFormat::Json, 30);
+        let v: serde_json::Value = serde_json::from_str(&js).unwrap();
+        assert!(v["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["id"] == "a.example"));
+        assert!(js.contains("referrer"));
+
+        let dot = graph_output(&events, GraphFormat::Dot, 30);
+        assert!(dot.starts_with("digraph browser_entity_graph {"));
+        assert!(dot.contains("\"a.example\" -> \"b.example\""));
+    }
 
     fn visit(url: &str, redirect: bool, chain_end: bool) -> BrowserEvent {
         BrowserEvent::new(
