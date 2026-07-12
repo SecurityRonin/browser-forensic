@@ -70,7 +70,65 @@ pub struct EventQuery {
 /// Return the events matching `query`, in input order.
 #[must_use]
 pub fn filter_events<'a>(events: &'a [BrowserEvent], query: &EventQuery) -> Vec<&'a BrowserEvent> {
-    // GREEN cycle replaces this stub with the real matcher.
-    let _ = (events, query);
-    Vec::new()
+    events
+        .iter()
+        .filter(|e| in_window(e.timestamp_ns, query) && matches_pattern(e, query))
+        .collect()
+}
+
+/// Inclusive `[from_ns, to_ns]` bounds check; an absent bound never excludes.
+fn in_window(ts: i64, query: &EventQuery) -> bool {
+    query.from_ns.map_or(true, |from| ts >= from) && query.to_ns.map_or(true, |to| ts <= to)
+}
+
+/// True when the query has no pattern (time-only), or any in-scope field of the
+/// event matches the pattern.
+fn matches_pattern(event: &BrowserEvent, query: &EventQuery) -> bool {
+    let Some(pattern) = &query.pattern else {
+        return true;
+    };
+    for_each_field(event, &query.fields, |text| {
+        let bounded = bound(text);
+        pattern.is_match(bounded)
+    })
+}
+
+/// Cap `text` to `MAX_FIELD_LEN` bytes on a UTF-8 char boundary.
+fn bound(text: &str) -> &str {
+    if text.len() <= MAX_FIELD_LEN {
+        return text;
+    }
+    let mut end = MAX_FIELD_LEN;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+/// Invoke `pred` on each in-scope textual field, short-circuiting on the first
+/// `true`. With an empty `fields` allow-list the whole textual surface is
+/// searched: `description`, `source`, and every string-valued attribute.
+fn for_each_field(
+    event: &BrowserEvent,
+    fields: &[String],
+    mut pred: impl FnMut(&str) -> bool,
+) -> bool {
+    let want = |name: &str| fields.is_empty() || fields.iter().any(|f| f == name);
+
+    if want("description") && pred(&event.description) {
+        return true;
+    }
+    if want("source") && pred(&event.source) {
+        return true;
+    }
+    for (key, value) in &event.attrs {
+        if want(key) {
+            if let Some(s) = value.as_str() {
+                if pred(s) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
