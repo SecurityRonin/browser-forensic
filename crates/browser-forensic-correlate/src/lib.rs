@@ -19,6 +19,7 @@
 //! hosts appear within N seconds of each other", never that the user navigated
 //! from one to the other.
 
+pub mod graph;
 pub mod host;
 pub mod rollup;
 pub mod timeline;
