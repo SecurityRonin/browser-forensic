@@ -25,12 +25,14 @@
 //! `unwrap`/`expect` in production code, sub-resource count and total output
 //! size bounded, never panics on malformed markup.
 
+pub mod gallery;
 pub mod index;
 pub mod manifest;
 pub mod singlefile;
 pub mod util;
 pub mod warc;
 
+pub use gallery::{build_gallery, gallery_index_html, Gallery, GalleryImage};
 pub use index::{normalize_url, resolve_ref, CacheSource, IndexedResource, ResourceIndex};
 pub use manifest::{FoundResource, Manifest, MissingResource, PROVENANCE_BANNER};
 pub use singlefile::{reconstruct_singlefile, ReconstructedPage};
