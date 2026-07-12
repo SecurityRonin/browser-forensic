@@ -110,15 +110,48 @@ enum Command {
     /// Parse browser history into a chronological timeline.
     Timeline(ArtifactArgs),
     /// Parse browser cookies.
-    Cookies(ArtifactArgs),
+    Cookies {
+        /// Path to the cookies artifact file or profile directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+        /// OPT-IN: decrypt Chromium `v10` cookie values via the macOS login
+        /// Keychain (prompts for authorization). Off by default.
+        #[arg(long)]
+        decrypt_macos: bool,
+        /// Keychain service holding the "… Safe Storage" password.
+        #[arg(long, value_name = "SERVICE", default_value = "Chrome Safe Storage")]
+        keychain_service: String,
+    },
     /// Parse browser downloads.
     Downloads(ArtifactArgs),
     /// Parse browser bookmarks.
     Bookmarks(ArtifactArgs),
     /// Parse browser extensions.
     Extensions(ArtifactArgs),
-    /// Parse browser login data (passwords NEVER exposed).
-    LoginData(ArtifactArgs),
+    /// Parse browser login data (passwords NEVER exposed unless explicitly
+    /// opted in with `--decrypt --include-passwords`).
+    LoginData {
+        /// A `logins.json`/`key4.db`/`Login Data` file, or a profile directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+        /// OPT-IN: decrypt saved usernames (Firefox NSS). Needs the profile's
+        /// `key4.db`. Off by default (values stay `ENCRYPTED`).
+        #[arg(long)]
+        decrypt: bool,
+        /// Firefox master password (empty when none is set). Used with `--decrypt`.
+        #[arg(long, value_name = "PASSWORD", default_value = "")]
+        master_password: String,
+        /// EXTRA OPT-IN: also decrypt and show plaintext passwords (crown jewel).
+        /// Requires `--decrypt`. Default output never contains a password.
+        #[arg(long)]
+        include_passwords: bool,
+    },
     /// Parse browser autofill data.
     Autofill(ArtifactArgs),
     /// Parse a browser session store.
@@ -297,11 +330,37 @@ where
             format,
         }) => run_chains(&path, idle_gap, format),
         Some(Command::Timeline(a)) => run_artifact(&a.path, ArtifactType::History, a.format),
-        Some(Command::Cookies(a)) => run_artifact(&a.path, ArtifactType::Cookies, a.format),
+        Some(Command::Cookies {
+            path,
+            format,
+            decrypt_macos,
+            keychain_service,
+        }) => {
+            if decrypt_macos {
+                run_cookies_decrypt_macos(&path, &keychain_service, format)
+            } else {
+                run_artifact(&path, ArtifactType::Cookies, format)
+            }
+        }
         Some(Command::Downloads(a)) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
         Some(Command::Bookmarks(a)) => run_artifact(&a.path, ArtifactType::Bookmarks, a.format),
         Some(Command::Extensions(a)) => run_artifact(&a.path, ArtifactType::Extensions, a.format),
-        Some(Command::LoginData(a)) => run_artifact(&a.path, ArtifactType::LoginData, a.format),
+        Some(Command::LoginData {
+            path,
+            format,
+            decrypt,
+            master_password,
+            include_passwords,
+        }) => {
+            if decrypt {
+                run_credentials_decrypt(&path, &master_password, include_passwords, format)
+            } else {
+                if include_passwords {
+                    anyhow::bail!("--include-passwords requires --decrypt");
+                }
+                run_artifact(&path, ArtifactType::LoginData, format)
+            }
+        }
         Some(Command::Autofill(a)) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
@@ -1120,6 +1179,69 @@ fn print_events(events: &[BrowserEvent], format: OutputFormat) {
             }
         }
     }
+}
+
+/// Decrypt Firefox saved credentials (opt-in). Locates `key4.db` + `logins.json`
+/// from `path` (a profile directory or either file), then decrypts. Usernames
+/// are always returned; a password is only decrypted and returned when
+/// `include_passwords` is set. Returns [`BrowserEvent`]s for rendering.
+///
+/// # Errors
+/// Returns an error when the profile files are missing, the master password is
+/// wrong, or a blob cannot be decrypted.
+pub fn decrypt_firefox_credentials(
+    _path: &Path,
+    _master_password: &str,
+    _include_passwords: bool,
+) -> Result<Vec<BrowserEvent>> {
+    anyhow::bail!("decrypt_firefox_credentials not yet implemented")
+}
+
+/// Decrypt Chromium `v10` cookie values from a `Cookies` SQLite DB using an
+/// already-derived macOS storage key. Each row becomes a [`BrowserEvent`] whose
+/// `value` attr is the decrypted cookie, or a loud `DECRYPT_FAILED: …` marker on
+/// failure — never a fabricated value.
+///
+/// # Errors
+/// Returns an error if the database cannot be opened or queried.
+pub fn decrypt_chromium_cookies(
+    _path: &Path,
+    _storage_key: &[u8; 16],
+) -> Result<Vec<BrowserEvent>> {
+    anyhow::bail!("decrypt_chromium_cookies not yet implemented")
+}
+
+/// `br4n6 login-data PATH --decrypt` handler: warn, decrypt, render.
+fn run_credentials_decrypt(
+    path: &Path,
+    master_password: &str,
+    include_passwords: bool,
+    format: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "[decrypt] opt-in credential decryption enabled — output contains sensitive plaintext{}",
+        if include_passwords {
+            " INCLUDING PASSWORDS"
+        } else {
+            ""
+        }
+    );
+    let mut events = decrypt_firefox_credentials(path, master_password, include_passwords)?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// `br4n6 cookies PATH --decrypt-macos` handler: read the Keychain key, decrypt.
+fn run_cookies_decrypt_macos(path: &Path, service: &str, format: OutputFormat) -> Result<()> {
+    eprintln!("[decrypt] reading '{service}' from the macOS login Keychain (may prompt)…");
+    let password = browser_forensic_decrypt::fetch_macos_keychain_key(service)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let key = browser_forensic_decrypt::derive_chromium_macos_key(password.as_bytes());
+    let mut events = decrypt_chromium_cookies(path, &key)?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
 }
 
 /// Detect a browser family from the artifact files directly inside a single

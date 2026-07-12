@@ -327,6 +327,7 @@ dependencies = [
  "browser-forensic-carve",
  "browser-forensic-chrome",
  "browser-forensic-core",
+ "browser-forensic-decrypt",
  "browser-forensic-discovery",
  "browser-forensic-firefox",
  "browser-forensic-integrity",
