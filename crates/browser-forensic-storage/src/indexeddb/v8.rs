@@ -55,16 +55,8 @@ pub(crate) struct V8Decoded {
 /// even a single readable value (empty input). Otherwise a [`V8Decoded`] is
 /// always produced — possibly partial, with `unsupported`/`complete` flagging
 /// anything that could not be honestly decoded.
-#[allow(dead_code, unused_variables)]
 #[must_use]
 pub(crate) fn decode_v8(data: &[u8]) -> Option<V8Decoded> {
-    // RED stub — real decoder lands in the GREEN commit.
-    None
-}
-
-#[allow(dead_code)]
-#[must_use]
-fn decode_v8_impl(data: &[u8]) -> Option<V8Decoded> {
     if data.is_empty() {
         return None;
     }
@@ -76,13 +68,12 @@ fn decode_v8_impl(data: &[u8]) -> Option<V8Decoded> {
         id_table: Vec::new(),
     };
     let version = d.read_header();
-    let value = match d.read_value(0) {
-        Some(v) => v,
-        None => {
-            // Malformed/truncated before a value completed.
-            d.aborted = true;
-            Value::Null
-        }
+    let value = if let Some(v) = d.read_value(0) {
+        v
+    } else {
+        // Malformed/truncated before a value completed.
+        d.aborted = true;
+        Value::Null
     };
     Some(V8Decoded {
         value,
@@ -172,8 +163,8 @@ impl<'a> Decoder<'a> {
         let tag_offset = self.pos;
         let tag = self.read_tag()?;
         let value = match tag {
-            b'_' | b'-' => Value::Null,        // undefined / the-hole
-            b'0' => Value::Null,               // null
+            // undefined / the-hole / null all render as JSON null.
+            b'_' | b'-' | b'0' => Value::Null,
             b'T' | b'y' => Value::Bool(true),  // true / TrueObject
             b'F' | b'x' => Value::Bool(false), // false / FalseObject
             b'I' => {

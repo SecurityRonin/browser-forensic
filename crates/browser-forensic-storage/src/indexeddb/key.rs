@@ -21,6 +21,7 @@ const MAX_KEY_DEPTH: usize = 32;
 /// The `(database id, object-store id, index id)` prefix every record key opens
 /// with.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct KeyPrefix {
     pub db_id: u64,
     pub object_store_id: u64,
