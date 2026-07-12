@@ -3,6 +3,7 @@ members = [
     "crates/browser-forensic-core",
     "crates/browser-forensic-chrome",
     "crates/browser-forensic-cache",
+    "crates/browser-forensic-reconstruct",
     "crates/browser-forensic-firefox",
     "crates/browser-forensic-safari",
     "crates/browser-forensic-discovery",
@@ -48,6 +49,10 @@ flate2 = "1"
 brotli = "8"
 ruzstd = "0.8"
 protobuf-forensic-core = "0.1"
+lol_html = "3"
+warc = "0.4"
+base64 = "0.22"
+imagesize = "0.15"
 
 [workspace.lints.rust]
 # Forbid unsafe across the suite — these crates parse untrusted browser artifacts;
