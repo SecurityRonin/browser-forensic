@@ -136,6 +136,58 @@ fn triage_profiles(profiles: Vec<DiscoveredProfile>) -> TriageReport {
     }
 }
 
+/// Collect **recovered-domain** events from a profile directory — domains a user
+/// contacted that survive a history clear, drawn from network/state artifacts:
+/// Chromium `Network Persistent State`, `Reporting and NEL`, `DIPS`/BTM, and
+/// `TransportSecurity` (hashed, non-enumerable), plus Firefox
+/// `SiteSecurityServiceState.txt` (cleartext HSTS). Each source is best-effort;
+/// per-artifact failures are absorbed so triage stays resilient. The Chromium
+/// JSON/SQLite artifacts live either at the profile root or under a `Network/`
+/// subdirectory depending on the Chromium version — both are checked.
+#[must_use]
+pub fn collect_recovered_domains(profile: &Path) -> Vec<BrowserEvent> {
+    let mut events = Vec::new();
+
+    for name in [
+        "Network Persistent State",
+        "Reporting and NEL",
+        "TransportSecurity",
+    ] {
+        for base in [profile.to_path_buf(), profile.join("Network")] {
+            let p = base.join(name);
+            if !p.is_file() {
+                continue;
+            }
+            let parsed = match name {
+                "Network Persistent State" => {
+                    browser_forensic_chrome::parse_network_persistent_state(&p)
+                }
+                "Reporting and NEL" => browser_forensic_chrome::parse_reporting_and_nel(&p),
+                _ => browser_forensic_chrome::parse_transport_security(&p),
+            };
+            if let Ok(mut e) = parsed {
+                events.append(&mut e);
+            }
+        }
+    }
+
+    let dips = profile.join("DIPS");
+    if dips.is_file() {
+        if let Ok(mut e) = browser_forensic_chrome::parse_dips(&dips) {
+            events.append(&mut e);
+        }
+    }
+
+    let ff_hsts = profile.join("SiteSecurityServiceState.txt");
+    if ff_hsts.is_file() {
+        if let Ok(mut e) = browser_forensic_firefox::parse_site_security(&ff_hsts) {
+            events.append(&mut e);
+        }
+    }
+
+    events
+}
+
 fn triage_chromium_profile(
     path: &Path,
     events: &mut Vec<BrowserEvent>,
@@ -210,6 +262,9 @@ fn triage_chromium_profile(
     // Web storage: Local/Session Storage (LevelDB) and IndexedDB. Per-source
     // failures are absorbed inside the collector so triage stays best-effort.
     events.extend(browser_forensic_storage::collect_chromium_web_storage(path));
+
+    // Recovered domains: network/state artifacts that outlive a history clear.
+    events.extend(collect_recovered_domains(path));
 }
 
 fn triage_firefox_profile(
@@ -266,6 +321,9 @@ fn triage_firefox_profile(
 
     // Web storage: webappsstore.sqlite (Local Storage) and IndexedDB SQLite.
     events.extend(browser_forensic_storage::collect_firefox_web_storage(path));
+
+    // Recovered domains: Firefox HSTS (cleartext) survives a history clear.
+    events.extend(collect_recovered_domains(path));
 }
 
 fn triage_safari_profile(
@@ -410,6 +468,22 @@ mod tests {
             has_recovered,
             "expected RecoveredDomain events from DIPS/Network Persistent State"
         );
+    }
+
+    #[test]
+    fn collect_recovered_domains_reads_firefox_cleartext_hsts() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        std::fs::write(
+            dir.path().join("SiteSecurityServiceState.txt"),
+            b"ff-recovered.example.org:HSTS\t9\t19600\t1800000000000,1,1\n",
+        )
+        .expect("hsts");
+        let events = collect_recovered_domains(dir.path());
+        assert!(events
+            .iter()
+            .any(|e| e.artifact == ArtifactKind::RecoveredDomain
+                && e.attrs.get("domain") == Some(&serde_json::json!("ff-recovered.example.org"))));
     }
 
     #[test]
