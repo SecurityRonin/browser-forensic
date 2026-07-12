@@ -2505,9 +2505,6 @@ pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String
     use browser_forensic_correlate::rollup::host_rollups;
     use browser_forensic_correlate::timeline::unified_timeline;
 
-    if events.is_empty() || !events.is_empty() {
-        return String::new(); // RED stub
-    }
     let tl = unified_timeline(events);
     let rollups = host_rollups(events);
     let mut out = String::new();
@@ -2593,9 +2590,6 @@ pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String
 pub fn graph_output(events: &[BrowserEvent], format: GraphFormat, window_secs: i64) -> String {
     use browser_forensic_correlate::graph::{entity_graph, GraphConfig};
 
-    if events.is_empty() || !events.is_empty() {
-        return String::new(); // RED stub
-    }
     let cfg = GraphConfig {
         cooccurrence_window_secs: window_secs,
         ..GraphConfig::default()
