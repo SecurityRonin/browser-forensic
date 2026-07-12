@@ -17,7 +17,7 @@ use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use leveldb_forensic::{LocalStorageRecord, SessionStorageRecord, StorageValue};
 use serde_json::json;
 
-use crate::{to_hex, STORAGE_TYPE_INDEXEDDB, STORAGE_TYPE_LOCAL, STORAGE_TYPE_SESSION};
+use crate::{indexeddb, to_hex, STORAGE_TYPE_INDEXEDDB, STORAGE_TYPE_LOCAL, STORAGE_TYPE_SESSION};
 
 /// Parse a Chromium `Local Storage/leveldb` directory into [`BrowserEvent`]s.
 ///
@@ -48,50 +48,106 @@ pub fn parse_session_storage(dir: &Path) -> Result<Vec<BrowserEvent>> {
     Ok(session_records_to_events(&records, &dir.to_string_lossy()))
 }
 
-/// Parse a Chromium IndexedDB LevelDB directory into opaque [`BrowserEvent`]s.
+/// Parse a Chromium IndexedDB LevelDB directory into [`BrowserEvent`]s.
 ///
-/// IndexedDB stores Blink/v8-serialized values that this crate does not decode.
-/// Each raw LevelDB record is surfaced honestly: the raw key (hex), the value
-/// length, and an `opaque` flag — never a fabricated value decode.
+/// Resolves the database and object-store names from the metadata records, then
+/// decodes each object-store *data* record: its IDBKey and its Blink-wrapped V8
+/// value (rendered to JSON for the documented tag subset). Values the decoder
+/// cannot honestly recover — external blobs, unsupported V8 tags, malformed
+/// wrappers — are flagged rather than fabricated (see [`crate::indexeddb`]).
 ///
 /// # Errors
 ///
-/// Returns an error if the directory cannot be opened or read as LevelDB.
+/// Returns an error if the directory cannot be opened or read as LevelDB (the
+/// bootstrap step); a single undecodable record degrades to a surfaced note.
 pub fn parse_indexeddb(dir: &Path) -> Result<Vec<BrowserEvent>> {
-    let records = leveldb_core::read_dir(dir)
-        .map_err(|e| anyhow::anyhow!("reading IndexedDB LevelDB at {}: {e}", dir.display()))?;
+    let records = indexeddb::decode_indexeddb(dir)?;
     let source = dir.to_string_lossy();
     Ok(records
         .iter()
-        .map(|r| indexeddb_event(&source, r, BrowserFamily::Chromium))
+        .map(|r| indexeddb_event(&source, r))
         .collect())
 }
 
-/// Build an opaque IndexedDB event from a raw LevelDB record. The value is
-/// Blink/v8-serialized and is *not* decoded; its length and the raw key (hex)
-/// are surfaced so an examiner has the evidence without a fabricated decode.
-fn indexeddb_event(
-    source: &str,
-    rec: &leveldb_core::Record,
-    browser: BrowserFamily,
-) -> BrowserEvent {
-    BrowserEvent::new(
+/// Build a rich IndexedDB event from a decoded record.
+fn indexeddb_event(source: &str, r: &indexeddb::IndexedDbRecord) -> BrowserEvent {
+    let db = if r.db_name.is_empty() {
+        format!("db#{}", r.db_id)
+    } else {
+        r.db_name.clone()
+    };
+    let store = if r.store_name.is_empty() {
+        format!("store#{}", r.object_store_id)
+    } else {
+        r.store_name.clone()
+    };
+    let key_disp = r.key.to_display();
+    let ev = BrowserEvent::new(
         0,
-        browser,
+        BrowserFamily::Chromium,
         ArtifactKind::LocalStorage,
         source,
-        format!(
-            "IndexedDB record: key {} bytes, value {} bytes (opaque, v8-serialized)",
-            rec.key.len(),
-            rec.value.len()
-        ),
+        format!("IndexedDB {db} / {store} \u{2014} key {key_disp}"),
     )
     .with_attr("storage_type", json!(STORAGE_TYPE_INDEXEDDB))
-    .with_attr("key_hex", json!(to_hex(&rec.key)))
-    .with_attr("value_len", json!(rec.value.len()))
-    .with_attr("value_opaque", json!(true))
-    .with_attr("seq", json!(rec.seq))
-    .with_attr("deleted", json!(rec.deleted))
+    .with_attr("db_id", json!(r.db_id))
+    .with_attr("db_name", json!(r.db_name))
+    .with_attr("origin", json!(r.origin))
+    .with_attr("object_store_id", json!(r.object_store_id))
+    .with_attr("store_name", json!(r.store_name))
+    .with_attr("key", r.key.to_json())
+    .with_attr("seq", json!(r.seq))
+    .with_attr("deleted", json!(r.deleted));
+    attach_decoded_value(ev, &r.value)
+}
+
+/// Attach a [`DecodedValue`] to an event, keeping every honesty flag structurally
+/// present: a decoded value carries `value` + `value_decoded`; a lossy/partial
+/// decode carries `value_complete: false` + the surfaced unsupported tags; an
+/// external blob, empty, or malformed value is flagged, never fabricated.
+///
+/// [`DecodedValue`]: crate::indexeddb::DecodedValue
+fn attach_decoded_value(ev: BrowserEvent, value: &indexeddb::DecodedValue) -> BrowserEvent {
+    use indexeddb::DecodedValue;
+    match value {
+        DecodedValue::Json {
+            value,
+            complete,
+            unsupported,
+            v8_version,
+        } => {
+            let ev = ev
+                .with_attr("value", value.clone())
+                .with_attr("value_decoded", json!(true))
+                .with_attr("value_complete", json!(complete))
+                .with_attr("value_v8_version", json!(v8_version));
+            if unsupported.is_empty() {
+                ev
+            } else {
+                let tags: Vec<serde_json::Value> = unsupported
+                    .iter()
+                    .map(|(tag, offset)| {
+                        json!({
+                            "tag": format!("0x{tag:02x}"),
+                            "tag_char": (*tag as char).to_string(),
+                            "offset": offset,
+                        })
+                    })
+                    .collect();
+                ev.with_attr("value_unsupported_tags", json!(tags))
+            }
+        }
+        DecodedValue::ExternalBlob { size, index } => {
+            ev.with_attr("value_decoded", json!(false)).with_attr(
+                "value_external_blob",
+                json!({ "size": size, "index": index }),
+            )
+        }
+        DecodedValue::Empty => ev.with_attr("value_empty", json!(true)),
+        DecodedValue::Malformed => ev
+            .with_attr("value_decoded", json!(false))
+            .with_attr("value_malformed", json!(true)),
+    }
 }
 
 /// Map decoded Local Storage records to events, correlating each `Data` record
@@ -544,19 +600,6 @@ mod tests {
             .filter(|r| !matches!(r, SessionStorageRecord::Namespace { .. }))
             .count();
         assert_eq!(events.len(), expected);
-    }
-
-    #[test]
-    fn parse_indexeddb_surfaces_opaque_records() {
-        let entries: &[(&[u8], &[u8])] = &[(b"\x00\x01key", b"v8-serialized-blob")];
-        let (_dir, db_path) = build_leveldb(entries);
-        let events = parse_indexeddb(&db_path).unwrap();
-        assert!(!events.is_empty());
-        let ev = &events[0];
-        assert_eq!(ev.attrs["storage_type"], json!(STORAGE_TYPE_INDEXEDDB));
-        assert_eq!(ev.attrs["value_opaque"], json!(true));
-        assert!(ev.attrs.contains_key("key_hex"));
-        assert!(ev.attrs.contains_key("value_len"));
     }
 
     #[test]

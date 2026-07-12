@@ -25,5 +25,4 @@ mod record;
 mod v8;
 mod varint;
 
-pub(crate) use key::IdbKey;
 pub(crate) use record::{decode_indexeddb, DecodedValue, IndexedDbRecord};

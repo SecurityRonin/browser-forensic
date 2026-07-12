@@ -46,10 +46,12 @@ pub(crate) struct DbInfo {
 pub(crate) enum DecodedValue {
     /// A V8 value rendered to JSON. `complete` is false and `unsupported` lists
     /// `(tag, offset)` pairs when a tag could not be honestly decoded.
+    /// `v8_version` is the stream's self-declared serializer version.
     Json {
         value: Value,
         complete: bool,
         unsupported: Vec<(u8, usize)>,
+        v8_version: u32,
     },
     /// The value was stored in an external blob file (not decoded here).
     ExternalBlob { size: u64, index: u64 },
@@ -201,6 +203,7 @@ fn decode_value(raw: &[u8], deleted: bool) -> DecodedValue {
                 value: d.value,
                 complete: d.complete,
                 unsupported: d.unsupported.iter().map(|u| (u.tag, u.offset)).collect(),
+                v8_version: d.version,
             },
             None => DecodedValue::Malformed,
         },
@@ -293,6 +296,7 @@ mod tests {
                 value: json!({"sequenceNumber": 29, "PageViewEvent": 3}),
                 complete: true,
                 unsupported: vec![],
+                v8_version: 15,
             }
         );
     }

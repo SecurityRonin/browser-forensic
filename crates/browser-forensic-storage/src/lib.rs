@@ -335,7 +335,8 @@ mod tests {
             .path()
             .join("IndexedDB")
             .join("https_example.com_0.indexeddb.leveldb");
-        build_real_leveldb(&idb, &[(b"\x00key", b"v8-blob")]);
+        let (k, v) = idb_data_entry();
+        build_real_leveldb(&idb, &[(&k, &v)]);
         let events = parse_path(&idb).unwrap();
         assert!(!events.is_empty());
         assert!(events
@@ -366,7 +367,8 @@ mod tests {
             .path()
             .join("IndexedDB")
             .join("https_example.com_0.indexeddb.leveldb");
-        build_real_leveldb(&idb, &[(b"\x00k", b"v")]);
+        let (k, v) = idb_data_entry();
+        build_real_leveldb(&idb, &[(&k, &v)]);
         let events = collect_chromium_web_storage(profile.path());
         assert!(events
             .iter()
@@ -386,6 +388,31 @@ mod tests {
     }
     fn json_indexeddb() -> serde_json::Value {
         serde_json::json!(STORAGE_TYPE_INDEXEDDB)
+    }
+
+    /// A minimal decodable IndexedDB object-store data record: key `String "k1"`
+    /// under prefix (db 1, store 1, index 1), value the real captured Reddit blob
+    /// decoding to the string "false". Returns `(key, value)`.
+    fn idb_data_entry() -> (Vec<u8>, Vec<u8>) {
+        let mut key = vec![0x00, 0x01, 0x01, 0x01]; // KeyPrefix(1,1,1)
+        key.extend_from_slice(&[0x01, 0x02]); // IDBKey String, 2 UTF-16 units
+        key.extend_from_slice(
+            &"k1"
+                .encode_utf16()
+                .flat_map(u16::to_be_bytes)
+                .collect::<Vec<u8>>(),
+        );
+        let value: Vec<u8> = (0.."03ff15fe000000000000000000000000ff0f220566616c7365".len())
+            .step_by(2)
+            .map(|i| {
+                u8::from_str_radix(
+                    &"03ff15fe000000000000000000000000ff0f220566616c7365"[i..i + 2],
+                    16,
+                )
+                .unwrap()
+            })
+            .collect();
+        (key, value)
     }
 
     /// Build a real on-disk LevelDB directory at `path`.
