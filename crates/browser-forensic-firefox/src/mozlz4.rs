@@ -35,9 +35,29 @@ pub fn decompress_mozlz4(data: &[u8]) -> Result<Vec<u8>> {
 ///
 /// # Errors
 /// See [`decompress_mozlz4`].
-pub fn decompress_mozlz4_capped(_data: &[u8], _cap: usize) -> Result<Vec<u8>> {
-    // RED stub: real implementation lands in the GREEN commit.
-    Ok(Vec::new())
+pub fn decompress_mozlz4_capped(data: &[u8], cap: usize) -> Result<Vec<u8>> {
+    if data.len() < MOZLZ4_HEADER_LEN {
+        return Err(anyhow!(
+            "mozLz4 file too short: {} bytes (need at least {MOZLZ4_HEADER_LEN} for the header)",
+            data.len()
+        ));
+    }
+    if &data[..8] != MOZLZ4_MAGIC {
+        return Err(anyhow!(
+            "invalid mozLz4 magic {:02x?} at offset 0 (expected {:02x?})",
+            &data[..8],
+            MOZLZ4_MAGIC
+        ));
+    }
+    let declared = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+    if declared > cap {
+        return Err(anyhow!(
+            "mozLz4 declared uncompressed size {declared} exceeds cap {cap} \
+             (possible decompression bomb)"
+        ));
+    }
+    lz4_flex::block::decompress(&data[MOZLZ4_HEADER_LEN..], declared)
+        .map_err(|e| anyhow!("mozLz4 LZ4 block decompression failed: {e}"))
 }
 
 #[cfg(test)]

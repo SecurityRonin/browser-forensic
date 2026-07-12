@@ -5,11 +5,12 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use browser_forensic_core::timestamp::unix_millis_to_nanos;
 use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
-use forensicnomicon::sqlite::MOZLZ4_MAGIC;
 use serde_json::json;
+
+use crate::mozlz4::decompress_mozlz4;
 
 /// Parse a Firefox `sessionstore.jsonlz4` file.
 ///
@@ -18,18 +19,7 @@ use serde_json::json;
 /// Returns an error if the file cannot be read, has wrong magic, or decompression fails.
 pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
     let data = std::fs::read(path)?;
-
-    if data.len() < 12 {
-        return Err(anyhow!("file too short to be a valid mozLz4 file"));
-    }
-
-    if &data[..8] != MOZLZ4_MAGIC {
-        return Err(anyhow!("invalid mozLz4 magic bytes"));
-    }
-
-    let uncompressed_size = u32::from_le_bytes(data[8..12].try_into()?) as usize;
-    let decompressed = lz4_flex::block::decompress(&data[12..], uncompressed_size)
-        .map_err(|e| anyhow!("LZ4 decompression failed: {e}"))?;
+    let decompressed = decompress_mozlz4(&data)?;
 
     let session: serde_json::Value = serde_json::from_slice(&decompressed)?;
 
@@ -89,6 +79,7 @@ pub fn parse_session(path: &Path) -> Result<Vec<BrowserEvent>> {
 mod tests {
     use super::*;
     use browser_forensic_core::{ArtifactKind, BrowserFamily};
+    use forensicnomicon::sqlite::MOZLZ4_MAGIC;
     use serde_json::json;
     use std::io::Write;
     use tempfile::NamedTempFile;
