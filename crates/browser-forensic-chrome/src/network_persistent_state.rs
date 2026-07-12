@@ -58,9 +58,90 @@ fn webkit_value(v: &Value) -> Option<i64> {
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or is not valid JSON.
-pub fn parse_network_persistent_state(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub: real implementation lands in the GREEN commit.
-    Ok(Vec::new())
+pub fn parse_network_persistent_state(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let data = std::fs::read_to_string(path)?;
+    let root: Value = serde_json::from_str(&data)?;
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    let Some(props) = root.pointer("/net/http_server_properties") else {
+        return Ok(events);
+    };
+
+    if let Some(servers) = props.get("servers").and_then(Value::as_array) {
+        for entry in servers {
+            let Some(server) = entry.get("server").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(host) = host_of(server) else {
+                continue;
+            };
+            let supports_spdy = entry
+                .get("supports_spdy")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let protocols: Vec<String> = entry
+                .get("alternative_service")
+                .and_then(Value::as_array)
+                .map(|alts| {
+                    alts.iter()
+                        .filter_map(|a| a.get("protocol_str").and_then(Value::as_str))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            events.push(
+                BrowserEvent::new(
+                    0,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::RecoveredDomain,
+                    &source,
+                    format!("{host} — contacted (HTTP server properties)"),
+                )
+                .with_attr("domain", json!(host))
+                .with_attr("origin", json!(server))
+                .with_attr("source_artifact", json!("Network Persistent State"))
+                .with_attr("supports_spdy", json!(supports_spdy))
+                .with_attr("alt_protocols", json!(protocols))
+                .with_attr("recovery_note", json!(CONTACTED_NOTE)),
+            );
+        }
+    }
+
+    if let Some(broken) = props
+        .get("broken_alternative_services")
+        .and_then(Value::as_array)
+    {
+        for entry in broken {
+            let Some(host) = entry.get("host").and_then(Value::as_str).and_then(host_of) else {
+                continue;
+            };
+            let protocol = entry
+                .get("protocol_str")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let broken_until = entry.get("broken_until").and_then(webkit_value);
+            let ts_ns = broken_until.map_or(0, webkit_micros_to_unix_nanos);
+            let mut ev = BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::RecoveredDomain,
+                &source,
+                format!("{host} — contacted (broken alt-svc {protocol})"),
+            )
+            .with_attr("domain", json!(host))
+            .with_attr("source_artifact", json!("Network Persistent State"))
+            .with_attr("alt_svc_broken", json!(true))
+            .with_attr("protocol", json!(protocol))
+            .with_attr("recovery_note", json!(CONTACTED_NOTE));
+            if let Some(count) = entry.get("broken_count").and_then(Value::as_i64) {
+                ev = ev.with_attr("broken_count", json!(count));
+            }
+            events.push(ev);
+        }
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
