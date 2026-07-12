@@ -296,6 +296,7 @@ enum Command {
 ///
 /// # Errors
 /// Propagates whatever the selected handler returns.
+#[allow(clippy::too_many_lines)] // pure subcommand dispatcher; grows one arm per command
 pub fn run<F, E>(launch_tui: F) -> Result<()>
 where
     F: FnOnce(Option<PathBuf>) -> std::result::Result<(), E>,
@@ -335,13 +336,7 @@ where
             format,
             decrypt_macos,
             keychain_service,
-        }) => {
-            if decrypt_macos {
-                run_cookies_decrypt_macos(&path, &keychain_service, format)
-            } else {
-                run_artifact(&path, ArtifactType::Cookies, format)
-            }
-        }
+        }) => dispatch_cookies(&path, format, decrypt_macos, &keychain_service),
         Some(Command::Downloads(a)) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
         Some(Command::Bookmarks(a)) => run_artifact(&a.path, ArtifactType::Bookmarks, a.format),
         Some(Command::Extensions(a)) => run_artifact(&a.path, ArtifactType::Extensions, a.format),
@@ -351,16 +346,7 @@ where
             decrypt,
             master_password,
             include_passwords,
-        }) => {
-            if decrypt {
-                run_credentials_decrypt(&path, &master_password, include_passwords, format)
-            } else {
-                if include_passwords {
-                    anyhow::bail!("--include-passwords requires --decrypt");
-                }
-                run_artifact(&path, ArtifactType::LoginData, format)
-            }
-        }
+        }) => dispatch_login_data(&path, format, decrypt, &master_password, include_passwords),
         Some(Command::Autofill(a)) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
@@ -1190,11 +1176,65 @@ fn print_events(events: &[BrowserEvent], format: OutputFormat) {
 /// Returns an error when the profile files are missing, the master password is
 /// wrong, or a blob cannot be decrypted.
 pub fn decrypt_firefox_credentials(
-    _path: &Path,
-    _master_password: &str,
-    _include_passwords: bool,
+    path: &Path,
+    master_password: &str,
+    include_passwords: bool,
 ) -> Result<Vec<BrowserEvent>> {
-    anyhow::bail!("decrypt_firefox_credentials not yet implemented")
+    use browser_forensic_core::{ArtifactKind, BrowserFamily};
+
+    let (key4_db, logins_json) = resolve_firefox_profile(path)?;
+    let logins = browser_forensic_decrypt::decrypt_firefox_logins(
+        &key4_db,
+        &logins_json,
+        master_password,
+        include_passwords,
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let source = logins_json.to_string_lossy().into_owned();
+    let events = logins
+        .into_iter()
+        .map(|login| {
+            let password = login.password.map_or_else(
+                || json!("(not decrypted — pass --include-passwords)"),
+                serde_json::Value::String,
+            );
+            BrowserEvent::new(
+                0,
+                BrowserFamily::Firefox,
+                ArtifactKind::LoginData,
+                &source,
+                login.hostname.clone(),
+            )
+            .with_attr("hostname", json!(login.hostname))
+            .with_attr("username", json!(login.username))
+            .with_attr("password", password)
+        })
+        .collect();
+    Ok(events)
+}
+
+/// Locate a Firefox profile's `key4.db` and `logins.json` from `path`, which may
+/// be the profile directory or either of the two files.
+fn resolve_firefox_profile(path: &Path) -> Result<(PathBuf, PathBuf)> {
+    let dir = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+    };
+    let key4 = dir.join("key4.db");
+    let logins = dir.join("logins.json");
+    if !key4.exists() {
+        anyhow::bail!(
+            "no key4.db found in {} — Firefox credential decryption needs the NSS key database",
+            dir.display()
+        );
+    }
+    if !logins.exists() {
+        anyhow::bail!("no logins.json found in {}", dir.display());
+    }
+    Ok((key4, logins))
 }
 
 /// Decrypt Chromium `v10` cookie values from a `Cookies` SQLite DB using an
@@ -1204,11 +1244,84 @@ pub fn decrypt_firefox_credentials(
 ///
 /// # Errors
 /// Returns an error if the database cannot be opened or queried.
-pub fn decrypt_chromium_cookies(
-    _path: &Path,
-    _storage_key: &[u8; 16],
-) -> Result<Vec<BrowserEvent>> {
-    anyhow::bail!("decrypt_chromium_cookies not yet implemented")
+pub fn decrypt_chromium_cookies(path: &Path, storage_key: &[u8; 16]) -> Result<Vec<BrowserEvent>> {
+    use browser_forensic_core::sqlite::open_evidence_db;
+    use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
+    use browser_forensic_core::{ArtifactKind, BrowserFamily};
+
+    let db = open_evidence_db(path)?;
+    let mut stmt = db.conn.prepare(
+        "SELECT creation_utc, host_key, name, path, encrypted_value \
+         FROM cookies WHERE creation_utc > 0 ORDER BY creation_utc ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let rows = stmt.query_map([], |row| {
+        let creation_utc: i64 = row.get(0)?;
+        let host_key: String = row.get(1)?;
+        let name: String = row.get(2)?;
+        let cookie_path: String = row.get(3)?;
+        let encrypted: Vec<u8> = row.get(4)?;
+        Ok((creation_utc, host_key, name, cookie_path, encrypted))
+    })?;
+
+    let mut events = Vec::new();
+    for row in rows {
+        let (creation_utc, host_key, name, cookie_path, encrypted) = row?;
+        // A wrong key / non-v10 blob surfaces the loud reason, never a fake value.
+        let value =
+            match browser_forensic_decrypt::decrypt_chromium_value_macos(&encrypted, storage_key) {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(e) => format!("DECRYPT_FAILED: {e}"),
+            };
+        let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
+        let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
+        events.push(
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::Cookies,
+                &source,
+                desc,
+            )
+            .with_attr("host", json!(host_key))
+            .with_attr("name", json!(name))
+            .with_attr("path", json!(cookie_path))
+            .with_attr("value", json!(value)),
+        );
+    }
+    Ok(events)
+}
+
+/// Route `cookies`: opt-in macOS `v10` decryption, else the plain parser.
+fn dispatch_cookies(
+    path: &Path,
+    format: OutputFormat,
+    decrypt_macos: bool,
+    keychain_service: &str,
+) -> Result<()> {
+    if decrypt_macos {
+        run_cookies_decrypt_macos(path, keychain_service, format)
+    } else {
+        run_artifact(path, ArtifactType::Cookies, format)
+    }
+}
+
+/// Route `login-data`: opt-in Firefox credential decryption, else the plain
+/// parser. `--include-passwords` is meaningless without `--decrypt`.
+fn dispatch_login_data(
+    path: &Path,
+    format: OutputFormat,
+    decrypt: bool,
+    master_password: &str,
+    include_passwords: bool,
+) -> Result<()> {
+    if decrypt {
+        run_credentials_decrypt(path, master_password, include_passwords, format)
+    } else if include_passwords {
+        anyhow::bail!("--include-passwords requires --decrypt")
+    } else {
+        run_artifact(path, ArtifactType::LoginData, format)
+    }
 }
 
 /// `br4n6 login-data PATH --decrypt` handler: warn, decrypt, render.
