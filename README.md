@@ -5,19 +5,20 @@
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
 
 [![CI](https://github.com/SecurityRonin/browser-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/browser-forensic/actions/workflows/ci.yml)
+[![Fuzz](https://github.com/SecurityRonin/browser-forensic/actions/workflows/fuzz.yml/badge.svg)](https://github.com/SecurityRonin/browser-forensic/actions/workflows/fuzz.yml)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](#trust-but-verify)
 [![security: cargo-deny](https://img.shields.io/badge/security-cargo--deny-success.svg)](deny.toml)
 
 # browser-forensic
 
-**Parse Chrome, Edge, Firefox, and Safari artifacts. Detect history clearing. Carve deleted records. No runtime deps.**
+**Parse Chrome, Firefox, and Safari — and embedded-Chromium apps — into one JSON timeline. Detect history clearing. Carve deleted records. No runtime deps.**
 
 Browser artifacts are present in almost every investigation — they reconstruct the user's timeline, expose credential exposure, and often reveal the delivery mechanism for an attack. The problem is tooling: most parsers require Python, lock you to Windows, or ignore the forensically interesting question of whether the evidence was tampered with.
 
-`br4n6` is a single static Rust binary. Point it at a browser database and get JSON. Point it at a profile directory and get a full triage report with integrity indicators and carved deleted records.
+`br4n6` is a single static Rust binary. Point it at a browser database and get JSON. Point it at a profile directory and get a full triage report with integrity indicators and carved deleted records. Point it at an evidence tree and it sweeps out every browser *and* every embedded-Chromium app (Electron, WebView2, CEF) it can structurally identify.
 
 ```bash
-cargo install --git https://github.com/SecurityRonin/browser-forensic browser-tui
+cargo install --git https://github.com/SecurityRonin/browser-forensic browser-forensic-cli
 br4n6 history /path/to/Chrome/Default/History --format jsonl | jq 'select(.attrs.url | test("google.com"))'
 ```
 
@@ -71,49 +72,84 @@ Three indicators in under 100ms. The `sqlite_sequence` table recorded 847 URL in
 br4n6 carve /path/to/Chrome/Default/History --format jsonl
 ```
 
-SQLite marks deleted rows as free pages rather than overwriting them immediately. `br4n6 carve` walks the freelist chain, scans each free page for URL patterns, and returns whatever survived. Combine with `br4n6 integrity` to establish what was deleted and what was recovered.
+SQLite marks deleted rows as free pages rather than overwriting them immediately. `br4n6 carve` walks the freelist chain, scans each free page for URL patterns, and returns whatever survived (via the published [`sqlite-forensic`](https://github.com/SecurityRonin/sqlite-forensic) recovery engine). Combine with `br4n6 integrity` to establish what was deleted and what was recovered.
 
 ---
 
 ## What's Different
 
-| | browser-forensic | Hindsight | BrowsingHistoryView | plaso |
-|--|:-:|:-:|:-:|:-:|
-| Runs on Linux / macOS | ✅ | ✅ | — | ✅ |
-| Single static binary | ✅ | — | — | — |
-| No Python runtime | ✅ | — | ✅ | — |
-| Chrome + Firefox + Safari | ✅ | ✅ | ✅ | ✅ |
-| Integrity / tampering checks | ✅ | — | — | — |
-| SQLite free-page carving | ✅ | — | — | — |
-| WAL recovery | ✅ | — | — | — |
-| Memory byte-pattern scanning | ✅ | — | — | — |
-| Embeddable Rust library | ✅ | — | — | — |
-| URL / cookie interpretation | ✅ | ✅ | — | — |
-| Preferences parsing | ✅ | ✅ | — | ✅ |
-| Correlated XLSX / SQLite export | ✅ | ✅ | — | partial |
-| JSON / JSONL / CSV output | ✅ | ✅ | ✅ | partial |
+browser-forensic now matches the artifact breadth of the mainstream browser-history tools — including web storage (Local / Session Storage, IndexedDB) and embedded-Chromium container discovery — and adds forensic depth those tools do not carry: integrity/tampering detection, free-page carving, WAL recovery, memory scanning, and an embeddable Rust library.
+
+| Capability | browser-forensic | [Hindsight](https://github.com/obsidianforensics/hindsight) | [Browser-Reviewer](https://github.com/gustavoparedes/Browser-Reviewer) |
+|--|:-:|:-:|:-:|
+| Chrome / Chromium | ✅ | ✅ | ✅ |
+| Firefox | ✅ | ✅ | ✅ |
+| Safari | ✅ | — | — |
+| Web storage (Local / Session / IndexedDB) | ✅ | ✅ | ✅ |
+| URL / cookie interpretation | ✅ | ✅ | — |
+| Embedded-Chromium container discovery | ✅ | — | ✅ |
+| Integrity / tampering detection | ✅ | — | — |
+| SQLite free-page carving | ✅ | — | — |
+| WAL recovery | ✅ | — | — |
+| Memory byte-pattern scanning | ✅ | — | — |
+| Correlated XLSX / SQLite export | ✅ | ✅ | — |
+| Embeddable library | ✅ | — | — |
+| Runs on Linux / macOS / Windows | ✅ | ✅ | Windows only |
+
+*Reflects each tool's documented feature set as of mid-2026. Hindsight parses Chromium (and, more recently, Firefox) profiles in Python; Browser-Reviewer is a portable Windows GUI/CLI for Firefox and Chromium.*
 
 ---
 
 ## Browser Coverage
 
-| Artifact | Chrome / Edge / Brave | Firefox | Safari |
+| Artifact | Chrome / Chromium¹ | Firefox | Safari |
 |---|:-:|:-:|:-:|
 | History | ✅ | ✅ | ✅ |
 | Cookies | ✅ | ✅ | ✅ |
 | Downloads | ✅ | ✅ | ✅ |
 | Bookmarks | ✅ | ✅ | ✅ |
-| Extensions / Add-ons | ✅ | ✅ | — |
-| Autofill | ✅ | — | — |
+| Extensions / Add-ons | ✅ | ✅ | ✅ |
+| Autofill | ✅ | ✅ | — |
 | Login Data (no passwords) | ✅ | ✅ | — |
-| Cache | ✅ | — | — |
+| Cache | ✅ | ✅ | — |
 | Session State | ✅ | ✅ | — |
+| Preferences | ✅ | ✅ | — |
 | Top Sites | — | — | ✅ |
 | Profile Metadata (Local State) | ✅ | — | — |
-| Preferences | ✅ | ✅ | — |
+| Web Storage (Local / Session / IndexedDB) | ✅ | ✅ | — |
 | Integrity indicators | ✅ | ✅ | ✅ |
 | SQLite free-page carving | ✅ | ✅ | ✅ |
 | WAL recovery | ✅ | ✅ | ✅ |
+
+¹ Chromium-family covers Chrome, Edge, Brave, Opera, Vivaldi, and Arc — one engine, one set of parsers.
+
+---
+
+## Web Storage
+
+`br4n6 storage` reads the three web-storage backends the browsers use, emitting the same `BrowserEvent` schema as every other artifact:
+
+```bash
+br4n6 storage /path/to/Chrome/Default --format jsonl
+```
+
+- **Chromium Local / Session Storage** — LevelDB, decoded through the published [`leveldb-forensic`](https://github.com/SecurityRonin/leveldb-forensic) crate.
+- **Chromium IndexedDB** — LevelDB-backed; values are Blink/v8-serialized and surfaced as opaque raw records rather than a fabricated decode.
+- **Firefox web storage** — plain SQLite (`webappsstore.sqlite` and `storage/default/*/idb/*.sqlite`).
+
+Each event carries a `storage_type` attr (`local_storage`, `session_storage`, `indexeddb`) so downstream filtering stays simple.
+
+---
+
+## Container Discovery
+
+Modern desktop apps embed Chromium — Slack, Teams, OneDrive, and hundreds of Electron / WebView2 / CEF apps keep the same history, cookies, and web-storage databases a browser does. `br4n6 browsers --sweep` recursively walks an evidence tree, identifies each container by its structural profile markers (backed by `forensicnomicon::browser_profiles`), and attributes it to the owning app:
+
+```bash
+br4n6 browsers --sweep /mnt/evidence/Users/jsmith --format jsonl
+```
+
+The sweep reports every browser profile and embedded-Chromium container found, with the app name, vendor, and how it embeds Chromium (`Browser` / `Electron` / `WebView2` / `Cef`). A profile-shaped directory that matches no catalog entry is still reported, generically labelled — nothing is silently dropped.
 
 ---
 
@@ -148,10 +184,10 @@ br4n6 triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
 ```
 
 The triage report includes:
-- All parsed browser events across Chrome, Edge, Firefox, and Safari
+- All parsed browser events across Chromium, Firefox, and Safari
 - Integrity indicators from every database found
 - Carved records from SQLite free pages and WAL files
-- A manifest of discovered profiles (browser, name, path)
+- A manifest of discovered profiles (browser, name, path, container attribution)
 - Generation timestamp for chain-of-custody documentation
 
 ---
@@ -159,7 +195,8 @@ The triage report includes:
 ## Interpretation
 
 `--interpret` adds a human-readable interpretation to each event, decoding the
-artifacts that carry hidden structure:
+artifacts that carry hidden structure. The interpretation engine is a clean-room
+reimplementation of the Hindsight interpretation plugins:
 
 - **Google searches** — extracts the query and search options from
   `google.*/search` URLs (`Searched for "how to wipe a disk"`).
@@ -217,7 +254,7 @@ All commands share the same `BrowserEvent` envelope:
 }
 ```
 
-`timestamp_ns` is always Unix nanoseconds. `artifact` is the artifact kind (`History`, `Cookies`, `Downloads`, `Bookmarks`, `Autofill`, `LoginData`, `Extensions`, `Cache`, `Session`, `Preferences`, `LocalStorage`, `Integrity`, `Carved`, `Memory`).
+`timestamp_ns` is always Unix nanoseconds. `artifact` is the artifact kind (`History`, `Cookies`, `Downloads`, `Bookmarks`, `Autofill`, `LoginData`, `Extensions`, `Cache`, `Session`, `Preferences`, `LocalStorage`, `Integrity`, `Carved`, `Memory`). Web-storage events use `LocalStorage` with a `storage_type` attr distinguishing Local Storage, Session Storage, and IndexedDB.
 
 ---
 
@@ -226,40 +263,47 @@ All commands share the same `BrowserEvent` envelope:
 The workspace is layered — each crate has a single responsibility:
 
 ```
-forensicnomicon          format constants, epoch offsets, SQLite magic, artifact profiles
+forensicnomicon              format constants, epoch offsets, SQLite magic,
+                             artifact + embedded-Chromium container catalog
       |
-browser-core             BrowserEvent, BrowserFamily, ArtifactKind, ForensicMeta, timestamp conversions
+browser-forensic-core        BrowserEvent, BrowserFamily, ArtifactKind, timestamp conversions
       |
-  ┌───┴──────────────────────────────────────────┐
-  │                                              │
-browser-chrome           Chrome/Chromium/Edge/   browser-discovery    cross-platform profile
-browser-firefox          Brave/Firefox/Safari    (macOS/Linux/Win)    discovery
-browser-safari           artifact parsers
+  ┌───┴───────────────────────────────────────────────────┐
+  │                                                        │
+browser-forensic-chrome      Chromium / Firefox / Safari   browser-forensic-discovery
+browser-forensic-firefox     artifact parsers              profile discovery + embedded-
+browser-forensic-safari                                    Chromium container sweep
   │
-  ├── browser-integrity  history clearing, visit ID gaps, WAL detection, timestamp anomalies
-  ├── browser-carve      SQLite free-page walking, WAL frame recovery
-  └── browser-memory     byte-pattern URL/cookie scanning (no CONTAINER dependency)
+  ├── browser-forensic-storage    Local / Session Storage, IndexedDB (reuses leveldb-forensic)
+  ├── browser-forensic-integrity  history clearing, visit-ID gaps, WAL detection, timestamp anomalies
+  ├── browser-forensic-carve      SQLite free-page + WAL recovery (delegates to sqlite-forensic)
+  ├── browser-forensic-interpret  search-term / tracking-cookie / query-string interpretation
+  └── browser-forensic-memory     byte-pattern URL/cookie scanning
       |
-browser-rt               TriageReport orchestration — wires all crates into a single report
+browser-forensic-triage      TriageReport orchestration — wires all crates into one report
       |
-browser-tui              `br4n6` — dual-mode binary: scriptable CLI (history / cookies /
-                         downloads / bookmarks / integrity / carve / triage) + interactive TUI
+browser-forensic-cli         `br4n6` — dual-mode binary: scriptable CLI + interactive TUI
+browser-forensic-mcp         `browser-forensic-mcp` — history/state MCP server for AI agents
+                             (PII-redacted; never reads cookies, passwords, or autofill)
 ```
 
-Each library crate is independently usable in your own Rust tooling. `browser-integrity`, `browser-carve`, and `browser-memory` accept `Path` or `&[u8]` — they are medium-agnostic and have no dependency on any image format or memory dump layer.
+Each library crate is independently usable in your own Rust tooling. `browser-forensic-integrity`, `browser-forensic-carve`, and `browser-forensic-memory` accept `Path` or `&[u8]` — they are medium-agnostic and have no dependency on any image format or memory-dump layer.
 
 | Crate | Description |
 |---|---|
-| `browser-core` | Domain types, timestamp conversions, ForensicMeta lookups |
-| `browser-chrome` | Chrome history, cookies, downloads, bookmarks, autofill, login data, extensions, cache, session, Local State |
-| `browser-firefox` | Firefox history, cookies, downloads, bookmarks, extensions, session (mozLz4), login data |
-| `browser-safari` | Safari history, cookies, downloads, bookmarks, TopSites |
-| `browser-discovery` | Finds all browser profiles under a home directory (macOS, Linux, Windows) |
-| `browser-integrity` | Detects history clearing, visit ID gaps, timestamp anomalies, WAL presence, tombstones |
-| `browser-carve` | SQLite free-page carving, WAL frame recovery |
-| `browser-memory` | Byte-pattern URL/cookie scanning for memory forensics — no runtime dependencies below this layer |
-| `browser-rt` | RapidTriage orchestration — `triage_profile()` + `triage()` → `TriageReport` |
-| `browser-tui` | `br4n6` — dual-mode binary: scriptable JSON/JSONL/CSV CLI (history / cookies / downloads / bookmarks / integrity / carve / triage) plus an interactive vi-keyed terminal viewer (`br4n6 tui`) |
+| `browser-forensic-core` | Domain types, timestamp conversions, `ForensicMeta` lookups |
+| `browser-forensic-chrome` | Chromium history, cookies, downloads, bookmarks, autofill, login data, extensions, cache, session, Local State, preferences |
+| `browser-forensic-firefox` | Firefox history, cookies, downloads, bookmarks, autofill, extensions, session (mozLz4), login data, preferences |
+| `browser-forensic-safari` | Safari history, cookies, downloads, bookmarks, extensions, TopSites |
+| `browser-forensic-discovery` | Browser profile discovery plus embedded-Chromium container sweep (macOS, Linux, Windows) |
+| `browser-forensic-storage` | Web storage — Local / Session Storage and IndexedDB (Chromium via `leveldb-forensic`, Firefox via SQLite) |
+| `browser-forensic-integrity` | History clearing, visit-ID gaps, timestamp anomalies, WAL presence, tombstones |
+| `browser-forensic-carve` | SQLite free-page carving and WAL frame recovery (via `sqlite-forensic`) |
+| `browser-forensic-interpret` | Google-search, tracking-cookie, and query-string interpretation |
+| `browser-forensic-memory` | Byte-pattern URL/cookie scanning for memory forensics |
+| `browser-forensic-triage` | `triage_profile()` + `triage()` → `TriageReport` |
+| `browser-forensic-cli` | `br4n6` — scriptable text/JSONL/CSV CLI plus an interactive vi-keyed terminal viewer (`br4n6 tui`) |
+| `browser-forensic-mcp` | `browser-forensic-mcp` — an MCP server exposing history/state to AI agents, with PII redaction and no secret readers |
 
 ---
 
@@ -267,15 +311,15 @@ Each library crate is independently usable in your own Rust tooling. `browser-in
 
 ```toml
 [dependencies]
-browser-chrome    = { git = "https://github.com/SecurityRonin/browser-forensic" }
-browser-integrity = { git = "https://github.com/SecurityRonin/browser-forensic" }
-browser-carve     = { git = "https://github.com/SecurityRonin/browser-forensic" }
+browser-forensic-chrome    = { git = "https://github.com/SecurityRonin/browser-forensic" }
+browser-forensic-integrity = { git = "https://github.com/SecurityRonin/browser-forensic" }
+browser-forensic-carve     = { git = "https://github.com/SecurityRonin/browser-forensic" }
 ```
 
 ```rust
-use browser_chrome::parse_history;
-use browser_integrity::{check_history_integrity, IntegrityIndicator};
-use browser_core::BrowserFamily;
+use browser_forensic_chrome::parse_history;
+use browser_forensic_integrity::{check_history_integrity, IntegrityIndicator};
+use browser_forensic_core::BrowserFamily;
 
 let events = parse_history(path)?;
 let indicators = check_history_integrity(path, BrowserFamily::Chromium)?;
@@ -301,10 +345,11 @@ Browser databases are evidence. This suite is built to read them without alterin
 
 - **Read-only on evidence** — SQLite databases are opened read-only; the tool never writes back to the artifact, so timestamps and free pages stay intact for re-examination.
 - **`forbid(unsafe)`** — the entire workspace denies `unsafe` code at compile time. Malformed, attacker-controlled artifacts cannot reach a raw pointer path.
+- **Panic-free parsers** — `clippy::unwrap_used` / `expect_used` are denied in production code; length and offset fields from the artifact are bounds-checked before use.
+- **Fuzzed** — `cargo-fuzz` targets cover the Firefox session, SQLite history, carving, integrity, and forensic-catalog paths; every target is built and smoke-run in CI (`fuzz.yml`).
+- **Coverage gate** — CI enforces a line-coverage floor via `cargo llvm-cov`; the uncovered remainder is the irreducible imperative shell of the binaries.
 - **CI on Linux, macOS, and Windows** — every push runs `cargo fmt --check`, `cargo clippy -D warnings`, build, and the full test suite on all three platforms.
 - **Supply-chain gate** — `cargo-deny` checks licenses, RustSec advisories, and banned dependencies on every push (`deny.toml`).
-
-Honest gaps (tracked, not hidden): the suite is **not yet fuzzed** and has **no line-coverage gate** — both are planned to bring it level with the rest of the fleet's Paranoid-Gatekeeper bar.
 
 ---
 
@@ -314,7 +359,7 @@ browser-forensic is one parser library in the [RapidTriage](https://github.com/S
 
 | Crate | Artifact family |
 |---|---|
-| [browser-forensic](https://github.com/SecurityRonin/browser-forensic) | Chrome / Firefox / Safari |
+| [browser-forensic](https://github.com/SecurityRonin/browser-forensic) | Chrome / Firefox / Safari + embedded Chromium |
 | [winevt-forensic](https://github.com/SecurityRonin/winevt-forensic) | Windows Event Logs (EVTX) |
 | [srum-forensic](https://github.com/SecurityRonin/srum-forensic) | Windows SRUM / ESE |
 | [memory-forensic](https://github.com/SecurityRonin/memory-forensic) | Process memory, page tables |
@@ -322,4 +367,4 @@ browser-forensic is one parser library in the [RapidTriage](https://github.com/S
 
 ---
 
-[Privacy Policy](https://securityronin.github.io/browser-forensic/privacy/) · [Terms of Service](https://securityronin.github.io/browser-forensic/terms/) · © 2026 Security Ronin Ltd.
+[Privacy Policy](https://securityronin.github.io/browser-forensic/privacy/) · [Terms of Service](https://securityronin.github.io/browser-forensic/terms/) · © 2026 Security Ronin Ltd
