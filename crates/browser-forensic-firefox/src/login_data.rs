@@ -51,6 +51,18 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
             .get("timeCreated")
             .and_then(serde_json::Value::as_i64)
             .unwrap_or(0);
+        let times_used = login
+            .get("timesUsed")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        let time_last_used = login
+            .get("timeLastUsed")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        let time_password_changed = login
+            .get("timePasswordChanged")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
         let ts_ns = unix_millis_to_nanos(time_created_ms);
         let ev = BrowserEvent::new(
             ts_ns,
@@ -62,6 +74,9 @@ pub fn parse_login_data(path: &Path) -> Result<Vec<BrowserEvent>> {
         .with_attr("hostname", json!(hostname))
         .with_attr("form_submit_url", json!(form_submit_url))
         .with_attr("username_field", json!(username_field))
+        .with_attr("times_used", json!(times_used))
+        .with_attr("time_last_used", json!(time_last_used))
+        .with_attr("time_password_changed", json!(time_password_changed))
         .with_attr("password", json!("ENCRYPTED"));
         events.push(ev);
     }
