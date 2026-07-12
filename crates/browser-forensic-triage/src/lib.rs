@@ -297,6 +297,74 @@ mod tests {
     }
 
     #[test]
+    fn triage_chrome_includes_credential_and_permission_metadata() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+
+        let login = dir.path().join("Login Data");
+        let conn = rusqlite::Connection::open(&login).expect("open login");
+        conn.execute_batch(
+            "CREATE TABLE logins (id INTEGER PRIMARY KEY, origin_url TEXT NOT NULL DEFAULT '', action_url TEXT, username_value TEXT, password_value BLOB, signon_realm TEXT NOT NULL DEFAULT '', date_created INTEGER NOT NULL DEFAULT 0, date_last_used INTEGER NOT NULL DEFAULT 0, date_password_modified INTEGER NOT NULL DEFAULT 0, times_used INTEGER NOT NULL DEFAULT 0, blacklisted_by_user INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO logins (origin_url, signon_realm, username_value, date_created, times_used) VALUES ('https://bank.example', 'https://bank.example/', 'u', 13300000000000000, 4);",
+        ).expect("setup login");
+        drop(conn);
+
+        let webdata = dir.path().join("Web Data");
+        let conn = rusqlite::Connection::open(&webdata).expect("open webdata");
+        conn.execute_batch(
+            "CREATE TABLE credit_cards (guid VARCHAR PRIMARY KEY, name_on_card VARCHAR, expiration_month INTEGER, expiration_year INTEGER, card_number_encrypted BLOB, date_modified INTEGER NOT NULL DEFAULT 0, use_count INTEGER NOT NULL DEFAULT 0, use_date INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO credit_cards (guid, name_on_card, expiration_month, expiration_year, date_modified, use_count, use_date) VALUES ('g', 'A Suspect', 8, 2027, 13340000000000000, 1, 13350000000000000);",
+        ).expect("setup webdata");
+        drop(conn);
+
+        std::fs::write(
+            dir.path().join("Preferences"),
+            br#"{"profile":{"exit_type":"Crashed","content_settings":{"exceptions":{"geolocation":{"https://x.example:443,*":{"setting":2}}}}}}"#,
+        )
+        .expect("setup prefs");
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        let kinds: std::collections::HashSet<_> =
+            report.events.iter().map(|e| e.artifact.clone()).collect();
+        assert!(
+            kinds.contains(&ArtifactKind::LoginData),
+            "expected login-data events"
+        );
+        assert!(
+            kinds.contains(&ArtifactKind::CreditCard),
+            "expected credit-card metadata events"
+        );
+        assert!(
+            kinds.contains(&ArtifactKind::Permission),
+            "expected per-site permission events"
+        );
+    }
+
+    #[test]
+    fn triage_firefox_includes_login_and_permission_metadata() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        std::fs::write(
+            dir.path().join("logins.json"),
+            br#"{"logins":[{"hostname":"https://bank.example","timesUsed":3,"timeCreated":1648000000000}]}"#,
+        )
+        .expect("logins");
+        let perms = dir.path().join("permissions.sqlite");
+        let conn = rusqlite::Connection::open(&perms).expect("open perms");
+        conn.execute_batch(
+            "CREATE TABLE moz_perms (id INTEGER PRIMARY KEY, origin TEXT, type TEXT, permission INTEGER, expireType INTEGER, expireTime INTEGER, modificationTime INTEGER);
+             INSERT INTO moz_perms (origin, type, permission, modificationTime) VALUES ('https://ff.example', 'geo', 1, 1650000000000);",
+        ).expect("setup perms");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Firefox).expect("triage");
+        let kinds: std::collections::HashSet<_> =
+            report.events.iter().map(|e| e.artifact.clone()).collect();
+        assert!(kinds.contains(&ArtifactKind::LoginData));
+        assert!(kinds.contains(&ArtifactKind::Permission));
+    }
+
+    #[test]
     fn triage_firefox_profile_includes_web_storage() {
         let dir = TempDir::new().expect("tempdir");
         let store = dir.path().join("webappsstore.sqlite");
