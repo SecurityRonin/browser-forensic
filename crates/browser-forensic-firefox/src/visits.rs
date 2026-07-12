@@ -24,9 +24,18 @@ use serde_json::json;
 /// 9=RELOAD.
 #[must_use]
 pub fn visit_type_token(visit_type: i64) -> &'static str {
-    // RED stub — real mapping added in the GREEN commit.
-    let _ = visit_type;
-    "unimplemented"
+    match visit_type {
+        1 => "link",
+        2 => "typed",
+        3 => "bookmark",
+        4 => "embed",
+        5 => "redirect_permanent",
+        6 => "redirect_temporary",
+        7 => "download",
+        8 => "framed_link",
+        9 => "reload",
+        _ => "unknown",
+    }
 }
 
 /// Whether a Firefox `visit_type` is a redirect.
@@ -36,9 +45,7 @@ pub fn visit_type_token(visit_type: i64) -> &'static str {
 /// client/meta-redirect visit type, so every redirect here is server-side.
 #[must_use]
 pub fn is_redirect(visit_type: i64) -> bool {
-    // RED stub — real predicate added in the GREEN commit.
-    let _ = visit_type;
-    false
+    matches!(visit_type, 5 | 6)
 }
 
 /// Parse `moz_historyvisits` (joined to `moz_places`) into one [`BrowserEvent`]
@@ -51,9 +58,60 @@ pub fn is_redirect(visit_type: i64) -> bool {
 /// # Errors
 /// Returns an error if the SQLite file cannot be opened or queried.
 pub fn parse_visits(path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub — opens the DB (so the signature is real) but emits nothing.
-    let _db = open_evidence_db(path)?;
-    Ok(Vec::new())
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let mut stmt = conn.prepare(
+        "SELECT h.id, h.from_visit, h.visit_date, h.visit_type, h.session, p.url, p.title \
+         FROM moz_historyvisits h JOIN moz_places p ON p.id = h.place_id \
+         ORDER BY h.visit_date ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let events: Vec<BrowserEvent> = stmt
+        .query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let from_visit: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or(0);
+            let visit_date: i64 = row.get(2)?;
+            let visit_type: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
+            let session: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or(0);
+            let url: String = row.get(5)?;
+            let title: String = row.get::<_, Option<String>>(6)?.unwrap_or_default();
+            Ok((id, from_visit, visit_date, visit_type, session, url, title))
+        })?
+        .filter_map(std::result::Result::ok)
+        .filter(|(_, _, visit_date, ..)| *visit_date > 0)
+        .map(
+            |(id, from_visit, visit_date, visit_type, session, url, title)| {
+                let ts_ns = unix_micros_to_nanos(visit_date);
+                let desc = if title.is_empty() {
+                    url.clone()
+                } else {
+                    title.clone()
+                };
+                let mut ev = BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Firefox,
+                    ArtifactKind::History,
+                    &source,
+                    desc,
+                )
+                .with_attr("url", json!(url))
+                .with_attr("title", json!(title))
+                .with_attr("visit_id", json!(id))
+                .with_attr("from_visit", json!(from_visit))
+                .with_attr("transition", json!(visit_type_token(visit_type)))
+                .with_attr("is_redirect", json!(is_redirect(visit_type)));
+                if is_redirect(visit_type) {
+                    // Firefox only records server-side HTTP redirects as visit types.
+                    ev = ev.with_attr("redirect_kind", json!("server"));
+                }
+                if session != 0 {
+                    ev = ev.with_attr("session", json!(session));
+                }
+                ev
+            },
+        )
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
