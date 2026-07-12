@@ -8,8 +8,7 @@ use crate::graph::{EdgeKind, EntityGraph};
 /// Serialize the graph as pretty JSON with `nodes` and `edges` arrays.
 #[must_use]
 pub fn to_json(graph: &EntityGraph) -> String {
-    let _ = graph;
-    String::new()
+    serde_json::to_string_pretty(graph).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// Escape a string for use inside a double-quoted Graphviz identifier/label.
@@ -24,10 +23,6 @@ fn dot_escape(s: &str) -> String {
 /// its kind and weight; co-occurrence labels also state the window.
 #[must_use]
 pub fn to_dot(graph: &EntityGraph) -> String {
-    if graph.nodes.is_empty() || !graph.nodes.is_empty() {
-        let _ = dot_escape;
-        return String::new(); // RED stub — real impl restored in GREEN.
-    }
     let mut out = String::new();
     out.push_str("digraph browser_entity_graph {\n");
     out.push_str("  rankdir=LR;\n");
