@@ -56,6 +56,17 @@ fn from_address_bar(transition: i64) -> bool {
     (transition as u32) & FROM_ADDRESS_BAR != 0
 }
 
+/// The redirect flavour of a visit, distinguishing a client-side redirect
+/// (`CLIENT_REDIRECT`, e.g. an HTML `meta refresh` / JS `location` hop) from a
+/// server-side one (`SERVER_REDIRECT`, an HTTP 3xx). `None` for non-redirects.
+/// When Chromium sets both bits, server wins (the transport-level cause).
+#[must_use]
+pub fn redirect_kind(transition: i64) -> Option<&'static str> {
+    // RED stub — real classification added in the GREEN commit.
+    let _ = transition;
+    None
+}
+
 /// Parse the `visits` table (joined to `urls`) into one [`BrowserEvent`]
 /// ([`ArtifactKind::History`]) per visit, in ascending time order. Visits are
 /// faithful and *not* redirect-collapsed here — the transition attrs let a
@@ -175,7 +186,9 @@ mod tests {
     ";
 
     const SERVER_REDIRECT: i64 = 0x8000_0000;
+    const CLIENT_REDIRECT: i64 = 0x4000_0000;
     const CHAIN_END: i64 = 0x2000_0000;
+    const CHAIN_START: i64 = 0x1000_0000;
 
     fn seed_one_url(db: &TestDb) {
         db.insert(
@@ -242,6 +255,52 @@ mod tests {
         );
         let events = parse_visits(db.path()).unwrap();
         assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn redirect_kind_distinguishes_client_and_server() {
+        assert_eq!(redirect_kind(CLIENT_REDIRECT | 1), Some("client"));
+        assert_eq!(redirect_kind(SERVER_REDIRECT | 1), Some("server"));
+        // Both bits set: server wins (the transport-level cause).
+        assert_eq!(
+            redirect_kind(CLIENT_REDIRECT | SERVER_REDIRECT),
+            Some("server")
+        );
+        assert_eq!(redirect_kind(1), None);
+    }
+
+    #[test]
+    fn parse_visits_emits_visit_id_chain_start_and_redirect_kind() {
+        let db = TestDb::new(SCHEMA);
+        seed_one_url(&db);
+        // A chain-start, server-redirect visit at row id 7.
+        db.insert(
+            "INSERT INTO visits (id,url,visit_time,from_visit,transition,visit_duration) \
+             VALUES (7,1,13327626000000000,3,?1,0)",
+            [CHAIN_START | SERVER_REDIRECT],
+        );
+        let events = parse_visits(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].attrs["visit_id"], json!(7));
+        assert_eq!(events[0].attrs["chain_start"], json!(true));
+        assert_eq!(events[0].attrs["redirect_kind"], json!("server"));
+        assert_eq!(events[0].attrs["from_visit"], json!(3));
+    }
+
+    #[test]
+    fn parse_visits_omits_redirect_kind_for_plain_visit() {
+        let db = TestDb::new(SCHEMA);
+        seed_one_url(&db);
+        db.insert(
+            "INSERT INTO visits (id,url,visit_time,from_visit,transition,visit_duration) \
+             VALUES (5,1,13327626000000000,0,1,0)",
+            [],
+        );
+        let events = parse_visits(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].attrs["visit_id"], json!(5));
+        assert_eq!(events[0].attrs["chain_start"], json!(false));
+        assert!(!events[0].attrs.contains_key("redirect_kind"));
     }
 
     #[test]
