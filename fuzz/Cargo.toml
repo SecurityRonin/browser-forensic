@@ -36,6 +36,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_firefox_mozlz4"
+path = "fuzz_targets/fuzz_firefox_mozlz4.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_decrypt_asn1"
 path = "fuzz_targets/fuzz_decrypt_asn1.rs"
 test = false
