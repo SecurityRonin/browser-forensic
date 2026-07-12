@@ -1,5 +1,19 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Chromium-family (Chrome, Edge, Brave, Opera) browser artifact parsers.
+//!
+//! # Deferred: Reading List
+//!
+//! Modern Chromium does **not** persist the reading list as a standalone
+//! SQLite or JSON file. Reading-list entries are a sync data type
+//! (`ReadingListSpecifics`), stored inside the profile's `Sync Data/LevelDB`
+//! directory — a LevelDB key-value store holding serialized sync protobufs
+//! (verified: no `Reading List` file exists in Chrome/Brave/Edge profiles on
+//! macOS; the data lives under `<Profile>/Sync Data/LevelDB`). Parsing it needs
+//! a full LevelDB reader plus sync-protobuf decoding, not a simple table scan,
+//! so it is deferred (YAGNI) rather than forced into a SQLite/JSON parser. A
+//! future implementation would build on the LevelDB handling in
+//! `browser-forensic-storage`. Reference: CCL `ccl_chromium_reader`
+//! (<https://github.com/cclgroupltd/ccl_chromium_reader>).
 
 pub mod autofill;
 pub mod bookmarks;
