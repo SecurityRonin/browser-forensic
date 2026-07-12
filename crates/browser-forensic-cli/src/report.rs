@@ -8,6 +8,7 @@
 //! report is a human view with every value HTML-escaped and shown in full.
 
 use browser_forensic_core::{ArtifactKind, BrowserEvent};
+use chrono_tz::Tz;
 use serde_json::Value;
 
 /// Which MAC slot a browser event's single timestamp represents. A
@@ -131,4 +132,10 @@ pub fn to_bodyfile(events: &[BrowserEvent]) -> String {
         ));
     }
     out
+}
+
+/// Serialize events as plaso / log2timeline `l2t_csv`.
+#[must_use]
+pub fn to_l2t_csv(_events: &[BrowserEvent], _tz: Option<Tz>) -> String {
+    String::new()
 }
