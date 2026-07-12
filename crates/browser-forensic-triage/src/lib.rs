@@ -233,6 +233,13 @@ fn triage_chromium_profile(
         }
     }
 
+    let favicons_path = path.join("Favicons");
+    if favicons_path.is_file() {
+        if let Ok(mut evts) = browser_forensic_chrome::parse_favicons(&favicons_path) {
+            events.append(&mut evts);
+        }
+    }
+
     // Credential / account metadata (secrets never decrypted). Per-artifact
     // failures are absorbed so triage stays best-effort.
     let login_data = path.join("Login Data");
@@ -435,6 +442,34 @@ mod tests {
         assert!(
             kinds.contains(&ArtifactKind::Permission),
             "expected per-site permission events"
+        );
+    }
+
+    #[test]
+    fn triage_chromium_includes_favicons() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        let favicons = dir.path().join("Favicons");
+        let conn = rusqlite::Connection::open(&favicons).expect("open favicons");
+        conn.execute_batch(
+            "CREATE TABLE icon_mapping(id INTEGER PRIMARY KEY, page_url LONGVARCHAR NOT NULL, icon_id INTEGER);
+             CREATE TABLE favicons(id INTEGER PRIMARY KEY, url LONGVARCHAR NOT NULL);
+             CREATE TABLE favicon_bitmaps(id INTEGER PRIMARY KEY, icon_id INTEGER NOT NULL, last_updated INTEGER DEFAULT 0, width INTEGER DEFAULT 0);
+             INSERT INTO favicons VALUES (1, 'https://fav.example/icon.png');
+             INSERT INTO icon_mapping (page_url, icon_id) VALUES ('https://visited.example/x', 1);
+             INSERT INTO favicon_bitmaps (icon_id, last_updated, width) VALUES (1, 13300000000000000, 32);",
+        ).expect("setup favicons");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        assert!(
+            report
+                .events
+                .iter()
+                .any(|e| e.artifact == ArtifactKind::Favicon
+                    && e.attrs.get("page_url")
+                        == Some(&serde_json::json!("https://visited.example/x"))),
+            "expected Favicon events surfacing the page_url"
         );
     }
 

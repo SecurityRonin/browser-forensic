@@ -139,6 +139,8 @@ enum Command {
     RecoveredDomains(ArtifactArgs),
     /// Parse web storage (Local/Session Storage, IndexedDB).
     Storage(ArtifactArgs),
+    /// Parse a Chromium `Favicons` database (page_url visited-URL source).
+    Favicons(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -240,6 +242,7 @@ where
         Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
         Some(Command::RecoveredDomains(a)) => run_recovered_domains(&a.path, a.format),
         Some(Command::Storage(a)) => run_storage(&a.path, a.format),
+        Some(Command::Favicons(a)) => run_favicons(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -1288,6 +1291,20 @@ pub fn run_credentials(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 favicons PATH` — parse a Chromium `Favicons` database. Every stored
+/// favicon is joined back to the `page_url` it was fetched for, an independent
+/// cleartext source of visited URLs. Chromium-only.
+///
+/// # Errors
+/// Returns an error if the `Favicons` database cannot be opened.
+pub fn run_favicons(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_chrome::parse_favicons(path)
+        .with_context(|| format!("parsing Favicons from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
 /// `br4n6 recovered-domains PATH` — recover domains the user contacted that
 /// survive a history clear, from network/state artifacts. `PATH` is a profile
 /// directory (every recovered-domain source beneath it is aggregated) or a
@@ -1705,6 +1722,26 @@ mod tests {
         let p = dir.path().join("History"); // bare name → undetectable family
         std::fs::write(&p, b"x").unwrap();
         assert!(run_artifact(&p, ArtifactType::History, OutputFormat::Text).is_err());
+    }
+
+    #[test]
+    fn run_favicons_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Favicons");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE icon_mapping(id INTEGER PRIMARY KEY, page_url LONGVARCHAR NOT NULL, icon_id INTEGER);
+             CREATE TABLE favicons(id INTEGER PRIMARY KEY, url LONGVARCHAR NOT NULL);
+             CREATE TABLE favicon_bitmaps(id INTEGER PRIMARY KEY, icon_id INTEGER NOT NULL, last_updated INTEGER DEFAULT 0, width INTEGER DEFAULT 0);
+             INSERT INTO favicons VALUES (1, 'https://ex.example/fav.ico');
+             INSERT INTO icon_mapping (page_url, icon_id) VALUES ('https://ex.example/p', 1);
+             INSERT INTO favicon_bitmaps (icon_id, last_updated, width) VALUES (1, 13327626000000000, 16);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_favicons(&p, fmt).unwrap();
+        }
     }
 
     #[test]

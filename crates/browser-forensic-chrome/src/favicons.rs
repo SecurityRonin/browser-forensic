@@ -33,9 +33,54 @@ const FAVICON_NOTE: &str =
 /// # Errors
 ///
 /// Returns an error only if the SQLite file cannot be opened.
-pub fn parse_favicons(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub — replaced by the real join in GREEN.
-    Ok(Vec::new())
+pub fn parse_favicons(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let source = path.to_string_lossy().into_owned();
+
+    let sql = "SELECT im.page_url, f.url, fb.last_updated, fb.width \
+               FROM icon_mapping im \
+               JOIN favicons f ON im.icon_id = f.id \
+               JOIN favicon_bitmaps fb ON fb.icon_id = f.id \
+               WHERE im.page_url <> '' \
+               ORDER BY fb.last_updated ASC";
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return Ok(Vec::new());
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let page_url: String = row.get(0)?;
+        let icon_url: String = row.get(1)?;
+        let last_updated: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or_default();
+        let width: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or_default();
+        Ok((page_url, icon_url, last_updated, width))
+    }) else {
+        return Ok(Vec::new());
+    };
+
+    let events = rows
+        .filter_map(std::result::Result::ok)
+        .map(|(page_url, icon_url, last_updated, width)| {
+            let ts_ns = if last_updated > 0 {
+                webkit_micros_to_unix_nanos(last_updated)
+            } else {
+                0
+            };
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::Favicon,
+                &source,
+                format!("{page_url} \u{2014} favicon"),
+            )
+            .with_attr("url", json!(page_url))
+            .with_attr("page_url", json!(page_url))
+            .with_attr("icon_url", json!(icon_url))
+            .with_attr("width", json!(width))
+            .with_attr("last_updated", json!(last_updated))
+            .with_attr("note", json!(FAVICON_NOTE))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]
