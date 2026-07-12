@@ -1633,6 +1633,65 @@ mod tests {
     }
 
     #[test]
+    fn run_permissions_chrome_preferences_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Preferences");
+        std::fs::write(
+            &p,
+            br#"{"profile":{"content_settings":{"exceptions":{
+                "geolocation":{"https://x.example.com:443,*":{"setting":2}}
+            }}}}"#,
+        )
+        .unwrap();
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_permissions(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_permissions_firefox_moz_perms_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("permissions.sqlite");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE moz_perms (id INTEGER PRIMARY KEY, origin TEXT, type TEXT, permission INTEGER, expireType INTEGER, expireTime INTEGER, modificationTime INTEGER);
+             INSERT INTO moz_perms (origin, type, permission, modificationTime) VALUES ('https://ff.example', 'geo', 1, 1650000000000);",
+        )
+        .unwrap();
+        drop(conn);
+        run_permissions(&p, OutputFormat::Jsonl).unwrap();
+    }
+
+    #[test]
+    fn run_permissions_unknown_path_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("random.dat");
+        std::fs::write(&p, b"x").unwrap();
+        assert!(run_permissions(&p, OutputFormat::Text).is_err());
+    }
+
+    #[test]
+    fn run_credentials_web_data_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Web Data");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE credit_cards (guid VARCHAR PRIMARY KEY, name_on_card VARCHAR, expiration_month INTEGER, expiration_year INTEGER, card_number_encrypted BLOB, date_modified INTEGER NOT NULL DEFAULT 0, use_count INTEGER NOT NULL DEFAULT 0, use_date INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO credit_cards (guid, name_on_card, expiration_month, expiration_year, date_modified, use_count, use_date) VALUES ('g', 'A Suspect', 8, 2027, 13340000000000000, 2, 13350000000000000);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_credentials(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_credentials_nonexistent_errors() {
+        assert!(run_credentials(Path::new("/nonexistent/Web Data"), OutputFormat::Text).is_err());
+    }
+
+    #[test]
     fn run_artifact_session_rejects_non_firefox() {
         let dir = chrome_history_dir();
         let p = chrome_history_path(&dir);
