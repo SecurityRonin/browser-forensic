@@ -1,0 +1,24 @@
+[package]
+name = "browser-forensic-manifest"
+version = "0.2.0"
+description = "Case-level chain-of-custody manifest (SHA-256/MD5 + run metadata) for browser evidence"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+md-5 = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-discovery = { version = "0.2.0", path = "../browser-forensic-discovery" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
