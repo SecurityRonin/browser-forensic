@@ -467,6 +467,38 @@ mod tests {
     }
 
     #[test]
+    fn on_fs_body_with_text_receiver_data_column() {
+        // Real CFURLCache stores the on-FS UUID as a TEXT value in the BLOB
+        // column (verified on a live Cache.db); the row must not be dropped just
+        // because the storage class is Text rather than Blob.
+        let dir = tempfile::TempDir::new().unwrap();
+        let uuid = "EB767E55-CE67-4B09-B5AA-6CFCE9E8EEB2";
+        let fs = dir.path().join("fsCachedData");
+        std::fs::create_dir_all(&fs).unwrap();
+        std::fs::write(fs.join(uuid), b"text-column on-fs body").unwrap();
+        let db_path = dir.path().join("Cache.db");
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cfurl_cache_response(entry_ID INTEGER PRIMARY KEY, request_key TEXT, time_stamp TEXT);
+             CREATE TABLE cfurl_cache_receiver_data(entry_ID INTEGER PRIMARY KEY, isDataOnFS INTEGER, receiver_data BLOB);
+             CREATE TABLE cfurl_cache_blob_data(entry_ID INTEGER PRIMARY KEY, response_object BLOB);
+             INSERT INTO cfurl_cache_response VALUES (1, 'https://onfs-text.test/', '2026-01-01 00:00:00');",
+        )
+        .unwrap();
+        // Insert receiver_data as a TEXT value (a &str param -> SQLITE_TEXT).
+        conn.execute(
+            "INSERT INTO cfurl_cache_receiver_data(entry_ID, isDataOnFS, receiver_data) VALUES (1, 1, ?1)",
+            rusqlite::params![uuid],
+        )
+        .unwrap();
+        drop(conn);
+        let res = parse_safari_cache_db(&db_path);
+        assert_eq!(res.len(), 1, "on-FS row with TEXT UUID must not be dropped");
+        assert_eq!(res[0].url, "https://onfs-text.test/");
+        assert_eq!(res[0].decoded_body, b"text-column on-fs body");
+    }
+
+    #[test]
     fn on_fs_missing_file_keeps_resource_with_note() {
         let dir = tempfile::TempDir::new().unwrap();
         let ro = build_response_object("https://gone.test/", 200, &[], "application/octet-stream");
