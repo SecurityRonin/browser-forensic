@@ -18,8 +18,16 @@ const MAX_VARINT_LEN: usize = 10;
 /// or the continuation bits run past [`MAX_VARINT_LEN`] (a malformed/overlong
 /// encoding). Never panics and never reads out of bounds.
 #[must_use]
-pub(crate) fn read_le_varint(_data: &[u8]) -> Option<(u64, usize)> {
-    // RED stub — real decoder lands in the GREEN commit.
+pub(crate) fn read_le_varint(data: &[u8]) -> Option<(u64, usize)> {
+    let mut result: u64 = 0;
+    for (i, &byte) in data.iter().take(MAX_VARINT_LEN).enumerate() {
+        result |= u64::from(byte & 0x7f) << (i * 7);
+        if byte & 0x80 == 0 {
+            return Some((result, i + 1));
+        }
+    }
+    // Either the buffer ended with the continuation bit still set, or the
+    // encoding exceeded the 64-bit ceiling: both are malformed.
     None
 }
 
@@ -30,9 +38,12 @@ pub(crate) fn read_le_varint(_data: &[u8]) -> Option<(u64, usize)> {
 /// value). More than 8 bytes cannot fit a `u64`, so trailing bytes past the
 /// eighth are ignored rather than wrapping.
 #[must_use]
-pub(crate) fn decode_truncated_int(_data: &[u8]) -> u64 {
-    // RED stub — real decoder lands in the GREEN commit.
-    0
+pub(crate) fn decode_truncated_int(data: &[u8]) -> u64 {
+    let mut result: u64 = 0;
+    for (i, &byte) in data.iter().take(8).enumerate() {
+        result |= u64::from(byte) << (i * 8);
+    }
+    result
 }
 
 #[cfg(test)]
