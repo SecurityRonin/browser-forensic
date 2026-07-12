@@ -27,14 +27,26 @@ use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
 pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
     let db = open_evidence_db(path)?;
     let conn = &db.conn;
-    let mut stmt = conn.prepare(
+    let source = path.to_string_lossy().into_owned();
+
+    // CHIPS partitioned cookies (Chromium 114+) add `top_frame_site_key`; older
+    // schemas lack it. Introspect the column and only SELECT it when present so
+    // the pre-CHIPS schema keeps parsing (never break the existing parser).
+    let has_partition = cookies_has_column(conn, "top_frame_site_key");
+    let partition_col = if has_partition {
+        ", top_frame_site_key"
+    } else {
+        ", '' AS top_frame_site_key"
+    };
+    let select = format!(
         "SELECT creation_utc, host_key, name, path, expires_utc, \
-                is_secure, is_httponly, samesite \
+                is_secure, is_httponly, samesite{partition_col} \
          FROM cookies \
          WHERE creation_utc > 0 \
-         ORDER BY creation_utc ASC",
-    )?;
-    let source = path.to_string_lossy().into_owned();
+         ORDER BY creation_utc ASC"
+    );
+
+    let mut stmt = conn.prepare(&select)?;
     let events: Vec<BrowserEvent> = stmt
         .query_map([], |row| {
             let creation_utc: i64 = row.get(0)?;
@@ -45,50 +57,42 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
             let is_secure: bool = row.get::<_, i64>(5)? != 0;
             let is_httponly: bool = row.get::<_, i64>(6)? != 0;
             let samesite: i32 = row.get(7)?;
-            Ok((
-                creation_utc,
-                host_key,
-                name,
-                cookie_path,
-                expires_utc,
-                is_secure,
-                is_httponly,
-                samesite,
-            ))
+            let top_frame_site_key: String = row.get::<_, Option<String>>(8)?.unwrap_or_default();
+            let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
+            let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
+            let mut ev = BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::Cookies,
+                &source,
+                desc,
+            )
+            .with_attr("host", json!(host_key))
+            .with_attr("name", json!(name))
+            .with_attr("path", json!(cookie_path))
+            .with_attr("is_secure", json!(is_secure))
+            .with_attr("is_httponly", json!(is_httponly))
+            .with_attr("samesite", json!(samesite))
+            .with_attr("expires_utc", json!(expires_utc))
+            .with_attr("encrypted_value", json!("ENCRYPTED"));
+            if has_partition {
+                ev = ev
+                    .with_attr("top_frame_site_key", json!(top_frame_site_key))
+                    .with_attr("partitioned", json!(!top_frame_site_key.is_empty()));
+            }
+            Ok(ev)
         })?
         .filter_map(std::result::Result::ok)
-        .map(
-            |(
-                creation_utc,
-                host_key,
-                name,
-                cookie_path,
-                expires_utc,
-                is_secure,
-                is_httponly,
-                samesite,
-            )| {
-                let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
-                let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
-                BrowserEvent::new(
-                    ts_ns,
-                    BrowserFamily::Chromium,
-                    ArtifactKind::Cookies,
-                    &source,
-                    desc,
-                )
-                .with_attr("host", json!(host_key))
-                .with_attr("name", json!(name))
-                .with_attr("path", json!(cookie_path))
-                .with_attr("is_secure", json!(is_secure))
-                .with_attr("is_httponly", json!(is_httponly))
-                .with_attr("samesite", json!(samesite))
-                .with_attr("expires_utc", json!(expires_utc))
-                .with_attr("encrypted_value", json!("ENCRYPTED"))
-            },
-        )
         .collect();
     Ok(events)
+}
+
+/// True when the `cookies` table has a column named `col` (used to detect the
+/// CHIPS `top_frame_site_key` partition key across schema generations).
+fn cookies_has_column(conn: &rusqlite::Connection, col: &str) -> bool {
+    conn.prepare("SELECT 1 FROM pragma_table_info('cookies') WHERE name = ?1")
+        .and_then(|mut s| s.exists([col]))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

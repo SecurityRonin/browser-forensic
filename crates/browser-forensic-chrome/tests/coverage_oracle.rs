@@ -149,6 +149,28 @@ fn network_action_predictor_count_matches_sqlite3_oracle() {
     eprintln!("Network Action Predictor oracle matched: {oracle} typed prefixes");
 }
 
+#[test]
+fn chips_partitioned_cookie_count_matches_sqlite3_oracle() {
+    let Some((_profile, cookies)) = setup("Cookies") else {
+        return;
+    };
+    let parsed = browser_forensic_chrome::parse_cookies(&cookies).expect("parse Cookies");
+    let partitioned = parsed
+        .iter()
+        .filter(|e| e.attrs.get("partitioned") == Some(&serde_json::json!(true)))
+        .count() as i64;
+    let oracle = sqlite_count(
+        &cookies,
+        "SELECT count(*) FROM cookies WHERE creation_utc > 0 AND top_frame_site_key <> ''",
+    )
+    .expect("oracle");
+    assert_eq!(
+        partitioned, oracle,
+        "CHIPS partitioned cookies: parser {partitioned} vs sqlite3 {oracle}"
+    );
+    eprintln!("CHIPS oracle matched: {oracle} partitioned cookies");
+}
+
 /// Tier-1 oracle for `Media History`. No sample was present on the development
 /// host, so this normally skips; it runs and matches whenever a real `Media
 /// History` database is supplied via `BR4N6_REAL_PROFILE`.
