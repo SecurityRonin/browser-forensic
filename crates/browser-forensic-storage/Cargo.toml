@@ -1,0 +1,23 @@
+[package]
+name = "browser-forensic-storage"
+version = "0.2.0"
+description = "Web-storage artifact parsers — Chromium Local/Session Storage + IndexedDB (LevelDB) and Firefox web-storage (SQLite)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+leveldb-forensic = "0.1"
+leveldb-core = "0.1"
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rusty-leveldb = "4"
+
+[lints]
+workspace = true
