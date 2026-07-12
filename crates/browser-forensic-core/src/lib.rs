@@ -323,6 +323,24 @@ mod tests {
     }
 
     #[test]
+    fn artifact_kind_has_permission_variant() {
+        let _p = ArtifactKind::Permission;
+        assert_eq!(format!("{}", ArtifactKind::Permission), "Permission");
+    }
+
+    #[test]
+    fn artifact_kind_has_credit_card_variant() {
+        let _c = ArtifactKind::CreditCard;
+        assert_eq!(format!("{}", ArtifactKind::CreditCard), "CreditCard");
+    }
+
+    #[test]
+    fn artifact_kind_has_auth_token_variant() {
+        let _t = ArtifactKind::AuthToken;
+        assert_eq!(format!("{}", ArtifactKind::AuthToken), "AuthToken");
+    }
+
+    #[test]
     fn forensic_meta_lookup_chrome_history() {
         let meta = ForensicMeta::lookup("browser_chrome_history");
         assert!(meta.is_some());
