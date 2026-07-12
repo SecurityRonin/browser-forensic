@@ -35,13 +35,7 @@ const DIPS_NOTE: &str = "DIPS/BTM bounce-tracking record; the site had storage /
 /// # Errors
 ///
 /// Returns an error if the SQLite database cannot be opened.
-pub fn parse_dips(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub: real implementation lands in the GREEN commit.
-    Ok(Vec::new())
-}
-
-#[allow(dead_code)]
-fn parse_dips_impl(path: &Path) -> Result<Vec<BrowserEvent>> {
+pub fn parse_dips(path: &Path) -> Result<Vec<BrowserEvent>> {
     let db = open_evidence_db(path)?;
     let conn = &db.conn;
     let source = path.to_string_lossy().into_owned();
