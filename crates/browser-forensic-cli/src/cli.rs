@@ -125,6 +125,9 @@ enum Command {
     Session(ArtifactArgs),
     /// Parse browser cache.
     Cache(ArtifactArgs),
+    /// Recover Service Worker CacheStorage (Cache API) responses. `PATH` is a
+    /// `Service Worker/CacheStorage` directory (or one `<origin-hash>` subdir).
+    Cachestorage(ArtifactArgs),
     /// Parse browser preferences (Chrome `Preferences` / Firefox `prefs.js`).
     Preferences(ArtifactArgs),
     /// List per-site permission grants (Chrome `Preferences` / Firefox `permissions.sqlite`).
@@ -251,6 +254,7 @@ where
         Some(Command::Autofill(a)) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
+        Some(Command::Cachestorage(a)) => run_cachestorage(&a.path, a.format),
         Some(Command::Preferences(a)) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
         Some(Command::Permissions(a)) => run_permissions(&a.path, a.format),
         Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
@@ -1266,6 +1270,61 @@ pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
     events.sort_by_key(|e| e.timestamp_ns);
     emit_events(&events, format);
     Ok(())
+}
+
+/// `br4n6 cachestorage PATH` — recover Service Worker CacheStorage (Cache API)
+/// responses. `PATH` is a `Service Worker/CacheStorage` tree or a single
+/// `<origin-hash>` directory. Each recovered response becomes one event carrying
+/// its cache-name + origin attribution, request method, and body length.
+///
+/// # Errors
+/// Never fails on a malformed tree (best-effort recovery); returns `Ok` with the
+/// events that were recovered.
+pub fn run_cachestorage(path: &Path, format: OutputFormat) -> Result<()> {
+    let resources = browser_forensic_cache::parse_cachestorage_dir(path);
+    let mut events: Vec<BrowserEvent> = resources.iter().map(cachestorage_event).collect();
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// Map a recovered CacheStorage response to a normalized [`BrowserEvent`].
+fn cachestorage_event(r: &browser_forensic_cache::CacheStorageResource) -> BrowserEvent {
+    let ts = r.response_time_ns.or(r.entry_time_ns).unwrap_or(0);
+    let mut ev = BrowserEvent::new(
+        ts,
+        browser_forensic_core::BrowserFamily::Chromium,
+        browser_forensic_core::ArtifactKind::Cache,
+        r.source_file.display().to_string(),
+        r.url.clone(),
+    )
+    .with_attr("artifact_subtype", json!("cachestorage"))
+    .with_attr("cache_name", json!(r.cache_name))
+    .with_attr("cache_dir", json!(r.cache_dir))
+    .with_attr("body_len", json!(r.body.len()))
+    .with_attr("raw_body_len", json!(r.raw_body.len()));
+    if let Some(sk) = &r.storage_key {
+        ev = ev.with_attr("storage_key", json!(sk));
+    }
+    if let Some(m) = &r.request_method {
+        ev = ev.with_attr("request_method", json!(m));
+    }
+    if let Some(s) = r.http_status {
+        ev = ev.with_attr("http_status", json!(s));
+    }
+    if let Some(ct) = &r.content_type {
+        ev = ev.with_attr("content_type", json!(ct));
+    }
+    if let Some(ce) = &r.content_encoding {
+        ev = ev.with_attr("content_encoding", json!(ce));
+    }
+    if let Some(mt) = &r.mime_type {
+        ev = ev.with_attr("mime_type", json!(mt));
+    }
+    if let Some(note) = &r.body_note {
+        ev = ev.with_attr("body_note", json!(note));
+    }
+    ev
 }
 
 /// `br4n6 indexeddb PATH` — decode a Chromium IndexedDB LevelDB directory
