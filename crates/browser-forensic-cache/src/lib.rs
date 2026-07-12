@@ -20,7 +20,11 @@ pub mod resource;
 pub mod safari;
 pub mod simple;
 
-pub use cachestorage::{parse_cachestorage_index, CacheEntry, CacheStorageIndex};
+pub use cachestorage::{
+    parse_cachestorage_cache_dir, parse_cachestorage_dir, parse_cachestorage_dir_with,
+    parse_cachestorage_index, parse_cachestorage_metadata, resource_from_cachestorage_entry,
+    CacheEntry, CacheStorageIndex, CacheStorageMeta, CacheStorageResource,
+};
 pub use decompress::{decode_body, DecodeOutcome, DecompressLimits};
 pub use error::CacheError;
 pub use firefox::{

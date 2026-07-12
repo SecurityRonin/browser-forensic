@@ -48,7 +48,7 @@ fn fields(bytes: &[u8]) -> Vec<Field> {
 }
 
 /// The raw payload of the first length-delimited (`LEN`) field with this number.
-fn len_raw<'a>(fields: &'a [Field], number: u64) -> Option<&'a [u8]> {
+fn len_raw(fields: &[Field], number: u64) -> Option<&[u8]> {
     fields.iter().find_map(|f| match &f.value {
         FieldValue::Len(lv) if f.number == number => Some(lv.raw.as_slice()),
         _ => None,
@@ -70,7 +70,7 @@ fn varint_field(fields: &[Field], number: u64) -> Option<u64> {
 
 /// Raw payloads of *every* length-delimited field with this number (a repeated
 /// `LEN` field — repeated submessages or repeated strings).
-fn repeated_len_raw<'a>(fields: &'a [Field], number: u64) -> impl Iterator<Item = &'a [u8]> {
+fn repeated_len_raw(fields: &[Field], number: u64) -> impl Iterator<Item = &[u8]> {
     fields.iter().filter_map(move |f| match &f.value {
         FieldValue::Len(lv) if f.number == number => Some(lv.raw.as_slice()),
         _ => None,
@@ -342,15 +342,72 @@ pub struct CacheStorageResource {
 /// # Errors
 /// Returns a [`CacheError`] only when the SimpleCache entry framing is invalid.
 pub fn resource_from_cachestorage_entry(
-    _data: &[u8],
-    _cache_name: &str,
-    _cache_dir: &str,
-    _storage_key: Option<&str>,
-    _source_file: PathBuf,
-    _limits: &DecompressLimits,
+    data: &[u8],
+    cache_name: &str,
+    cache_dir: &str,
+    storage_key: Option<&str>,
+    source_file: PathBuf,
+    limits: &DecompressLimits,
 ) -> Result<CacheStorageResource, CacheError> {
-    // GREEN in the next commit.
-    Ok(CacheStorageResource::default())
+    let entry = parse_simple_entry(data)?;
+    let meta = parse_cachestorage_metadata(&entry.stream0);
+    let content_type = meta.content_type().map(str::to_string);
+    let content_encoding = meta.content_encoding().map(str::to_string);
+    let raw_body = entry.stream1;
+    let (body, body_note) = usable_body(content_encoding.as_deref(), &raw_body, limits);
+
+    Ok(CacheStorageResource {
+        url: entry.url,
+        cache_name: cache_name.to_string(),
+        cache_dir: cache_dir.to_string(),
+        storage_key: storage_key.map(str::to_string),
+        request_method: meta.request_method,
+        request_headers: meta.request_headers,
+        http_status: meta.http_status,
+        status_text: meta.status_text,
+        response_type: meta.response_type,
+        headers: meta.headers,
+        content_type,
+        content_encoding,
+        mime_type: meta.mime_type,
+        response_time_ns: meta.response_time_ns,
+        entry_time_ns: meta.entry_time_ns,
+        raw_body,
+        body,
+        body_note,
+        source_file,
+    })
+}
+
+/// Resolve the usable body from the stored bytes and the declared encoding.
+///
+/// The Cache API stores the already-decoded delivered body, so a declared
+/// `Content-Encoding` normally does *not* apply to the stored bytes. We attempt
+/// a decode anyway (some entries can be genuinely wire-compressed); it is used
+/// only if it succeeds and actually transforms the bytes, otherwise the stored
+/// bytes are the usable body and the declared-but-not-applied encoding is noted.
+fn usable_body(
+    content_encoding: Option<&str>,
+    raw_body: &[u8],
+    limits: &DecompressLimits,
+) -> (Vec<u8>, Option<String>) {
+    let enc = content_encoding.map(str::trim).filter(|e| !e.is_empty());
+    match enc {
+        None => (raw_body.to_vec(), None),
+        Some(e) if e.eq_ignore_ascii_case("identity") => (raw_body.to_vec(), None),
+        Some(e) => match decode_body(Some(e), raw_body, limits) {
+            Ok(o) if o.decoded && o.bytes != raw_body => (
+                o.bytes,
+                Some(format!("body was wire-compressed and re-inflated ({e})")),
+            ),
+            _ => (
+                raw_body.to_vec(),
+                Some(format!(
+                    "content-encoding {e:?} present but body stored decoded (Cache API delivered body)"
+                )),
+            ),
+        },
+    }
 }
 
 /// Enumerate every recoverable [`CacheStorageResource`] in a single cache's
@@ -358,14 +415,68 @@ pub fn resource_from_cachestorage_entry(
 /// entries are skipped, never panicked on.
 #[must_use]
 pub fn parse_cachestorage_cache_dir(
-    _uuid_dir: &Path,
-    _cache_name: &str,
-    _cache_dir: &str,
-    _storage_key: Option<&str>,
-    _limits: &DecompressLimits,
+    uuid_dir: &Path,
+    cache_name: &str,
+    cache_dir: &str,
+    storage_key: Option<&str>,
+    limits: &DecompressLimits,
 ) -> Vec<CacheStorageResource> {
-    // GREEN in the next commit.
-    Vec::new()
+    let mut out = Vec::new();
+    let entries = match std::fs::read_dir(uuid_dir) {
+        Ok(e) => e,
+        Err(_) => return out,
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let is_entry_file = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with("_0"));
+        if !is_entry_file || !path.is_file() {
+            continue;
+        }
+        let data = match std::fs::read(&path) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        if let Ok(resource) = resource_from_cachestorage_entry(
+            &data,
+            cache_name,
+            cache_dir,
+            storage_key,
+            path.clone(),
+            limits,
+        ) {
+            out.push(resource);
+        }
+    }
+    out
+}
+
+/// Walk one `<origin-hash>/` directory: parse its `index.txt` and each listed
+/// cache's disk_cache.
+fn parse_origin_hash_dir(
+    origin_hash: &Path,
+    limits: &DecompressLimits,
+) -> Vec<CacheStorageResource> {
+    let mut out = Vec::new();
+    let index_bytes = match std::fs::read(origin_hash.join("index.txt")) {
+        Ok(b) => b,
+        Err(_) => return out,
+    };
+    let index = parse_cachestorage_index(&index_bytes);
+    let storage_key = index.origin_attribution().map(str::to_string);
+    for cache in &index.caches {
+        let uuid_dir = origin_hash.join(&cache.cache_dir);
+        out.extend(parse_cachestorage_cache_dir(
+            &uuid_dir,
+            &cache.name,
+            &cache.cache_dir,
+            storage_key.as_deref(),
+            limits,
+        ));
+    }
+    out
 }
 
 /// Enumerate every recoverable [`CacheStorageResource`] under a CacheStorage
@@ -382,11 +493,27 @@ pub fn parse_cachestorage_dir(path: &Path) -> Vec<CacheStorageResource> {
 /// Enumerate every recoverable [`CacheStorageResource`], with explicit limits.
 #[must_use]
 pub fn parse_cachestorage_dir_with(
-    _path: &Path,
-    _limits: &DecompressLimits,
+    path: &Path,
+    limits: &DecompressLimits,
 ) -> Vec<CacheStorageResource> {
-    // GREEN in the next commit.
-    Vec::new()
+    // An origin-hash dir is one that directly holds an index.txt.
+    if path.join("index.txt").is_file() {
+        return parse_origin_hash_dir(path, limits);
+    }
+    // Otherwise treat `path` as the CacheStorage root: each immediate child that
+    // holds an index.txt is an origin-hash dir.
+    let mut out = Vec::new();
+    let entries = match std::fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return out,
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let child = entry.path();
+        if child.is_dir() && child.join("index.txt").is_file() {
+            out.extend(parse_origin_hash_dir(&child, limits));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
