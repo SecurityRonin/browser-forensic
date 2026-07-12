@@ -86,9 +86,55 @@ pub struct SearchQuery {
 /// DuckDuckGo, YouTube, and Amazon, and exposes the raw term (rather than a
 /// prose interpretation) for downstream entity extraction.
 #[must_use]
-pub fn search_query(_url: &str) -> Option<SearchQuery> {
-    // GREEN cycle replaces this stub with the multi-engine implementation.
+pub fn search_query(url: &str) -> Option<SearchQuery> {
+    let u = Url::parse(url).ok()?;
+    let host = u.host_str()?.to_ascii_lowercase();
+    let pairs = collect_pairs(&u);
+
+    // Known provider: try its ordered term parameters first.
+    if let Some((name, params)) = known_engine(&host) {
+        for p in params {
+            if let Some(v) = first(&pairs, p) {
+                if !v.is_empty() {
+                    return Some(SearchQuery {
+                        engine: name.to_string(),
+                        term: v.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    // Generic fallback: any host, well-known search parameters.
+    for p in ["q", "p", "query", "search"] {
+        if let Some(v) = first(&pairs, p) {
+            if !v.is_empty() {
+                return Some(SearchQuery {
+                    engine: "Generic".to_string(),
+                    term: v.to_string(),
+                });
+            }
+        }
+    }
     None
+}
+
+/// Match a lowercased host to a `(engine_name, term_parameters)` entry.
+fn known_engine(host: &str) -> Option<(&'static str, &'static [&'static str])> {
+    let ends = |suffix: &str| host == suffix || host.ends_with(&format!(".{suffix}"));
+    if host == "www.google" || host.starts_with("www.google.") || ends("google.com") {
+        Some(("Google", &["q"]))
+    } else if ends("bing.com") {
+        Some(("Bing", &["q"]))
+    } else if ends("duckduckgo.com") {
+        Some(("DuckDuckGo", &["q"]))
+    } else if ends("youtube.com") || ends("youtube-nocookie.com") {
+        Some(("YouTube", &["search_query"]))
+    } else if host.contains("amazon.") {
+        Some(("Amazon", &["k", "field-keywords"]))
+    } else {
+        None
+    }
 }
 
 /// Interpret a cookie `(name, value)`: GA / Quantcast / BIG-IP, then a generic
