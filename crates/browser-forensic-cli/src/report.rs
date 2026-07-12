@@ -23,6 +23,18 @@ enum Macb {
     Birth,
 }
 
+impl Macb {
+    /// The l2t_csv `MACB` group string (M A C B, dot for an inactive slot).
+    /// The metadata-change (C) slot is never active for browser artifacts.
+    fn letters(self) -> &'static str {
+        match self {
+            Self::Modify => "M...",
+            Self::Access => ".A..",
+            Self::Birth => "...B",
+        }
+    }
+}
+
 /// Map an artifact kind to (which MAC slot its timestamp fills, a human label
 /// for that time). This is the single structural rule both machine serializers
 /// share; adding an artifact kind forces a choice here.
@@ -134,8 +146,113 @@ pub fn to_bodyfile(events: &[BrowserEvent]) -> String {
     out
 }
 
+/// The fixed l2t_csv column header.
+const L2T_HEADER: &str =
+    "date,time,timezone,MACB,source,sourcetype,type,user,host,short,desc,version,filename,inode,notes,format,extra";
+
+/// RFC 4180 field escaping: wrap in double quotes and double any embedded quote
+/// when the value contains a comma, quote, CR, or LF.
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Render (date `MM/DD/YYYY`, time `HH:MM:SS`) for an event in the given zone
+/// (UTC when `None`). A non-representable timestamp degrades to zero fields
+/// rather than panicking.
+fn l2t_date_time(ns: i64, tz: Option<Tz>) -> (String, String) {
+    let secs = ns.div_euclid(1_000_000_000);
+    let nanos = u32::try_from(ns.rem_euclid(1_000_000_000)).unwrap_or(0);
+    let Some(utc) = chrono::DateTime::from_timestamp(secs, nanos) else {
+        return ("00/00/0000".to_string(), "00:00:00".to_string());
+    };
+    match tz {
+        Some(t) => {
+            let d = utc.with_timezone(&t);
+            (
+                d.format("%m/%d/%Y").to_string(),
+                d.format("%H:%M:%S").to_string(),
+            )
+        }
+        None => (
+            utc.format("%m/%d/%Y").to_string(),
+            utc.format("%H:%M:%S").to_string(),
+        ),
+    }
+}
+
+/// The `desc` (full detail) column: description, plus the URL when present.
+fn l2t_desc(e: &BrowserEvent) -> String {
+    match attr_str(e, "url") {
+        Some(u) if !u.is_empty() => format!("{} [{u}]", e.description),
+        _ => e.description.clone(),
+    }
+}
+
+/// The `extra` column: every attribute as `k=v`, key-sorted for determinism,
+/// `; `-joined (plaso's convention).
+fn l2t_extra(e: &BrowserEvent) -> String {
+    let mut kv: Vec<(&String, &Value)> = e.attrs.iter().collect();
+    kv.sort_by(|a, b| a.0.cmp(b.0));
+    kv.iter()
+        .map(|(k, v)| {
+            let val = match v {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            format!("{k}={val}")
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 /// Serialize events as plaso / log2timeline `l2t_csv`.
+///
+/// A fixed 17-column header followed by one row per event. `date`/`time` are
+/// rendered in `tz` (UTC when `None`); `source` is always `WEBHIST`;
+/// `sourcetype`/`type`/`MACB` come from the artifact ([`timestamp_semantic`]);
+/// `extra` carries every attribute as `k=v`. Every field is RFC 4180-escaped,
+/// so a value can never break the column structure. Values are faithful — no
+/// humanizing or truncation.
+///
+/// Format: log2timeline `l2t_csv`
+/// (<https://forensics.wiki/l2t_csv/>); the `MACB` and `type` (timestamp
+/// description) semantics follow plaso's output documentation
+/// (<https://plaso.readthedocs.io/en/latest/sources/user/Output-and-formatting.html>).
 #[must_use]
-pub fn to_l2t_csv(_events: &[BrowserEvent], _tz: Option<Tz>) -> String {
-    String::new()
+pub fn to_l2t_csv(events: &[BrowserEvent], tz: Option<Tz>) -> String {
+    let tz_label = tz.map_or("UTC", chrono_tz::Tz::name);
+    let mut out = String::from(L2T_HEADER);
+    out.push('\n');
+    for e in events {
+        let (macb, type_label) = timestamp_semantic(&e.artifact);
+        let (date, time) = l2t_date_time(e.timestamp_ns, tz);
+        let sourcetype = format!("{} {}", e.browser, e.artifact);
+        let fields = [
+            date,
+            time,
+            tz_label.to_string(),
+            macb.letters().to_string(),
+            "WEBHIST".to_string(),
+            sourcetype,
+            type_label.to_string(),
+            attr_str(e, "user").unwrap_or_default().to_string(),
+            attr_str(e, "host").unwrap_or_default().to_string(),
+            e.description.clone(),
+            l2t_desc(e),
+            "2".to_string(),
+            e.source.clone(),
+            String::new(),
+            String::new(),
+            "browser-forensic".to_string(),
+            l2t_extra(e),
+        ];
+        let row: Vec<String> = fields.iter().map(|f| csv_field(f)).collect();
+        out.push_str(&row.join(","));
+        out.push('\n');
+    }
+    out
 }
