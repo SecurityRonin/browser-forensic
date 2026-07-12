@@ -18,6 +18,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use browser_forensic_chrome::{collapse_redirects, parse_session, parse_visits};
+use browser_forensic_core::reconstruct::{
+    resolve_referrer_chains, sessionize, tag_redirect_chains, SessionConfig,
+    DEFAULT_IDLE_GAP_MINUTES,
+};
 use browser_forensic_core::BrowserEvent;
 use browser_forensic_discovery::discover_profiles;
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -81,6 +85,18 @@ enum Command {
         /// Show only tabs whose URL or title contains this substring.
         #[arg(long, value_name = "TEXT")]
         search: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Reconstruct navigation: referrer + redirect chains and inferred sessions.
+    Chains {
+        /// A history file, or a profile directory containing one.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Idle-gap threshold (minutes) for inferring session boundaries.
+        #[arg(long, value_name = "MINUTES", default_value_t = DEFAULT_IDLE_GAP_MINUTES)]
+        idle_gap: i64,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -195,6 +211,11 @@ where
             search,
             format,
         }) => run_sessions(&path, search.as_deref(), format),
+        Some(Command::Chains {
+            path,
+            idle_gap,
+            format,
+        }) => run_chains(&path, idle_gap, format),
         Some(Command::Timeline(a)) => run_artifact(&a.path, ArtifactType::History, a.format),
         Some(Command::Cookies(a)) => run_artifact(&a.path, ArtifactType::Cookies, a.format),
         Some(Command::Downloads(a)) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
@@ -372,6 +393,32 @@ pub fn run_history(
         filter_in_place(&mut visits, needle);
     }
     emit_events(&visits, format);
+    Ok(())
+}
+
+/// Reconstruct navigation for a history file: parse the per-visit table for the
+/// auto-detected family (Chromium `visits` / Firefox `moz_historyvisits`), then
+/// enrich each visit with its referrer (`referrer_url`/`nav_depth`), redirect-chain
+/// membership (`redirect_chain_id`/`redirect_role`), and an inferred `session_id`
+/// (idle-gap heuristic at `idle_gap_minutes`). Safari has no per-visit table, so
+/// reconstruction is unavailable there (fail loud).
+///
+/// # Errors
+/// Returns an error if the path cannot be resolved, the family lacks a per-visit
+/// table, or the history store cannot be opened/queried.
+pub fn reconstruct_history(path: &Path, idle_gap_minutes: i64) -> Result<Vec<BrowserEvent>> {
+    // RED stub — real implementation added in the GREEN commit.
+    let _ = (path, idle_gap_minutes);
+    Ok(Vec::new())
+}
+
+/// `br4n6 chains` — reconstruct and emit the enriched navigation timeline.
+///
+/// # Errors
+/// Propagates [`reconstruct_history`] errors.
+pub fn run_chains(path: &Path, idle_gap_minutes: i64, format: OutputFormat) -> Result<()> {
+    let events = reconstruct_history(path, idle_gap_minutes)?;
+    emit_events(&events, format);
     Ok(())
 }
 
@@ -1429,6 +1476,80 @@ mod tests {
             .join("google-chrome")
             .join("Default")
             .join("History")
+    }
+
+    #[test]
+    fn reconstruct_history_enriches_referrer_redirect_and_session() {
+        const CS: i64 = 0x1000_0000;
+        const CE: i64 = 0x2000_0000;
+        const CR: i64 = 0x4000_0000;
+        const SR: i64 = 0x8000_0000;
+        let dir = tempfile::tempdir().unwrap();
+        let profile = dir.path().join("google-chrome").join("Default");
+        std::fs::create_dir_all(&profile).unwrap();
+        let hist = profile.join("History");
+        let conn = Connection::open(&hist).unwrap();
+        // 1 origin(typed, chain_start) -> 2 server-redirect -> 3 client-redirect
+        // landing; 4 a far-later visit that must fall in a new inferred session.
+        conn.execute_batch(&format!(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT DEFAULT '', visit_count INTEGER DEFAULT 0 NOT NULL, last_visit_time INTEGER NOT NULL);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0, visit_duration INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1,'https://origin.example','O',1,13327626000000000);
+             INSERT INTO urls VALUES (2,'https://hop.example','H',1,13327626000000000);
+             INSERT INTO urls VALUES (3,'https://land.example','L',1,13327626000000000);
+             INSERT INTO urls VALUES (4,'https://later.example','La',1,13327626000000000);
+             INSERT INTO visits VALUES (1,1,13327626000000000,0,{cs},0);
+             INSERT INTO visits VALUES (2,2,13327626001000000,1,{sr},0);
+             INSERT INTO visits VALUES (3,3,13327626002000000,2,{cr},0);
+             INSERT INTO visits VALUES (4,4,16327626000000000,0,1,0);",
+            cs = CS | 1,
+            sr = SR,
+            cr = CR | CE,
+        ))
+        .unwrap();
+
+        let events = reconstruct_history(&hist, 30).unwrap();
+        assert_eq!(events.len(), 4);
+        let by_url = |u: &str| {
+            events
+                .iter()
+                .find(|e| e.attrs["url"] == json!(u))
+                .unwrap_or_else(|| panic!("missing {u}"))
+        };
+        assert_eq!(
+            by_url("https://hop.example").attrs["referrer_url"],
+            json!("https://origin.example")
+        );
+        assert_eq!(
+            by_url("https://origin.example").attrs["redirect_role"],
+            json!("start")
+        );
+        assert_eq!(
+            by_url("https://land.example").attrs["redirect_role"],
+            json!("landing")
+        );
+        assert_eq!(
+            by_url("https://hop.example").attrs["redirect_kind"],
+            json!("server")
+        );
+        let s0 = by_url("https://origin.example").attrs["session_id"]
+            .as_i64()
+            .unwrap();
+        let s_last = by_url("https://later.example").attrs["session_id"]
+            .as_i64()
+            .unwrap();
+        assert_ne!(s0, s_last, "a far-later visit is a new inferred session");
+    }
+
+    #[test]
+    fn reconstruct_history_rejects_safari() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("History.db");
+        Connection::open(&p)
+            .unwrap()
+            .execute_batch("CREATE TABLE history_items (id INTEGER);")
+            .unwrap();
+        assert!(reconstruct_history(&p, 30).is_err());
     }
 
     /// Firefox `places.sqlite` with one URL.
