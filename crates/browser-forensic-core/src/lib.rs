@@ -75,6 +75,9 @@ pub enum ArtifactKind {
     /// A string the user typed into the omnibox and the URL they selected
     /// (Chromium `Shortcuts`). Direct evidence of user intent.
     Shortcut,
+    /// A (often partial) omnibox string the user typed and the URL Chromium
+    /// learned to predict (Chromium `Network Action Predictor`).
+    NetworkPrediction,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -101,6 +104,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::Favicon => write!(f, "Favicon"),
             Self::TopSite => write!(f, "TopSite"),
             Self::Shortcut => write!(f, "Shortcut"),
+            Self::NetworkPrediction => write!(f, "NetworkPrediction"),
         }
     }
 }
@@ -391,6 +395,15 @@ mod tests {
     fn artifact_kind_has_shortcut_variant() {
         let _s = ArtifactKind::Shortcut;
         assert_eq!(format!("{}", ArtifactKind::Shortcut), "Shortcut");
+    }
+
+    #[test]
+    fn artifact_kind_has_network_prediction_variant() {
+        let _n = ArtifactKind::NetworkPrediction;
+        assert_eq!(
+            format!("{}", ArtifactKind::NetworkPrediction),
+            "NetworkPrediction"
+        );
     }
 
     #[test]
