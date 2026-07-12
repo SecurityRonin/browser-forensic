@@ -9,6 +9,7 @@ members = [
     "crates/browser-forensic-integrity",
     "crates/browser-forensic-carve",
     "crates/browser-forensic-interpret",
+    "crates/browser-forensic-search",
     "crates/browser-forensic-memory",
     "crates/browser-forensic-storage",
     "crates/browser-forensic-triage",

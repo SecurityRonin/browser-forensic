@@ -1,0 +1,18 @@
+[package]
+name = "browser-forensic-search"
+version = "0.2.0"
+description = "Search/filter and entity/IOC extraction over normalized browser events (emails, IPs, crypto addresses, Luhn-checked card candidates, known-bad domains)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-interpret" }
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

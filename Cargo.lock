@@ -422,6 +422,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser-forensic-search"
+version = "0.2.0"
+dependencies = [
+ "browser-forensic-core",
+ "browser-forensic-interpret",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "browser-forensic-storage"
 version = "0.2.0"
 dependencies = [
