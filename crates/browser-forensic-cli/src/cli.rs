@@ -107,6 +107,8 @@ enum Command {
     Cache(ArtifactArgs),
     /// Parse browser preferences (Chrome `Preferences` / Firefox `prefs.js`).
     Preferences(ArtifactArgs),
+    /// Parse web storage (Local/Session Storage, IndexedDB).
+    Storage(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -192,6 +194,7 @@ where
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
         Some(Command::Preferences(a)) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
+        Some(Command::Storage(a)) => run_storage(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -1077,6 +1080,21 @@ pub fn run_integrity(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 storage PATH` — parse web storage (Local/Session Storage, IndexedDB)
+/// for the auto-detected browser family. `PATH` may be a single LevelDB
+/// directory, a `webappsstore.sqlite` / IndexedDB `*.sqlite` file, or a profile
+/// directory (every web-storage source beneath it is aggregated).
+///
+/// # Errors
+/// Returns an error if the path holds no recognized web storage or cannot be read.
+pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_storage::parse_path(path)
+        .with_context(|| format!("parsing web storage from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    emit_events(&events, format);
+    Ok(())
+}
+
 /// `br4n6 carve PATH` — recover deleted records from free pages and the WAL.
 ///
 /// # Errors
@@ -1376,6 +1394,31 @@ mod tests {
         let p = dir.path().join("History"); // bare name → undetectable family
         std::fs::write(&p, b"x").unwrap();
         assert!(run_artifact(&p, ArtifactType::History, OutputFormat::Text).is_err());
+    }
+
+    #[test]
+    fn run_storage_webappsstore_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("webappsstore.sqlite");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE webappsstore2 (scope TEXT, key TEXT, value TEXT);
+             INSERT INTO webappsstore2 VALUES ('moc.elpmaxe.:http:80', 'theme', 'dark');",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_storage(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_storage_nonexistent_errors() {
+        assert!(run_storage(
+            Path::new("/nonexistent/webappsstore.sqlite"),
+            OutputFormat::Text
+        )
+        .is_err());
     }
 
     #[test]

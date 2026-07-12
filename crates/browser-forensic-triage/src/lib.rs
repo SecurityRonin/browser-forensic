@@ -162,6 +162,10 @@ fn triage_chromium_profile(
             events.append(&mut evts);
         }
     }
+
+    // Web storage: Local/Session Storage (LevelDB) and IndexedDB. Per-source
+    // failures are absorbed inside the collector so triage stays best-effort.
+    events.extend(browser_forensic_storage::collect_chromium_web_storage(path));
 }
 
 fn triage_firefox_profile(
@@ -201,6 +205,9 @@ fn triage_firefox_profile(
             integrity.append(&mut ind);
         }
     }
+
+    // Web storage: webappsstore.sqlite (Local Storage) and IndexedDB SQLite.
+    events.extend(browser_forensic_storage::collect_firefox_web_storage(path));
 }
 
 fn triage_safari_profile(
@@ -269,6 +276,28 @@ mod tests {
             "should have parsed history events"
         );
         assert!(report.generated_at_ns > 0);
+    }
+
+    #[test]
+    fn triage_firefox_profile_includes_web_storage() {
+        let dir = TempDir::new().expect("tempdir");
+        let store = dir.path().join("webappsstore.sqlite");
+        let conn = rusqlite::Connection::open(&store).expect("open");
+        conn.execute_batch(
+            "CREATE TABLE webappsstore2 (scope TEXT, key TEXT, value TEXT);
+             INSERT INTO webappsstore2 VALUES ('moc.elpmaxe.:http:80', 'theme', 'dark');",
+        )
+        .expect("setup");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Firefox).expect("triage");
+        assert!(
+            report
+                .events
+                .iter()
+                .any(|e| e.attrs.contains_key("storage_type")),
+            "triage should include web-storage events"
+        );
     }
 
     #[test]
