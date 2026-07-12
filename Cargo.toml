@@ -4,6 +4,7 @@ members = [
     "crates/browser-forensic-chrome",
     "crates/browser-forensic-cache",
     "crates/browser-forensic-firefox",
+    "crates/browser-forensic-decrypt",
     "crates/browser-forensic-safari",
     "crates/browser-forensic-discovery",
     "crates/browser-forensic-integrity",

@@ -1,0 +1,31 @@
+[package]
+name = "browser-forensic-decrypt"
+version = "0.2.0"
+description = "Opt-in decryption of Firefox NSS and macOS Chromium (v10) encrypted browser secrets — RustCrypto only, never fabricates plaintext"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# RustCrypto — audited primitives only; NEVER hand-roll (Paranoid Gatekeeper).
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+des = "0.8"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+hmac = "0.12"
+sha1 = "0.10"
+sha2 = { workspace = true }
+# ASN.1 (DER) — a safe, fuzz-hardened parser for the untrusted NSS blobs.
+der = "0.7"
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
