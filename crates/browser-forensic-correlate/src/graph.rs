@@ -119,48 +119,38 @@ impl Default for GraphConfig {
     }
 }
 
-/// Build a bounded [`EntityGraph`] over `events`.
-///
-/// Navigation reconstruction (M3 `resolve_referrer_chains`) is run on a private
-/// copy so referrer/redirect edges reflect the recorded `from_visit` linkage.
-#[must_use]
-pub fn entity_graph(events: &[BrowserEvent], config: GraphConfig) -> EntityGraph {
-    if events.is_empty() || !events.is_empty() {
-        // RED stub — replaced by the real implementation in GREEN.
-        let _ = (
-            host_of as fn(&str) -> Option<String>,
-            registrable_domain as fn(&str) -> Option<String>,
-        );
-        let _ = resolve_referrer_chains;
-        let _ = primary_registrable_domain as fn(&BrowserEvent) -> Option<String>;
-        return EntityGraph {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            cooccurrence_window_secs: config.cooccurrence_window_secs,
-            nodes_truncated: false,
-            edges_truncated: false,
-        };
-    }
-    // Reconstruct referrer linkage on a private copy (input stays untouched).
-    let mut work = events.to_vec();
-    resolve_referrer_chains(&mut work);
+/// Node accumulator: host -> (primary-event count, browser families).
+type NodeMap = BTreeMap<String, (usize, std::collections::BTreeSet<String>)>;
 
-    // Nodes: primary-host attribution (count + browsers).
-    let mut node_map: BTreeMap<String, (usize, std::collections::BTreeSet<String>)> =
-        BTreeMap::new();
-    for event in &work {
+/// Insert an endpoint host as a node with zero count if not already present.
+fn ensure_node(map: &mut NodeMap, host: &str) {
+    map.entry(host.to_string())
+        .or_insert_with(|| (0, std::collections::BTreeSet::new()));
+}
+
+/// Nodes by primary-host attribution: each event credits its own host.
+fn build_nodes(events: &[BrowserEvent]) -> NodeMap {
+    let mut map: NodeMap = BTreeMap::new();
+    for event in events {
         if let Some(host) = primary_registrable_domain(event) {
-            let entry = node_map
+            let entry = map
                 .entry(host)
                 .or_insert_with(|| (0, std::collections::BTreeSet::new()));
             entry.0 += 1;
             entry.1.insert(event.browser.to_string());
         }
     }
+    map
+}
 
-    // Referrer / redirect edges from the reconstructed from_visit linkage.
+/// Referrer/redirect edges from the reconstructed `from_visit` linkage. Ensures
+/// both endpoints exist as nodes.
+fn build_directed_edges(
+    events: &[BrowserEvent],
+    nodes: &mut NodeMap,
+) -> BTreeMap<(String, String, EdgeKind), usize> {
     let mut directed: BTreeMap<(String, String, EdgeKind), usize> = BTreeMap::new();
-    for event in &work {
+    for event in events {
         let (Some(to), Some(referrer)) = (
             primary_registrable_domain(event),
             event
@@ -186,52 +176,68 @@ pub fn entity_graph(events: &[BrowserEvent], config: GraphConfig) -> EntityGraph
         } else {
             EdgeKind::Referrer
         };
-        // Ensure both endpoints are nodes.
-        node_map
-            .entry(from.clone())
-            .or_insert_with(|| (0, std::collections::BTreeSet::new()));
-        node_map
-            .entry(to.clone())
-            .or_insert_with(|| (0, std::collections::BTreeSet::new()));
+        ensure_node(nodes, &from);
+        ensure_node(nodes, &to);
         *directed.entry((from, to, kind)).or_insert(0) += 1;
     }
+    directed
+}
 
-    // Co-occurrence edges: distinct hosts within the time window.
+/// Undirected co-occurrence weights: distinct hosts within `window_secs`.
+fn build_cooccurrence(
+    events: &[BrowserEvent],
+    window_secs: i64,
+) -> BTreeMap<(String, String), usize> {
     let mut cooc: BTreeMap<(String, String), usize> = BTreeMap::new();
-    if config.cooccurrence_window_secs > 0 {
-        let window_ns = config
-            .cooccurrence_window_secs
-            .saturating_mul(NANOS_PER_SEC);
-        let mut timed: Vec<(i64, String)> = work
-            .iter()
-            .filter(|e| e.timestamp_ns != 0)
-            .filter_map(|e| primary_registrable_domain(e).map(|h| (e.timestamp_ns, h)))
-            .collect();
-        timed.sort_by_key(|(ts, _)| *ts);
-        for i in 0..timed.len() {
-            let (ti, hi) = (timed[i].0, timed[i].1.clone());
-            let mut scanned = 0usize;
-            let mut j = i + 1;
-            while j < timed.len() && scanned < NEIGHBOR_SCAN_CAP {
-                let (tj, hj) = (timed[j].0, &timed[j].1);
-                if tj - ti > window_ns {
-                    break;
-                }
-                if &hi != hj {
-                    let key = if hi < *hj {
-                        (hi.clone(), hj.clone())
-                    } else {
-                        (hj.clone(), hi.clone())
-                    };
-                    *cooc.entry(key).or_insert(0) += 1;
-                }
-                j += 1;
-                scanned += 1;
+    if window_secs <= 0 {
+        return cooc;
+    }
+    let window_ns = window_secs.saturating_mul(NANOS_PER_SEC);
+    let mut timed: Vec<(i64, String)> = events
+        .iter()
+        .filter(|e| e.timestamp_ns != 0)
+        .filter_map(|e| primary_registrable_domain(e).map(|h| (e.timestamp_ns, h)))
+        .collect();
+    timed.sort_by_key(|(ts, _)| *ts);
+    for i in 0..timed.len() {
+        let (ti, hi) = (timed[i].0, timed[i].1.clone());
+        let mut scanned = 0usize;
+        let mut j = i + 1;
+        while j < timed.len() && scanned < NEIGHBOR_SCAN_CAP {
+            let (tj, hj) = (timed[j].0, &timed[j].1);
+            if tj - ti > window_ns {
+                break;
             }
+            if &hi != hj {
+                let key = if hi < *hj {
+                    (hi.clone(), hj.clone())
+                } else {
+                    (hj.clone(), hi.clone())
+                };
+                *cooc.entry(key).or_insert(0) += 1;
+            }
+            j += 1;
+            scanned += 1;
         }
     }
+    cooc
+}
 
-    // Truncate nodes by event count.
+/// Build a bounded [`EntityGraph`] over `events`.
+///
+/// Navigation reconstruction (M3 `resolve_referrer_chains`) is run on a private
+/// copy so referrer/redirect edges reflect the recorded `from_visit` linkage.
+#[must_use]
+pub fn entity_graph(events: &[BrowserEvent], config: GraphConfig) -> EntityGraph {
+    // Reconstruct referrer linkage on a private copy (input stays untouched).
+    let mut work = events.to_vec();
+    resolve_referrer_chains(&mut work);
+
+    let mut node_map = build_nodes(&work);
+    let directed = build_directed_edges(&work, &mut node_map);
+    let cooc = build_cooccurrence(&work, config.cooccurrence_window_secs);
+
+    // Truncate nodes by event count (deterministic order).
     let mut nodes: Vec<GraphNode> = node_map
         .into_iter()
         .map(|(id, (event_count, browsers))| GraphNode {
