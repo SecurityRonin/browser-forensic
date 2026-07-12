@@ -173,6 +173,57 @@ enum Command {
         #[arg(long)]
         interpret: bool,
     },
+    /// Search collected events with a substring or linear-time regex, scoped by
+    /// field and an inclusive time range. `PATH` is a profile or home directory.
+    Search {
+        /// A profile directory or home directory to collect events from.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Linear-time regex pattern to match (mutually useful with --substring).
+        #[arg(long, value_name = "PAT")]
+        regex: Option<String>,
+        /// Case-sensitive substring to match.
+        #[arg(long, value_name = "TEXT")]
+        substring: Option<String>,
+        /// Restrict matching to these fields (repeatable; default: all text).
+        #[arg(long = "field", value_name = "NAME")]
+        fields: Vec<String>,
+        /// Inclusive lower time bound (RFC3339, `YYYY-MM-DD`, or Unix nanos).
+        #[arg(long, value_name = "TS")]
+        from: Option<String>,
+        /// Inclusive upper time bound (RFC3339, `YYYY-MM-DD`, or Unix nanos).
+        #[arg(long, value_name = "TS")]
+        to: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Extract candidate entities/IOCs from collected events: emails, IPs,
+    /// crypto-address candidates, Luhn-valid card candidates, and search terms.
+    /// Every match is a candidate, never a confirmed identifier. `PATH` is a
+    /// profile or home directory.
+    ExtractIocs {
+        /// A profile directory or home directory to collect events from.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Flag events whose host matches a user-supplied domain blocklist (no
+    /// bundled threat intel — the list is an input). `PATH` is a profile or home
+    /// directory.
+    MatchDomains {
+        /// A profile directory or home directory to collect events from.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Blocklist file: one host per line, `#` comments allowed.
+        #[arg(long, value_name = "FILE")]
+        list: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
     /// Discover browser profiles on this system (bw-style output).
     Profiles {
         /// Output format.
@@ -276,6 +327,27 @@ where
             timezone.as_deref(),
             interpret,
         ),
+        Some(Command::Search {
+            path,
+            regex,
+            substring,
+            fields,
+            from,
+            to,
+            format,
+        }) => run_search(
+            &path,
+            regex.as_deref(),
+            substring.as_deref(),
+            &fields,
+            from.as_deref(),
+            to.as_deref(),
+            format,
+        ),
+        Some(Command::ExtractIocs { path, format }) => run_extract_iocs(&path, format),
+        Some(Command::MatchDomains { path, list, format }) => {
+            run_match_domains(&path, &list, format)
+        }
         Some(Command::Profiles { format }) => run_profiles(format),
         Some(Command::Analyze { path, cap }) => run_analyze(&path, cap),
         Some(Command::Integrity(a)) => run_integrity(&a.path, a.format),
@@ -1060,6 +1132,63 @@ pub fn profile_family(dir: &Path) -> Option<BrowserFamily> {
     } else {
         None
     }
+}
+
+/// Collect a profile/home directory's correlated events, the same way `export`
+/// does: a home-directory triage scan first, falling back to treating `path` as
+/// a single profile directory.
+///
+/// # Errors
+/// Returns an error if collection fails.
+fn collect_profile_events(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let mut report = browser_forensic_triage::triage(path)
+        .with_context(|| format!("collecting events from {}", path.display()))?;
+    if report.profiles.is_empty() && report.events.is_empty() {
+        if let Some(family) = profile_family(path) {
+            report = browser_forensic_triage::triage_profile(path, family)
+                .with_context(|| format!("collecting events from profile {}", path.display()))?;
+        }
+    }
+    let mut events = report.events;
+    events.sort_by_key(|e| e.timestamp_ns);
+    Ok(events)
+}
+
+/// `br4n6 search` — filter collected events by substring/regex, field scope, and
+/// an inclusive time range.
+///
+/// # Errors
+/// Returns an error if a timestamp or regex is invalid, or collection fails.
+#[allow(clippy::too_many_arguments)]
+pub fn run_search(
+    path: &Path,
+    regex: Option<&str>,
+    substring: Option<&str>,
+    fields: &[String],
+    from: Option<&str>,
+    to: Option<&str>,
+    format: OutputFormat,
+) -> Result<()> {
+    let _ = (path, regex, substring, fields, from, to, format);
+    anyhow::bail!("run_search not yet implemented")
+}
+
+/// `br4n6 extract-iocs` — extract candidate entities from collected events.
+///
+/// # Errors
+/// Returns an error if collection fails.
+pub fn run_extract_iocs(path: &Path, format: OutputFormat) -> Result<()> {
+    let _ = (path, format);
+    anyhow::bail!("run_extract_iocs not yet implemented")
+}
+
+/// `br4n6 match-domains` — flag events whose host matches a blocklist file.
+///
+/// # Errors
+/// Returns an error if the list is missing/empty or collection fails.
+pub fn run_match_domains(path: &Path, list: &Path, format: OutputFormat) -> Result<()> {
+    let _ = (path, list, format);
+    anyhow::bail!("run_match_domains not yet implemented")
 }
 
 /// `br4n6 export` — collect a correlated timeline for a profile/home directory

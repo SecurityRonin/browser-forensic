@@ -310,6 +310,7 @@ dependencies = [
  "browser-forensic-integrity",
  "browser-forensic-interpret",
  "browser-forensic-safari",
+ "browser-forensic-search",
  "browser-forensic-storage",
  "browser-forensic-triage",
  "calamine",
