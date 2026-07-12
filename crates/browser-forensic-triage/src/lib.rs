@@ -226,6 +226,13 @@ fn triage_chromium_profile(
         }
     }
 
+    let ext_cookies_path = path.join("Extension Cookies");
+    if ext_cookies_path.is_file() {
+        if let Ok(mut evts) = browser_forensic_chrome::parse_extension_cookies(&ext_cookies_path) {
+            events.append(&mut evts);
+        }
+    }
+
     let bookmarks_path = path.join("Bookmarks");
     if bookmarks_path.is_file() {
         if let Ok(mut evts) = browser_forensic_chrome::parse_bookmarks(&bookmarks_path) {
@@ -592,6 +599,29 @@ mod tests {
                 .any(|e| e.artifact == ArtifactKind::MediaPlayback
                     && e.attrs.get("url") == Some(&serde_json::json!("https://played.example/v"))),
             "expected MediaPlayback events"
+        );
+    }
+
+    #[test]
+    fn triage_chromium_includes_extension_cookies() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        let ext = dir.path().join("Extension Cookies");
+        let conn = rusqlite::Connection::open(&ext).expect("open ext cookies");
+        conn.execute_batch(
+            "CREATE TABLE cookies (creation_utc INTEGER NOT NULL, host_key TEXT NOT NULL, top_frame_site_key TEXT NOT NULL DEFAULT '', name TEXT NOT NULL, value TEXT DEFAULT '', path TEXT NOT NULL, expires_utc INTEGER DEFAULT 0, is_secure INTEGER DEFAULT 0, is_httponly INTEGER DEFAULT 0, samesite INTEGER DEFAULT -1, encrypted_value BLOB DEFAULT '');
+             INSERT INTO cookies (creation_utc, host_key, name, path) VALUES (13300000000000000, '.ext.example', 'auth', '/');",
+        ).expect("setup ext cookies");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        assert!(
+            report
+                .events
+                .iter()
+                .any(|e| e.artifact == ArtifactKind::Cookies
+                    && e.attrs.get("cookie_store") == Some(&serde_json::json!("extension"))),
+            "expected extension-tagged cookie events"
         );
     }
 

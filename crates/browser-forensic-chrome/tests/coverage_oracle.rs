@@ -150,6 +150,27 @@ fn network_action_predictor_count_matches_sqlite3_oracle() {
 }
 
 #[test]
+fn extension_cookies_count_matches_sqlite3_oracle() {
+    let Some((_profile, ext)) = setup("Extension Cookies") else {
+        return;
+    };
+    let parsed =
+        browser_forensic_chrome::parse_extension_cookies(&ext).expect("parse Extension Cookies");
+    let oracle =
+        sqlite_count(&ext, "SELECT count(*) FROM cookies WHERE creation_utc > 0").expect("oracle");
+    assert_eq!(
+        parsed.len() as i64,
+        oracle,
+        "Extension Cookies count: parser {} vs sqlite3 {oracle}",
+        parsed.len()
+    );
+    assert!(parsed
+        .iter()
+        .all(|e| e.attrs.get("cookie_store") == Some(&serde_json::json!("extension"))));
+    eprintln!("Extension Cookies oracle matched: {oracle} cookies");
+}
+
+#[test]
 fn chips_partitioned_cookie_count_matches_sqlite3_oracle() {
     let Some((_profile, cookies)) = setup("Cookies") else {
         return;

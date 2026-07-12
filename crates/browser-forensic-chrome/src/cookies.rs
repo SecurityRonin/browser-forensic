@@ -25,6 +25,24 @@ use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
 ///
 /// Returns an error if the SQLite file cannot be opened or queried.
 pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
+    parse_cookie_store(path, "main")
+}
+
+/// Parse a Chromium `Extension Cookies` SQLite file — the cookie jar for
+/// extension background contexts. The schema is identical to `Cookies`, so this
+/// reuses the same parse path, tagging every event `cookie_store = "extension"`.
+///
+/// # Errors
+///
+/// Returns an error if the SQLite file cannot be opened or queried.
+pub fn parse_extension_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
+    parse_cookie_store(path, "extension")
+}
+
+/// Shared implementation for both the main `Cookies` jar and the
+/// `Extension Cookies` jar (identical schema). `store` tags each event's
+/// `cookie_store` attribute so the two jars stay distinguishable downstream.
+fn parse_cookie_store(path: &Path, store: &str) -> Result<Vec<BrowserEvent>> {
     let db = open_evidence_db(path)?;
     let conn = &db.conn;
     let source = path.to_string_lossy().into_owned();
@@ -74,7 +92,8 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
             .with_attr("is_httponly", json!(is_httponly))
             .with_attr("samesite", json!(samesite))
             .with_attr("expires_utc", json!(expires_utc))
-            .with_attr("encrypted_value", json!("ENCRYPTED"));
+            .with_attr("encrypted_value", json!("ENCRYPTED"))
+            .with_attr("cookie_store", json!(store));
             if has_partition {
                 ev = ev
                     .with_attr("top_frame_site_key", json!(top_frame_site_key))
@@ -85,18 +104,6 @@ pub fn parse_cookies(path: &Path) -> Result<Vec<BrowserEvent>> {
         .filter_map(std::result::Result::ok)
         .collect();
     Ok(events)
-}
-
-/// Parse a Chromium `Extension Cookies` SQLite file — the cookie jar for
-/// extension background contexts. The schema is identical to `Cookies`, so this
-/// reuses the same parse path, tagging every event `cookie_store = "extension"`.
-///
-/// # Errors
-///
-/// Returns an error if the SQLite file cannot be opened or queried.
-pub fn parse_extension_cookies(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub — replaced by the shared-store reuse in GREEN.
-    Ok(Vec::new())
 }
 
 /// True when the `cookies` table has a column named `col` (used to detect the

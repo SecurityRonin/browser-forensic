@@ -149,6 +149,8 @@ enum Command {
     Predictor(ArtifactArgs),
     /// Parse a Chromium `Media History` database (audio/video playback).
     MediaHistory(ArtifactArgs),
+    /// Parse a Chromium `Extension Cookies` jar (tagged cookie_store=extension).
+    ExtensionCookies(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -255,6 +257,7 @@ where
         Some(Command::Shortcuts(a)) => run_shortcuts(&a.path, a.format),
         Some(Command::Predictor(a)) => run_predictor(&a.path, a.format),
         Some(Command::MediaHistory(a)) => run_media_history(&a.path, a.format),
+        Some(Command::ExtensionCookies(a)) => run_extension_cookies(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -1330,6 +1333,21 @@ pub fn run_top_sites(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 extension-cookies PATH` — parse a Chromium `Extension Cookies` jar
+/// (the cookie store for extension background contexts). Same schema as
+/// `Cookies`; every event is tagged `cookie_store=extension`. Values are never
+/// decrypted. Chromium-only.
+///
+/// # Errors
+/// Returns an error if the `Extension Cookies` database cannot be opened.
+pub fn run_extension_cookies(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_chrome::parse_extension_cookies(path)
+        .with_context(|| format!("parsing Extension Cookies from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
 /// `br4n6 media-history PATH` — parse a Chromium `Media History` database:
 /// audio/video playback, watch time, resume positions, and media titles.
 /// Chromium-only.
@@ -1855,6 +1873,22 @@ mod tests {
         drop(conn);
         for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
             run_predictor(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_extension_cookies_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Extension Cookies");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cookies (creation_utc INTEGER NOT NULL, host_key TEXT NOT NULL, top_frame_site_key TEXT NOT NULL DEFAULT '', name TEXT NOT NULL, value TEXT DEFAULT '', path TEXT NOT NULL, expires_utc INTEGER DEFAULT 0, is_secure INTEGER DEFAULT 0, is_httponly INTEGER DEFAULT 0, samesite INTEGER DEFAULT -1, encrypted_value BLOB DEFAULT '');
+             INSERT INTO cookies (creation_utc, host_key, name, path) VALUES (13327626000000000, '.ext.example', 'auth', '/');",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_extension_cookies(&p, fmt).unwrap();
         }
     }
 
