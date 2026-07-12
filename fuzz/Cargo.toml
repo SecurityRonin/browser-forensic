@@ -60,6 +60,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_sqlite_header"
+path = "fuzz_targets/fuzz_sqlite_header.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_forensic"
 path = "fuzz_targets/fuzz_forensic.rs"
 test = false
