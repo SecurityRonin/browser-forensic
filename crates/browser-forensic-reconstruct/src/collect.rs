@@ -25,6 +25,13 @@ fn norm_ct(ct: Option<&str>) -> Option<String> {
         .map(str::to_ascii_lowercase)
 }
 
+/// Extract the real request URL from a browser cache key (RED stub — returns
+/// the key unchanged).
+#[must_use]
+pub fn extract_request_url(key: &str) -> String {
+    key.to_string()
+}
+
 /// Convert a [`CachedResource`] (SimpleCache / cache2 / Safari) into the
 /// normalized index type, choosing the usable (decoded) body.
 #[must_use]
@@ -35,7 +42,7 @@ pub fn indexed_from_cached(res: &CachedResource, source: CacheSource) -> Indexed
         res.raw_body.clone()
     };
     IndexedResource {
-        url: res.url.clone(),
+        url: extract_request_url(&res.url),
         source,
         cached_time_ns: res.response_time_ns.or(res.request_time_ns),
         content_type: norm_ct(res.content_type.as_deref()),
@@ -56,7 +63,7 @@ pub fn indexed_from_cachestorage(res: &CacheStorageResource) -> IndexedResource 
         format!("HTTP/1.1 {s} {text}").trim_end().to_string()
     });
     IndexedResource {
-        url: res.url.clone(),
+        url: extract_request_url(&res.url),
         source: CacheSource::CacheStorage,
         cached_time_ns: res.response_time_ns.or(res.entry_time_ns),
         content_type: norm_ct(res.content_type.as_deref()),
@@ -185,6 +192,38 @@ mod tests {
             source_file: PathBuf::from("/tmp/abc_0"),
             sparse_file: None,
         }
+    }
+
+    #[test]
+    fn extract_url_strips_chromium_double_key_prefix() {
+        // Chromium partitioned (split-cache) key: NIK prefix + `_dk_` + the
+        // top-frame site, the frame site, then the real request URL last.
+        let key = "1/0/_dk_http://localhost http://localhost http://localhost:8137/index.html";
+        assert_eq!(extract_request_url(key), "http://localhost:8137/index.html");
+    }
+
+    #[test]
+    fn extract_url_passes_clean_url_through() {
+        assert_eq!(
+            extract_request_url("https://ex.com/a?b=1"),
+            "https://ex.com/a?b=1"
+        );
+    }
+
+    #[test]
+    fn extract_url_strips_firefox_partition_prefix() {
+        // Firefox cache2 keys prefix a partition with `,:` before the URL.
+        let key = "O^partitionKey=%28https%2Cexample.com%29,:https://ex.com/style.css";
+        assert_eq!(extract_request_url(key), "https://ex.com/style.css");
+    }
+
+    #[test]
+    fn cached_conversion_cleans_partitioned_key() {
+        let mut res = cached("https://placeholder/", "text/html", b"<html>");
+        res.url =
+            "1/0/_dk_http://localhost http://localhost http://localhost:8137/page.html".to_string();
+        let ir = indexed_from_cached(&res, CacheSource::ChromiumSimpleCache);
+        assert_eq!(ir.url, "http://localhost:8137/page.html");
     }
 
     #[test]
