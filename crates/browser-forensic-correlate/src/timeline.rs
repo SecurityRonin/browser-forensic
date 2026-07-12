@@ -53,12 +53,37 @@ fn event_url(event: &BrowserEvent) -> &str {
 /// timestamps keep input order); untimed rows stay in input order.
 #[must_use]
 pub fn unified_timeline(events: &[BrowserEvent]) -> UnifiedTimeline<'_> {
-    let _ = event_url;
-    let _ = events;
+    use std::collections::HashSet;
+
+    let mut seen: HashSet<(String, i64, String)> = HashSet::new();
+    let mut timed: Vec<&BrowserEvent> = Vec::new();
+    let mut untimed: Vec<&BrowserEvent> = Vec::new();
+    let mut duplicates_removed = 0usize;
+
+    for event in events {
+        let key = (
+            event_url(event).to_string(),
+            event.timestamp_ns,
+            event.artifact.to_string(),
+        );
+        if !seen.insert(key) {
+            duplicates_removed += 1;
+            continue;
+        }
+        if event.timestamp_ns == 0 {
+            untimed.push(event);
+        } else {
+            timed.push(event);
+        }
+    }
+
+    // slice::sort_by_key is stable: equal timestamps keep input order.
+    timed.sort_by_key(|e| e.timestamp_ns);
+
     UnifiedTimeline {
-        timed: Vec::new(),
-        untimed: Vec::new(),
-        duplicates_removed: 0,
+        timed,
+        untimed,
+        duplicates_removed,
     }
 }
 
