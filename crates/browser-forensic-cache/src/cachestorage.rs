@@ -213,10 +213,66 @@ impl CacheStorageMeta {
 ///
 /// Never fails: malformed/truncated proto input returns whatever could be
 /// recovered (possibly an empty [`CacheStorageMeta`]), never a panic.
+/// Decode a repeated `CacheHeaderMap` field (name(1), value(2)) into ordered
+/// `(name, value)` pairs.
+fn header_pairs(parent: &[Field], number: u64) -> Vec<(String, String)> {
+    repeated_len_raw(parent, number)
+        .map(|raw| {
+            let hf = fields(raw);
+            let name = str_field(&hf, 1).unwrap_or_default();
+            let value = str_field(&hf, 2).unwrap_or_default();
+            (name, value)
+        })
+        .collect()
+}
+
 #[must_use]
-pub fn parse_cachestorage_metadata(_stream0: &[u8]) -> CacheStorageMeta {
-    // GREEN in the next commit.
-    CacheStorageMeta::default()
+pub fn parse_cachestorage_metadata(stream0: &[u8]) -> CacheStorageMeta {
+    let top = fields(stream0);
+
+    // CacheRequest request = 1
+    let (request_method, request_headers) = match len_raw(&top, 1) {
+        Some(raw) => {
+            let rf = fields(raw);
+            (str_field(&rf, 1), header_pairs(&rf, 2))
+        }
+        None => (None, Vec::new()),
+    };
+
+    // CacheResponse response = 2
+    let mut http_status = None;
+    let mut status_text = None;
+    let mut response_type = None;
+    let mut headers = Vec::new();
+    let mut mime_type = None;
+    let mut response_time_ns = None;
+    if let Some(raw) = len_raw(&top, 2) {
+        let rf = fields(raw);
+        http_status = varint_field(&rf, 1).and_then(|v| u16::try_from(v).ok());
+        status_text = str_field(&rf, 2);
+        response_type = varint_field(&rf, 3).map(|v| i64::from_le_bytes(v.to_le_bytes()));
+        headers = header_pairs(&rf, 4);
+        mime_type = str_field(&rf, 13);
+        response_time_ns = varint_field(&rf, 6).and_then(|v| {
+            crate::http_meta::win_micros_to_unix_ns(i64::from_le_bytes(v.to_le_bytes()))
+        });
+    }
+
+    // CacheMetadata.entry_time = 3
+    let entry_time_ns = varint_field(&top, 3)
+        .and_then(|v| crate::http_meta::win_micros_to_unix_ns(i64::from_le_bytes(v.to_le_bytes())));
+
+    CacheStorageMeta {
+        request_method,
+        request_headers,
+        http_status,
+        status_text,
+        response_type,
+        headers,
+        mime_type,
+        response_time_ns,
+        entry_time_ns,
+    }
 }
 
 #[cfg(test)]
