@@ -12,7 +12,9 @@
 //! production code, every offset/size bounds-checked before use.
 
 pub mod error;
+pub mod http_meta;
 pub mod simple;
 
 pub use error::CacheError;
+pub use http_meta::{parse_http_meta, HttpMeta};
 pub use simple::{parse_simple_entry, SimpleEntry};
