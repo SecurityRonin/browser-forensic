@@ -36,10 +36,38 @@ pub struct HostRollup {
 /// descending, then host ascending (deterministic).
 #[must_use]
 pub fn host_rollups(events: &[BrowserEvent]) -> Vec<HostRollup> {
-    let _ = primary_registrable_domain;
-    let _ = events;
-    let _: fn() -> BTreeSet<String> = BTreeSet::new;
-    Vec::new()
+    let mut by_host: BTreeMap<String, HostRollup> = BTreeMap::new();
+
+    for event in events {
+        let Some(host) = primary_registrable_domain(event) else {
+            continue;
+        };
+        let entry = by_host.entry(host.clone()).or_insert_with(|| HostRollup {
+            host,
+            total: 0,
+            counts: BTreeMap::new(),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            browsers: BTreeSet::new(),
+        });
+        entry.total += 1;
+        *entry.counts.entry(event.artifact.to_string()).or_insert(0) += 1;
+        entry.browsers.insert(event.browser.to_string());
+        if event.timestamp_ns != 0 {
+            entry.first_seen_ns = Some(match entry.first_seen_ns {
+                Some(cur) => cur.min(event.timestamp_ns),
+                None => event.timestamp_ns,
+            });
+            entry.last_seen_ns = Some(match entry.last_seen_ns {
+                Some(cur) => cur.max(event.timestamp_ns),
+                None => event.timestamp_ns,
+            });
+        }
+    }
+
+    let mut out: Vec<HostRollup> = by_host.into_values().collect();
+    out.sort_by(|a, b| b.total.cmp(&a.total).then_with(|| a.host.cmp(&b.host)));
+    out
 }
 
 #[cfg(test)]
