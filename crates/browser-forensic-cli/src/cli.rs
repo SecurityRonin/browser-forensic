@@ -230,6 +230,22 @@ enum Command {
         #[arg(long)]
         interpret: bool,
     },
+    /// Write a DFIR-interop / court-ready report for a profile/home directory:
+    /// a TSK bodyfile, plaso l2t_csv, or a self-contained HTML report.
+    Report {
+        /// A profile directory or home directory to collect events from.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Report format.
+        #[arg(long, value_enum, default_value_t = crate::report::ReportFormat::Html)]
+        format: crate::report::ReportFormat,
+        /// Output file (defaults to stdout).
+        #[arg(long = "out", short = 'o', value_name = "FILE")]
+        output: Option<PathBuf>,
+        /// Render timestamps in this IANA timezone (e.g. `America/New_York`).
+        #[arg(long, value_name = "TZ")]
+        timezone: Option<String>,
+    },
     /// Search collected events with a substring or linear-time regex, scoped by
     /// field and an inclusive time range. `PATH` is a profile or home directory.
     Search {
@@ -408,6 +424,12 @@ where
             timezone.as_deref(),
             interpret,
         ),
+        Some(Command::Report {
+            path,
+            format,
+            output,
+            timezone,
+        }) => run_report(&path, format, output.as_deref(), timezone.as_deref()),
         Some(Command::Search {
             path,
             regex,
@@ -1717,6 +1739,104 @@ pub fn run_export(
         }
     }
     Ok(())
+}
+
+/// `br4n6 report` — collect a profile/home directory's events (same model as
+/// `export`) and write one DFIR-interop / court-ready report: a TSK bodyfile,
+/// plaso `l2t_csv`, or a self-contained HTML document. Read-only; writes to
+/// `output` (or stdout).
+///
+/// # Errors
+/// Returns an error if the timezone is unknown, collection fails, or writing
+/// the output file fails.
+pub fn run_report(
+    path: &Path,
+    format: crate::report::ReportFormat,
+    output: Option<&Path>,
+    timezone: Option<&str>,
+) -> Result<()> {
+    use std::io::Write as _;
+
+    use crate::report::{self, ReportFormat};
+
+    let tz = match timezone {
+        Some(name) => Some(
+            name.parse::<chrono_tz::Tz>()
+                .map_err(|_| anyhow::anyhow!("unknown IANA timezone: {name}"))?,
+        ),
+        None => None,
+    };
+
+    // Same collection model as `export`: scan `path` as a home directory, then
+    // fall back to treating it as a single profile directory.
+    let mut collected = browser_forensic_triage::triage(path)
+        .with_context(|| format!("collecting timeline from {}", path.display()))?;
+    if collected.profiles.is_empty() && collected.events.is_empty() {
+        if let Some(family) = profile_family(path) {
+            collected = browser_forensic_triage::triage_profile(path, family)
+                .with_context(|| format!("collecting timeline from profile {}", path.display()))?;
+        }
+    }
+    let mut events = std::mem::take(&mut collected.events);
+    events.sort_by_key(|e| e.timestamp_ns);
+
+    let rendered = match format {
+        ReportFormat::Bodyfile => report::to_bodyfile(&events),
+        ReportFormat::L2t => report::to_l2t_csv(&events, tz),
+        ReportFormat::Html => {
+            let meta = report::ReportMeta {
+                case: None,
+                examiner: None,
+                tool: "br4n6".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                timezone: tz.map_or_else(|| "UTC".to_string(), |t| t.name().to_string()),
+                generated_at_ns: collected.generated_at_ns,
+                flags: report_flags(&collected),
+            };
+            report::to_html_report(&events, &meta)
+        }
+    };
+
+    if let Some(p) = output {
+        std::fs::write(p, rendered.as_bytes())
+            .with_context(|| format!("writing {}", p.display()))?;
+        eprintln!("wrote {} events to {}", events.len(), p.display());
+    } else {
+        let stdout = std::io::stdout();
+        let mut lock = stdout.lock();
+        lock.write_all(rendered.as_bytes())?;
+    }
+    Ok(())
+}
+
+/// Integrity / anti-forensic observations for the HTML report header: one line
+/// per integrity indicator (variant tag + offending path), plus a carved-record
+/// summary. These live outside the `BrowserEvent` stream, so the caller passes
+/// them in via [`crate::report::ReportMeta`].
+fn report_flags(report: &browser_forensic_triage::TriageReport) -> Vec<String> {
+    let mut flags: Vec<String> = report.integrity.iter().map(integrity_flag).collect();
+    if !report.carved.is_empty() {
+        flags.push(format!(
+            "{} record(s) recovered by carving from free/deleted space",
+            report.carved.len()
+        ));
+    }
+    flags
+}
+
+/// A concise, court-readable label for one integrity indicator: the variant
+/// name and, when present, the offending path (the evidence to look at).
+fn integrity_flag(indicator: &browser_forensic_integrity::IntegrityIndicator) -> String {
+    let value = serde_json::to_value(indicator).unwrap_or(serde_json::Value::Null);
+    if let serde_json::Value::Object(map) = &value {
+        if let Some((tag, body)) = map.iter().next() {
+            if let Some(p) = body.get("path").and_then(serde_json::Value::as_str) {
+                return format!("{tag} ({p})");
+            }
+            return tag.clone();
+        }
+    }
+    format!("{indicator:?}")
 }
 
 /// `br4n6 profiles` — discover browser profiles under the current user's home,

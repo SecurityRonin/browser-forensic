@@ -406,3 +406,96 @@ fn export_sqlite_requires_output() {
         .assert()
         .failure();
 }
+
+// ---- report (DFIR-interop / court-ready) ----
+
+#[test]
+fn report_bodyfile_writes_pipe_rows() {
+    let (dir, path) = create_chrome_history();
+    let profile = path.parent().unwrap();
+    let out = dir.path().join("bodyfile.txt");
+    br4n6()
+        .args([
+            "report",
+            profile.to_str().unwrap(),
+            "--format",
+            "bodyfile",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let body = std::fs::read_to_string(&out).unwrap();
+    let line = body.lines().next().expect("at least one bodyfile row");
+    assert_eq!(
+        line.split('|').count(),
+        11,
+        "TSK bodyfile row has 11 fields"
+    );
+    assert!(body.contains("example.com"), "body: {body}");
+}
+
+#[test]
+fn report_l2t_writes_header_and_webhist() {
+    let (dir, path) = create_chrome_history();
+    let profile = path.parent().unwrap();
+    let out = dir.path().join("timeline.csv");
+    br4n6()
+        .args([
+            "report",
+            profile.to_str().unwrap(),
+            "--format",
+            "l2t",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let csv = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        csv.starts_with("date,time,timezone,MACB,source,sourcetype,type,user,host,short,desc,version,filename,inode,notes,format,extra"),
+        "csv: {csv}"
+    );
+    assert!(csv.contains("WEBHIST"), "csv: {csv}");
+}
+
+#[test]
+fn report_html_is_escaped_document() {
+    let (dir, path) = create_chrome_history();
+    let profile = path.parent().unwrap();
+    let out = dir.path().join("report.html");
+    br4n6()
+        .args([
+            "report",
+            profile.to_str().unwrap(),
+            "--format",
+            "html",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let html = std::fs::read_to_string(&out).unwrap();
+    assert!(html.starts_with("<!DOCTYPE html>"), "html: {html}");
+    assert!(html.contains("Browser Forensic Report"));
+    assert!(html.contains("example.com"));
+}
+
+#[test]
+fn report_rejects_unknown_timezone() {
+    let (dir, _path) = create_chrome_history();
+    let out = dir.path().join("x.csv");
+    br4n6()
+        .args([
+            "report",
+            dir.path().to_str().unwrap(),
+            "--format",
+            "l2t",
+            "--timezone",
+            "Bogus/Zone",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .failure();
+}
