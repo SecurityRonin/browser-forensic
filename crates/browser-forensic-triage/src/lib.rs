@@ -381,6 +381,38 @@ mod tests {
     }
 
     #[test]
+    fn triage_chromium_includes_recovered_domains() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+
+        // DIPS bounce record (newer schema) — cleartext site survives history wipe.
+        let dips = dir.path().join("DIPS");
+        let conn = rusqlite::Connection::open(&dips).expect("open dips");
+        conn.execute_batch(
+            "CREATE TABLE bounces(site TEXT PRIMARY KEY NOT NULL, first_user_activation_time INTEGER, last_user_activation_time INTEGER, first_bounce_time INTEGER, last_bounce_time INTEGER, first_web_authn_assertion_time INTEGER, last_web_authn_assertion_time INTEGER);
+             INSERT INTO bounces (site, last_user_activation_time) VALUES ('recovered.example.com', 13300000000000000);",
+        ).expect("setup dips");
+        drop(conn);
+
+        // Network Persistent State — HTTP/2/3 server the browser contacted.
+        std::fs::write(
+            dir.path().join("Network Persistent State"),
+            br#"{"net":{"http_server_properties":{"servers":[{"server":"https://cdn.example.net"}]}}}"#,
+        )
+        .expect("setup nps");
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        let has_recovered = report
+            .events
+            .iter()
+            .any(|e| e.artifact == ArtifactKind::RecoveredDomain);
+        assert!(
+            has_recovered,
+            "expected RecoveredDomain events from DIPS/Network Persistent State"
+        );
+    }
+
+    #[test]
     fn triage_firefox_includes_login_and_permission_metadata() {
         use browser_forensic_core::ArtifactKind;
         let dir = TempDir::new().expect("tempdir");
