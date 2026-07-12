@@ -85,6 +85,10 @@ pub enum ArtifactKind {
     /// (Firefox `moz_inputhistory`). Direct evidence of typed intent; carries a
     /// decayed `use_count`, not a per-keystroke timestamp.
     TypedInput,
+    /// A page annotation recorded by Firefox (`moz_annos` +
+    /// `moz_anno_attributes`): a named key/value the browser attached to a page
+    /// (reading-list state, visit-count metadata, …). Stated as recorded.
+    Annotation,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -114,6 +118,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::NetworkPrediction => write!(f, "NetworkPrediction"),
             Self::MediaPlayback => write!(f, "MediaPlayback"),
             Self::TypedInput => write!(f, "TypedInput"),
+            Self::Annotation => write!(f, "Annotation"),
         }
     }
 }

@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Firefox/Gecko browser artifact parsers.
 
+pub mod annotations;
 pub mod autofill;
 pub mod bookmarks;
 pub mod cache;
@@ -17,6 +18,7 @@ pub mod site_security;
 pub mod typed_input;
 pub mod visits;
 
+pub use annotations::parse_annotations;
 pub use autofill::parse_autofill;
 pub use bookmarks::parse_bookmarks;
 pub use cache::parse_cache;
