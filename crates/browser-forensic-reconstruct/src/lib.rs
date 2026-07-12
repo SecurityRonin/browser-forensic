@@ -27,7 +27,9 @@
 
 pub mod index;
 pub mod manifest;
+pub mod singlefile;
 pub mod util;
 
 pub use index::{normalize_url, resolve_ref, CacheSource, IndexedResource, ResourceIndex};
 pub use manifest::{FoundResource, Manifest, MissingResource, PROVENANCE_BANNER};
+pub use singlefile::{reconstruct_singlefile, ReconstructedPage};
