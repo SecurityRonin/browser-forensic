@@ -930,4 +930,44 @@ mod tests {
         let res2 = parse_cachestorage_dir(Path::new("/nonexistent/cachestorage"));
         assert!(res2.is_empty());
     }
+
+    #[test]
+    fn truncated_entry_file_is_skipped_no_panic() {
+        let root = TempDir::new().unwrap();
+        let origin_hash = root.path().join("oh");
+        let uuid = "uuid-1";
+        std::fs::create_dir_all(origin_hash.join(uuid)).unwrap();
+        std::fs::write(
+            origin_hash.join("index.txt"),
+            build_index(&[("c", uuid, None)], "https://x/"),
+        )
+        .unwrap();
+        // A `_0` file far too small to be a valid SimpleCache entry.
+        std::fs::write(origin_hash.join(uuid).join("bad00000_0"), vec![0u8; 12]).unwrap();
+        let res = parse_cachestorage_dir(&origin_hash);
+        assert!(res.is_empty(), "truncated entry must be skipped");
+    }
+
+    #[test]
+    fn corrupt_metadata_still_recovers_url_and_body() {
+        // A valid SimpleCache frame whose stream 0 is not a parseable proto: the
+        // URL (key) and body (stream 1) must still be recovered — the evidence
+        // is preserved even when the metadata is unreadable.
+        let body = b"the response body survives";
+        let garbage_meta = &[0xff, 0xff, 0xff, 0x7f, 0x00, 0x13];
+        let data = build_cs_entry("https://survivor.test/x", body, garbage_meta);
+        let res = resource_from_cachestorage_entry(
+            &data,
+            "c",
+            "u",
+            Some("https://o/"),
+            PathBuf::from("/tmp/s_0"),
+            &DecompressLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(res.url, "https://survivor.test/x");
+        assert_eq!(res.body, body);
+        assert!(res.http_status.is_none());
+        assert!(res.request_method.is_none());
+    }
 }
