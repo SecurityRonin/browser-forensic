@@ -1,20 +1,94 @@
-//! Chromium per-site permission grants (RED stub).
+//! Chromium per-site permission grants from `Preferences` / `Secure Preferences`.
+//!
+//! Chromium stores every per-origin content setting under
+//! `profile.content_settings.exceptions.<type>`, keyed by an origin pattern pair
+//! (`"https://site:443,*"`). Each entry records the `setting` the user chose
+//! (allow / block / ask …) and, usually, a `last_modified` WebKit-microsecond
+//! timestamp — a dated, per-site record of a privacy decision.
+//!
+//! Every exception *type* present is surfaced (not a fixed allow-list), so new
+//! or vendor-specific permission types appear automatically.
 
 use std::path::Path;
 
 use anyhow::Result;
-#[cfg(test)]
-use browser_forensic_core::ArtifactKind;
-use browser_forensic_core::BrowserEvent;
-#[cfg(test)]
-use serde_json::json;
+use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
+use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
+use serde_json::{json, Value};
 
-/// RED stub — returns nothing until the GREEN implementation lands.
+/// Map a Chromium `ContentSetting` integer to a human label.
+/// (`components/content_settings/core/common/content_settings.h`.)
+fn setting_label(setting: i64) -> &'static str {
+    match setting {
+        0 => "default",
+        1 => "allow",
+        2 => "block",
+        3 => "ask",
+        4 => "session_only",
+        5 => "detect_important_content",
+        _ => "unknown",
+    }
+}
+
+/// Read a WebKit-microsecond value stored as a JSON string or number.
+fn webkit_value(v: &Value) -> Option<i64> {
+    match v {
+        Value::String(s) => s.parse::<i64>().ok(),
+        Value::Number(n) => n.as_i64(),
+        _ => None,
+    }
+}
+
+/// Parse per-site permission grants from a Chromium `Preferences` (or
+/// `Secure Preferences`) JSON file.
 ///
 /// # Errors
-/// Never errors in the stub.
-pub fn parse_permissions(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    Ok(Vec::new())
+///
+/// Returns an error if the file cannot be read or is not valid JSON.
+pub fn parse_permissions(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let data = std::fs::read_to_string(path)?;
+    let root: Value = serde_json::from_str(&data)?;
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+
+    let Some(exceptions) = root
+        .pointer("/profile/content_settings/exceptions")
+        .and_then(Value::as_object)
+    else {
+        return Ok(events);
+    };
+
+    for (perm_type, entries) in exceptions {
+        let Some(entries) = entries.as_object() else {
+            continue;
+        };
+        for (origin_pattern, entry) in entries {
+            let setting = entry.get("setting").and_then(Value::as_i64);
+            let last_modified = entry
+                .get("last_modified")
+                .and_then(webkit_value)
+                .filter(|&us| us > 0);
+            let ts_ns = last_modified.map_or(0, webkit_micros_to_unix_nanos);
+            let label = setting.map_or("unspecified", setting_label);
+
+            let mut ev = BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::Permission,
+                &source,
+                format!("{origin_pattern} — {perm_type} = {label}"),
+            )
+            .with_attr("origin", json!(origin_pattern))
+            .with_attr("permission", json!(perm_type))
+            .with_attr("setting_label", json!(label));
+            if let Some(s) = setting {
+                ev = ev.with_attr("setting", json!(s));
+            }
+            events.push(ev);
+        }
+    }
+
+    Ok(events)
 }
 
 #[cfg(test)]
