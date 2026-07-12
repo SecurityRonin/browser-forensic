@@ -1,7 +1,7 @@
 [package]
 name = "browser-forensic-cache"
 version = "0.1.0"
-description = "Chromium SimpleCache response-body extraction and panic-free HTTP decompression"
+description = "Browser cache response-body extraction (Chromium SimpleCache, Firefox cache2, Safari Cache.db) and panic-free HTTP decompression"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -12,6 +12,8 @@ thiserror = { workspace = true }
 flate2 = { workspace = true }
 brotli = { workspace = true }
 ruzstd = { workspace = true }
+rusqlite = { workspace = true }
+plist = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

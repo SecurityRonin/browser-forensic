@@ -47,4 +47,7 @@ pub enum CacheError {
 
     #[error("i/o error reading `{path}`: {detail}")]
     Io { path: String, detail: String },
+
+    #[error("sqlite error opening/reading `{path}`: {detail}")]
+    Sqlite { path: String, detail: String },
 }
