@@ -82,6 +82,17 @@ mod tests {
     }
 
     #[test]
+    fn conversions_saturate_on_adversarial_input_never_panic() {
+        // Untrusted artifacts can carry extreme integers; conversion must clamp,
+        // never overflow-panic (never-panic invariant for parsers).
+        assert_eq!(webkit_micros_to_unix_nanos(i64::MAX), i64::MAX);
+        assert_eq!(webkit_micros_to_unix_nanos(i64::MIN), i64::MIN);
+        assert_eq!(unix_secs_to_nanos(i64::MAX), i64::MAX);
+        assert_eq!(unix_millis_to_nanos(i64::MIN), i64::MIN);
+        assert_eq!(unix_micros_to_nanos(i64::MAX), i64::MAX);
+    }
+
+    #[test]
     fn unix_secs_f64_preserves_subsecond() {
         assert_eq!(unix_secs_f64_to_nanos(1.0), 1_000_000_000);
         assert_eq!(

@@ -181,14 +181,15 @@ mod tests {
 
     #[test]
     fn broken_alt_service_host_with_broken_until_timestamp() {
-        // WebKit micros for 2023-11-14 22:13:20 UTC.
-        let webkit = (1_700_000_000_i64 + 11_644_473_600) * 1_000_000;
-        let f = write_json(&format!(
-            r#"{{"net":{{"http_server_properties":{{"broken_alternative_services":[
-                {{"host":"tracker.example.net","port":443,"protocol_str":"quic",
-                 "broken_count":3,"broken_until":"{webkit}"}}
-            ]}}}}}}"#
-        ));
+        // `broken_until` is Unix SECONDS (Chromium serializes it via
+        // base::Time::ToTimeT()), NOT WebKit microseconds. Verified against a
+        // real Brave profile where broken_until values are ~1.78e9 (2026).
+        let f = write_json(
+            r#"{"net":{"http_server_properties":{"broken_alternative_services":[
+                {"host":"tracker.example.net","port":443,"protocol_str":"quic",
+                 "broken_count":3,"broken_until":1700000000}
+            ]}}}"#,
+        );
         let events = parse_network_persistent_state(f.path()).expect("parse");
         assert_eq!(events.len(), 1);
         let ev = &events[0];
