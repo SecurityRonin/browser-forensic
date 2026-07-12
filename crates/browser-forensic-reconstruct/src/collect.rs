@@ -25,11 +25,30 @@ fn norm_ct(ct: Option<&str>) -> Option<String> {
         .map(str::to_ascii_lowercase)
 }
 
-/// Extract the real request URL from a browser cache key (RED stub — returns
-/// the key unchanged).
+/// Extract the real request URL from a browser cache key.
+///
+/// Modern browsers partition the HTTP cache by network-isolation key, so the
+/// on-disk key is not a bare URL:
+/// * Chromium split-cache keys look like
+///   `1/0/_dk_<top-frame-site> <frame-site> <url>` — space-separated tokens
+///   with the request URL last (URLs never contain a raw space).
+/// * Firefox cache2 keys prefix a partition with `,:` before the URL
+///   (`O^partitionKey=...,:https://...`).
+///
+/// Both prefixes are stripped by taking the segment after the last `,:` and
+/// then the last whitespace-separated token. A key that is already a clean URL
+/// is returned unchanged.
 #[must_use]
 pub fn extract_request_url(key: &str) -> String {
-    key.to_string()
+    let trimmed = key.trim();
+    // Firefox partition: the URL follows the last `,:`.
+    let after_partition = trimmed.rsplit(",:").next().unwrap_or(trimmed);
+    // Chromium NIK/double-key prefix: the URL is the last space-separated token.
+    let last_token = after_partition
+        .rsplit(char::is_whitespace)
+        .next()
+        .unwrap_or(after_partition);
+    last_token.to_string()
 }
 
 /// Convert a [`CachedResource`] (SimpleCache / cache2 / Safari) into the
