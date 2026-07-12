@@ -350,6 +350,15 @@ mod tests {
     }
 
     #[test]
+    fn artifact_kind_has_recovered_domain_variant() {
+        let _r = ArtifactKind::RecoveredDomain;
+        assert_eq!(
+            format!("{}", ArtifactKind::RecoveredDomain),
+            "RecoveredDomain"
+        );
+    }
+
+    #[test]
     fn forensic_meta_lookup_chrome_history() {
         let meta = ForensicMeta::lookup("browser_chrome_history");
         assert!(meta.is_some());
