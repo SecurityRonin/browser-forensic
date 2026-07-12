@@ -127,3 +127,24 @@ fn shortcuts_count_matches_sqlite3_oracle() {
     );
     eprintln!("Shortcuts oracle matched: {oracle} typed shortcuts");
 }
+
+#[test]
+fn network_action_predictor_count_matches_sqlite3_oracle() {
+    let Some((_profile, nap)) = setup("Network Action Predictor") else {
+        return;
+    };
+    let parsed =
+        browser_forensic_chrome::parse_network_action_predictor(&nap).expect("parse predictor");
+    let oracle = sqlite_count(
+        &nap,
+        "SELECT count(*) FROM network_action_predictor WHERE user_text <> ''",
+    )
+    .expect("oracle");
+    assert_eq!(
+        parsed.len() as i64,
+        oracle,
+        "Network Action Predictor count: parser {} vs sqlite3 {oracle}",
+        parsed.len()
+    );
+    eprintln!("Network Action Predictor oracle matched: {oracle} typed prefixes");
+}

@@ -254,6 +254,15 @@ fn triage_chromium_profile(
         }
     }
 
+    let predictor_path = path.join("Network Action Predictor");
+    if predictor_path.is_file() {
+        if let Ok(mut evts) =
+            browser_forensic_chrome::parse_network_action_predictor(&predictor_path)
+        {
+            events.append(&mut evts);
+        }
+    }
+
     // Credential / account metadata (secrets never decrypted). Per-artifact
     // failures are absorbed so triage stays best-effort.
     let login_data = path.join("Login Data");
@@ -530,6 +539,29 @@ mod tests {
                 .any(|e| e.artifact == ArtifactKind::Shortcut
                     && e.attrs.get("typed_text") == Some(&serde_json::json!("secret site"))),
             "expected Shortcut events surfacing the typed text"
+        );
+    }
+
+    #[test]
+    fn triage_chromium_includes_network_action_predictor() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        let nap = dir.path().join("Network Action Predictor");
+        let conn = rusqlite::Connection::open(&nap).expect("open nap");
+        conn.execute_batch(
+            "CREATE TABLE network_action_predictor (id TEXT PRIMARY KEY, user_text TEXT, url TEXT, number_of_hits INTEGER, number_of_misses INTEGER);
+             INSERT INTO network_action_predictor VALUES ('n1', 'typed thing', 'https://p.example/', 3, 1);",
+        ).expect("setup nap");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        assert!(
+            report
+                .events
+                .iter()
+                .any(|e| e.artifact == ArtifactKind::NetworkPrediction
+                    && e.attrs.get("user_text") == Some(&serde_json::json!("typed thing"))),
+            "expected NetworkPrediction events surfacing user_text"
         );
     }
 

@@ -22,9 +22,46 @@ const NAP_NOTE: &str = "the user typed this (often partial) string into the omni
 /// # Errors
 ///
 /// Returns an error only if the SQLite file cannot be opened.
-pub fn parse_network_action_predictor(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub — replaced by the real query in GREEN.
-    Ok(Vec::new())
+pub fn parse_network_action_predictor(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let source = path.to_string_lossy().into_owned();
+
+    let sql = "SELECT user_text, url, number_of_hits, number_of_misses \
+               FROM network_action_predictor \
+               WHERE user_text <> '' \
+               ORDER BY user_text ASC";
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return Ok(Vec::new());
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let user_text: String = row.get(0)?;
+        let url: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+        let number_of_hits: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or_default();
+        let number_of_misses: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or_default();
+        Ok((user_text, url, number_of_hits, number_of_misses))
+    }) else {
+        return Ok(Vec::new());
+    };
+
+    let events = rows
+        .filter_map(std::result::Result::ok)
+        .map(|(user_text, url, number_of_hits, number_of_misses)| {
+            BrowserEvent::new(
+                0,
+                BrowserFamily::Chromium,
+                ArtifactKind::NetworkPrediction,
+                &source,
+                format!("typed \u{201c}{user_text}\u{201d} \u{2192} predicted {url}"),
+            )
+            .with_attr("user_text", json!(user_text))
+            .with_attr("url", json!(url))
+            .with_attr("number_of_hits", json!(number_of_hits))
+            .with_attr("number_of_misses", json!(number_of_misses))
+            .with_attr("note", json!(NAP_NOTE))
+        })
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]

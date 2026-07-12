@@ -145,6 +145,8 @@ enum Command {
     TopSites(ArtifactArgs),
     /// Parse a Chromium `Shortcuts` database (omnibox strings the user typed).
     Shortcuts(ArtifactArgs),
+    /// Parse a Chromium `Network Action Predictor` (partial typed strings).
+    Predictor(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -249,6 +251,7 @@ where
         Some(Command::Favicons(a)) => run_favicons(&a.path, a.format),
         Some(Command::TopSites(a)) => run_top_sites(&a.path, a.format),
         Some(Command::Shortcuts(a)) => run_shortcuts(&a.path, a.format),
+        Some(Command::Predictor(a)) => run_predictor(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -1324,6 +1327,20 @@ pub fn run_top_sites(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 predictor PATH` — parse a Chromium `Network Action Predictor`: the
+/// (often partial) omnibox strings the user typed and the URLs Chromium learned
+/// to predict from them. Chromium-only.
+///
+/// # Errors
+/// Returns an error if the database cannot be opened.
+pub fn run_predictor(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_chrome::parse_network_action_predictor(path)
+        .with_context(|| format!("parsing Network Action Predictor from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
 /// `br4n6 shortcuts PATH` — parse a Chromium `Shortcuts` database: the omnibox
 /// strings the user typed and the URLs they selected. Chromium-only.
 ///
@@ -1805,6 +1822,22 @@ mod tests {
         drop(conn);
         for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
             run_shortcuts(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_predictor_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Network Action Predictor");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE network_action_predictor (id TEXT PRIMARY KEY, user_text TEXT, url TEXT, number_of_hits INTEGER, number_of_misses INTEGER);
+             INSERT INTO network_action_predictor VALUES ('n1', 'se', 'https://search.example/', 1, 2);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_predictor(&p, fmt).unwrap();
         }
     }
 
