@@ -4395,5 +4395,51 @@ mod tests {
         assert_eq!(events.len(), 1);
         let value = events[0].attrs.get("value").unwrap().as_str().unwrap();
         assert_eq!(value, v["GCM_PLAINTEXT"].as_str().unwrap());
+        // This synthetic value is short and unprefixed, so it is not domain-bound
+        // and passes through intact — domain_bound is surfaced as false, not absent.
+        assert!(!events[0]
+            .attrs
+            .get("domain_bound")
+            .unwrap()
+            .as_bool()
+            .unwrap());
+    }
+
+    // Real Python AES-128-CBC oracle blob: `v10 || CBC(derive_chromium_macos_key(
+    // b"peanuts"), iv=0x20*16, PKCS7)(SHA-256("127.0.0.1") || "br4n6-tier1-probe-
+    // 7f3a91c2")`. Mirrors the captured tier-1 macOS vector's plaintext layout.
+    const MACOS_V10_PREFIXED_BLOB_HEX: &str = "7631304a665eab81174e4df04f8c7690449f880e573b2732cc6610638b02e07a23fabf95f24a166009f82bea81086c05826bf47988be2c28243ae11cfcfa84db0976e8";
+
+    #[test]
+    fn decrypt_chromium_cookies_macos_strips_domain_hash_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let cookies = dir.path().join("Cookies");
+        let conn = rusqlite::Connection::open(&cookies).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cookies (creation_utc INTEGER NOT NULL, host_key TEXT NOT NULL, \
+             name TEXT NOT NULL, path TEXT NOT NULL, encrypted_value BLOB DEFAULT '');",
+        )
+        .unwrap();
+        let blob = win_unhex(MACOS_V10_PREFIXED_BLOB_HEX);
+        conn.execute(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, encrypted_value) \
+             VALUES (13327626000000000, '127.0.0.1', 'br4n6probe', '/', ?1)",
+            rusqlite::params![blob],
+        )
+        .unwrap();
+        drop(conn);
+        let key = browser_forensic_decrypt::derive_chromium_macos_key(b"peanuts");
+        let events = decrypt_chromium_cookies(&cookies, &key).unwrap();
+        assert_eq!(events.len(), 1);
+        // The 32-byte SHA-256("127.0.0.1") prefix is stripped, leaving the exact
+        // planted value, and the binding is flagged verified.
+        let value = events[0].attrs.get("value").unwrap().as_str().unwrap();
+        assert_eq!(value, "br4n6-tier1-probe-7f3a91c2");
+        assert!(events[0]
+            .attrs
+            .get("domain_bound")
+            .unwrap()
+            .as_bool()
+            .unwrap());
     }
 }
