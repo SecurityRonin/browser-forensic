@@ -79,6 +79,7 @@ fn every_subcommand_help_exits_0() {
         "autofill",
         "session",
         "cache",
+        "cachestorage",
         "profiles",
         "analyze",
         "integrity",

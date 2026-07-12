@@ -24,6 +24,7 @@ browser-forensic-discovery = { version = "0.2.0", path = "../browser-forensic-di
 browser-forensic-integrity = { version = "0.2.0", path = "../browser-forensic-integrity" }
 browser-forensic-carve = { version = "0.2.0", path = "../browser-forensic-carve" }
 browser-forensic-storage = { version = "0.2.0", path = "../browser-forensic-storage" }
+browser-forensic-cache = { version = "0.1.0", path = "../browser-forensic-cache" }
 browser-forensic-triage = { version = "0.2.0", path = "../browser-forensic-triage" }
 browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-interpret" }
 browser-forensic-search = { version = "0.2.0", path = "../browser-forensic-search" }

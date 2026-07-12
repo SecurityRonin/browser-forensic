@@ -100,6 +100,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_cachestorage"
+path = "fuzz_targets/fuzz_cachestorage.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_safari_response_object"
 path = "fuzz_targets/fuzz_safari_response_object.rs"
 test = false
