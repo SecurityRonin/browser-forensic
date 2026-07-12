@@ -256,3 +256,31 @@ pub fn to_l2t_csv(events: &[BrowserEvent], tz: Option<Tz>) -> String {
     }
     out
 }
+
+/// Case-level context for an HTML report header. Populated by the caller (the
+/// `report` subcommand): `flags` carries integrity / anti-forensic observations
+/// gathered outside the event stream (e.g. history-clearing indicators, carved
+/// record counts) so the pure serializer can render them without re-collecting.
+#[derive(Debug, Clone)]
+pub struct ReportMeta {
+    /// Case / matter reference, if supplied.
+    pub case: Option<String>,
+    /// Examiner name, if supplied.
+    pub examiner: Option<String>,
+    /// Tool name (e.g. `br4n6`).
+    pub tool: String,
+    /// Tool version.
+    pub version: String,
+    /// IANA timezone label the timeline is rendered in (e.g. `UTC`).
+    pub timezone: String,
+    /// Report generation time (Unix nanoseconds).
+    pub generated_at_ns: i64,
+    /// Integrity / anti-forensic observations to surface (already plain text).
+    pub flags: Vec<String>,
+}
+
+/// Serialize events as a self-contained, court-presentable HTML report.
+#[must_use]
+pub fn to_html_report(_events: &[BrowserEvent], _meta: &ReportMeta) -> String {
+    String::new()
+}

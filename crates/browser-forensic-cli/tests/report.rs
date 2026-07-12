@@ -3,7 +3,7 @@
 //! delimiter faithfulness; the HTML report for escaping and structure.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use browser_forensic_cli::report::{to_bodyfile, to_l2t_csv};
+use browser_forensic_cli::report::{to_bodyfile, to_html_report, to_l2t_csv, ReportMeta};
 use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use serde_json::json;
 
@@ -214,4 +214,170 @@ fn l2t_escapes_embedded_quote() {
         row.contains("\"\""),
         "embedded quote must be doubled, row: {row}"
     );
+}
+
+// ---- HTML report ----
+
+fn meta() -> ReportMeta {
+    ReportMeta {
+        case: Some("Case 42".to_string()),
+        examiner: Some("A. Hui".to_string()),
+        tool: "br4n6".to_string(),
+        version: "0.2.0".to_string(),
+        timezone: "UTC".to_string(),
+        generated_at_ns: TS_NS,
+        flags: vec![],
+    }
+}
+
+#[test]
+fn html_is_self_contained_document() {
+    let out = to_html_report(&[history_event()], &meta());
+    assert!(
+        out.starts_with("<!DOCTYPE html>"),
+        "must be a full document"
+    );
+    assert!(
+        out.contains("<style"),
+        "styles must be inlined (self-contained)"
+    );
+    assert!(out.contains("</html>"));
+}
+
+#[test]
+fn html_header_shows_case_and_tool_meta() {
+    let out = to_html_report(&[history_event()], &meta());
+    assert!(out.contains("Case 42"));
+    assert!(out.contains("A. Hui"));
+    assert!(out.contains("br4n6"));
+    assert!(out.contains("0.2.0"));
+    assert!(out.contains("UTC"));
+}
+
+#[test]
+fn html_escapes_xss_in_url() {
+    let e = BrowserEvent::new(
+        TS_NS,
+        BrowserFamily::Chromium,
+        ArtifactKind::History,
+        "/p/History",
+        "visit",
+    )
+    .with_attr(
+        "url",
+        json!("https://evil.example/<script>alert(1)</script>"),
+    );
+    let out = to_html_report(&[e], &meta());
+    assert!(
+        !out.contains("<script>alert(1)</script>"),
+        "raw script tag must not appear"
+    );
+    assert!(
+        out.contains("&lt;script&gt;"),
+        "must HTML-escape angle brackets"
+    );
+}
+
+#[test]
+fn html_escapes_quote_and_amp_in_title() {
+    let e = BrowserEvent::new(
+        TS_NS,
+        BrowserFamily::Chromium,
+        ArtifactKind::History,
+        "/p/History",
+        "visit",
+    )
+    .with_attr("url", json!("https://example.com/a"))
+    .with_attr("title", json!("Tom & \"Jerry\""));
+    let out = to_html_report(&[e], &meta());
+    assert!(out.contains("&amp;"), "ampersand escaped");
+    assert!(
+        out.contains("&quot;") || out.contains("&#x27;"),
+        "quote escaped"
+    );
+}
+
+#[test]
+fn html_shows_per_artifact_counts() {
+    let events = vec![history_event(), history_event(), download_event()];
+    let out = to_html_report(&events, &meta());
+    assert!(out.contains("History"), "artifact name present");
+    assert!(out.contains("Downloads"), "artifact name present");
+    // Two history events must be counted as 2 somewhere in the counts section.
+    assert!(
+        out.contains(">2<") || out.contains("2</td>"),
+        "count of 2 shown"
+    );
+}
+
+#[test]
+fn html_lists_top_domains() {
+    let a = BrowserEvent::new(
+        TS_NS,
+        BrowserFamily::Chromium,
+        ArtifactKind::History,
+        "/p",
+        "v",
+    )
+    .with_attr("url", json!("https://top.example/one"));
+    let b = BrowserEvent::new(
+        TS_NS,
+        BrowserFamily::Chromium,
+        ArtifactKind::History,
+        "/p",
+        "v",
+    )
+    .with_attr("url", json!("https://top.example/two"));
+    let out = to_html_report(&[a, b], &meta());
+    assert!(out.contains("top.example"), "domain host surfaced");
+}
+
+#[test]
+fn html_renders_and_escapes_flags() {
+    let mut m = meta();
+    m.flags = vec!["History cleared: 5 rows missing <sqlite>".to_string()];
+    let out = to_html_report(&[history_event()], &m);
+    assert!(
+        out.contains("History cleared: 5 rows missing"),
+        "flag text shown"
+    );
+    assert!(out.contains("&lt;sqlite&gt;"), "flag value HTML-escaped");
+    assert!(!out.contains("<sqlite>"), "raw flag markup must not leak");
+}
+
+#[test]
+fn html_timeline_shows_full_value_not_elided() {
+    let long = "https://example.com/very/long/path/that/should/not/be/truncated/at/all/ever";
+    let e = BrowserEvent::new(
+        TS_NS,
+        BrowserFamily::Chromium,
+        ArtifactKind::History,
+        "/p",
+        "v",
+    )
+    .with_attr("url", json!(long));
+    let out = to_html_report(&[e], &meta());
+    assert!(
+        out.contains(long),
+        "value must appear in full, never elided"
+    );
+    assert!(
+        !out.contains('\u{2026}'),
+        "no ellipsis truncation of a value"
+    );
+}
+
+#[test]
+fn html_states_observation_not_conclusion() {
+    let out = to_html_report(&[history_event()], &meta());
+    let lower = out.to_lowercase();
+    assert!(lower.contains("observ"), "frames findings as observations");
+    assert!(!lower.contains("proves"), "no conclusion language");
+}
+
+#[test]
+fn html_empty_events_is_valid_document() {
+    let out = to_html_report(&[], &meta());
+    assert!(out.starts_with("<!DOCTYPE html>"));
+    assert!(out.contains("</html>"));
 }
