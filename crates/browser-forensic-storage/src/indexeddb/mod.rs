@@ -19,4 +19,5 @@
 //! `v8/src/objects/value-serializer.cc`, and Alex Caithness / CCL's
 //! `ccl_chromium_indexeddb` reverse engineering (used as the differential oracle).
 
+mod key;
 mod varint;
