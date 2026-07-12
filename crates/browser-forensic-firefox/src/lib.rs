@@ -9,6 +9,7 @@ pub mod downloads;
 pub mod extensions;
 pub mod history;
 pub mod login_data;
+pub mod mozlz4;
 pub mod permissions;
 pub mod preferences;
 pub mod session;
