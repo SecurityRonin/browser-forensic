@@ -11,9 +11,11 @@
 //! Recovers deleted browser data from SQLite free pages, WAL files,
 //! and binary formats.
 
+pub mod recovered_history;
 pub mod sqlite_carve;
 pub mod wal_recovery;
 
+pub use recovered_history::detect_recovered_deleted_history;
 pub use sqlite_carve::carve_sqlite_free_pages;
 pub use wal_recovery::recover_from_wal;
 
