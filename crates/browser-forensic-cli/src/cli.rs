@@ -124,6 +124,29 @@ enum Command {
         /// Keychain service holding the "… Safe Storage" password.
         #[arg(long, value_name = "SERVICE", default_value = "Chrome Safe Storage")]
         keychain_service: String,
+        /// OPT-IN: decrypt Windows Chromium `v10`/`v11` cookie values. Needs
+        /// `--local-state` and a DPAPI secret (below). Off by default; `v20`
+        /// App-Bound values are refused, never fabricated.
+        #[arg(long)]
+        decrypt_win: bool,
+        /// Path to the profile's `Local State` file (holds the DPAPI-wrapped key).
+        #[arg(long, value_name = "PATH")]
+        local_state: Option<PathBuf>,
+        /// DPAPI secret: a pre-decrypted 64-byte master key as hex. Mutually
+        /// exclusive with the `--dpapi-password`/`--dpapi-sid`/…-file trio.
+        #[arg(long, value_name = "HEX")]
+        dpapi_masterkey: Option<String>,
+        /// DPAPI secret: the user's logon password (with `--dpapi-sid` and
+        /// `--dpapi-masterkey-file`).
+        #[arg(long, value_name = "PASSWORD")]
+        dpapi_password: Option<String>,
+        /// DPAPI secret: the user SID (e.g. `S-1-5-21-…-1001`).
+        #[arg(long, value_name = "SID")]
+        dpapi_sid: Option<String>,
+        /// DPAPI secret: the user's master-key file
+        /// (`%APPDATA%/Microsoft/Protect/<SID>/<GUID>`).
+        #[arg(long, value_name = "PATH")]
+        dpapi_masterkey_file: Option<PathBuf>,
     },
     /// Parse browser downloads.
     Downloads(ArtifactArgs),
@@ -408,7 +431,26 @@ where
             format,
             decrypt_macos,
             keychain_service,
-        }) => dispatch_cookies(&path, format, decrypt_macos, &keychain_service),
+            decrypt_win,
+            local_state,
+            dpapi_masterkey,
+            dpapi_password,
+            dpapi_sid,
+            dpapi_masterkey_file,
+        }) => dispatch_cookies(
+            &path,
+            format,
+            decrypt_macos,
+            &keychain_service,
+            CookieWinDecrypt {
+                enabled: decrypt_win,
+                local_state,
+                dpapi_masterkey,
+                dpapi_password,
+                dpapi_sid,
+                dpapi_masterkey_file,
+            },
+        ),
         Some(Command::Downloads(a)) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
         Some(Command::Bookmarks(a)) => run_artifact(&a.path, ArtifactType::Bookmarks, a.format),
         Some(Command::Extensions(a)) => run_artifact(&a.path, ArtifactType::Extensions, a.format),
@@ -1414,36 +1456,171 @@ pub fn decrypt_chromium_cookies(path: &Path, storage_key: &[u8; 16]) -> Result<V
 /// # Errors
 /// STUB.
 pub fn resolve_dpapi_key(
-    _local_state: &Path,
-    _dpapi_masterkey_hex: Option<&str>,
-    _password: Option<&str>,
-    _sid: Option<&str>,
-    _masterkey_file: Option<&Path>,
+    local_state: &Path,
+    dpapi_masterkey_hex: Option<&str>,
+    password: Option<&str>,
+    sid: Option<&str>,
+    masterkey_file: Option<&Path>,
 ) -> Result<[u8; 32]> {
-    anyhow::bail!("not implemented")
+    use browser_forensic_decrypt::DpapiSecret;
+
+    let local_state_json = std::fs::read_to_string(local_state)
+        .with_context(|| format!("reading Local State from {}", local_state.display()))?;
+
+    // Secret is opt-in: a pre-decrypted 64-byte master key (hex) takes
+    // precedence; otherwise all three of password + SID + master-key file.
+    if let Some(hex) = dpapi_masterkey_hex {
+        let bytes = decode_hex(hex).with_context(|| "--dpapi-masterkey must be hex".to_string())?;
+        let mk: [u8; 64] = bytes.try_into().map_err(|v: Vec<u8>| {
+            anyhow::anyhow!(
+                "--dpapi-masterkey must decode to exactly 64 bytes (a DPAPI master key), got {}",
+                v.len()
+            )
+        })?;
+        return browser_forensic_decrypt::decrypt_chromium_key_dpapi(
+            &local_state_json,
+            &DpapiSecret::MasterKey(mk),
+        )
+        .map_err(|e| anyhow::anyhow!("{e}"));
+    }
+
+    match (password, sid, masterkey_file) {
+        (Some(password), Some(sid), Some(mkf_path)) => {
+            let mkf = std::fs::read(mkf_path)
+                .with_context(|| format!("reading DPAPI master-key file {}", mkf_path.display()))?;
+            browser_forensic_decrypt::decrypt_chromium_key_dpapi(
+                &local_state_json,
+                &DpapiSecret::UserPassword {
+                    password,
+                    sid,
+                    masterkey_file: &mkf,
+                },
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))
+        }
+        _ => anyhow::bail!(
+            "Windows Chromium decryption needs a DPAPI secret: supply either \
+             --dpapi-masterkey <HEX> (a 64-byte master key), or all of \
+             --dpapi-password, --dpapi-sid and --dpapi-masterkey-file"
+        ),
+    }
+}
+
+/// Decode a lowercase/uppercase hex string into bytes.
+fn decode_hex(s: &str) -> Result<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        anyhow::bail!("hex string has an odd length ({})", s.len());
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&s[i..i + 2], 16)
+                .map_err(|e| anyhow::anyhow!("invalid hex at offset {i}: {e}"))
+        })
+        .collect()
 }
 
 /// Decrypt Windows Chromium `v10`/`v11` cookie values from a `Cookies` SQLite DB
-/// with an already-recovered 32-byte key. STUB — implemented in the GREEN step.
+/// with an already-recovered 32-byte key. A wrong key / `v20` / tampered blob
+/// yields a loud `DECRYPT_FAILED: …` marker on that row, never a fabricated value.
 ///
 /// # Errors
-/// STUB.
-pub fn decrypt_chromium_cookies_win(_path: &Path, _key: &[u8; 32]) -> Result<Vec<BrowserEvent>> {
-    anyhow::bail!("not implemented")
+/// Returns an error if the database cannot be opened or queried.
+pub fn decrypt_chromium_cookies_win(path: &Path, key: &[u8; 32]) -> Result<Vec<BrowserEvent>> {
+    use browser_forensic_core::sqlite::open_evidence_db;
+    use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
+    use browser_forensic_core::{ArtifactKind, BrowserFamily};
+
+    let db = open_evidence_db(path)?;
+    let mut stmt = db.conn.prepare(
+        "SELECT creation_utc, host_key, name, path, encrypted_value \
+         FROM cookies WHERE creation_utc > 0 ORDER BY creation_utc ASC",
+    )?;
+    let source = path.to_string_lossy().into_owned();
+    let rows = stmt.query_map([], |row| {
+        let creation_utc: i64 = row.get(0)?;
+        let host_key: String = row.get(1)?;
+        let name: String = row.get(2)?;
+        let cookie_path: String = row.get(3)?;
+        let encrypted: Vec<u8> = row.get(4)?;
+        Ok((creation_utc, host_key, name, cookie_path, encrypted))
+    })?;
+
+    let mut events = Vec::new();
+    for row in rows {
+        let (creation_utc, host_key, name, cookie_path, encrypted) = row?;
+        let value = match browser_forensic_decrypt::decrypt_chromium_value_win(&encrypted, key) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) => format!("DECRYPT_FAILED: {e}"),
+        };
+        let ts_ns = webkit_micros_to_unix_nanos(creation_utc);
+        let desc = format!("{host_key} \u{2014} {name} (path={cookie_path})");
+        events.push(
+            BrowserEvent::new(
+                ts_ns,
+                BrowserFamily::Chromium,
+                ArtifactKind::Cookies,
+                &source,
+                desc,
+            )
+            .with_attr("host", json!(host_key))
+            .with_attr("name", json!(name))
+            .with_attr("path", json!(cookie_path))
+            .with_attr("value", json!(value)),
+        );
+    }
+    Ok(events)
 }
 
-/// Route `cookies`: opt-in macOS `v10` decryption, else the plain parser.
+/// Opt-in Windows Chromium cookie-decryption inputs (grouped so the `cookies`
+/// dispatch takes one coherent choice, not six loose flags).
+struct CookieWinDecrypt {
+    enabled: bool,
+    local_state: Option<PathBuf>,
+    dpapi_masterkey: Option<String>,
+    dpapi_password: Option<String>,
+    dpapi_sid: Option<String>,
+    dpapi_masterkey_file: Option<PathBuf>,
+}
+
+/// Route `cookies`: opt-in Windows or macOS `v10` decryption, else plain parser.
 fn dispatch_cookies(
     path: &Path,
     format: OutputFormat,
     decrypt_macos: bool,
     keychain_service: &str,
+    win: CookieWinDecrypt,
 ) -> Result<()> {
-    if decrypt_macos {
+    if win.enabled {
+        run_cookies_decrypt_win(path, &win, format)
+    } else if decrypt_macos {
         run_cookies_decrypt_macos(path, keychain_service, format)
     } else {
         run_artifact(path, ArtifactType::Cookies, format)
     }
+}
+
+/// `br4n6 cookies PATH --decrypt-win` handler: recover the DPAPI key, decrypt.
+fn run_cookies_decrypt_win(
+    path: &Path,
+    win: &CookieWinDecrypt,
+    format: OutputFormat,
+) -> Result<()> {
+    let local_state = win.local_state.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("--decrypt-win requires --local-state <PATH> (the profile's Local State)")
+    })?;
+    eprintln!("[decrypt] opt-in Windows Chromium cookie decryption — output contains plaintext");
+    let key = resolve_dpapi_key(
+        local_state,
+        win.dpapi_masterkey.as_deref(),
+        win.dpapi_password.as_deref(),
+        win.dpapi_sid.as_deref(),
+        win.dpapi_masterkey_file.as_deref(),
+    )?;
+    let mut events = decrypt_chromium_cookies_win(path, &key)?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
 }
 
 /// Route `login-data`: opt-in Firefox credential decryption, else the plain
