@@ -314,6 +314,11 @@ enum Command {
     },
     /// Run integrity checks on a browser artifact.
     Integrity(ArtifactArgs),
+    /// Check for anti-forensic / tampering indicators (history clearing,
+    /// timestamp anomalies, manual DB edits, incognito residue). Every finding is
+    /// consistent-with clearing/tampering, NOT proof of it, and is reported with
+    /// an innocent alternative. PATH may be a database file or a profile directory.
+    TamperCheck(ArtifactArgs),
     /// Carve deleted records from a browser SQLite database.
     Carve(ArtifactArgs),
     /// Run full triage: discover profiles, parse, check integrity, carve.
@@ -479,6 +484,7 @@ where
         Some(Command::Profiles { format }) => run_profiles(format),
         Some(Command::Analyze { path, cap }) => run_analyze(&path, cap),
         Some(Command::Integrity(a)) => run_integrity(&a.path, a.format),
+        Some(Command::TamperCheck(a)) => run_tamper_check(&a.path, a.format),
         Some(Command::Carve(a)) => run_carve(&a.path, a.format),
         Some(Command::Triage { home, format }) => run_triage(home.as_deref(), format),
         Some(Command::Correlate { path, format }) => run_correlate(&path, format),
@@ -2078,6 +2084,218 @@ pub fn run_integrity(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 tamper-check PATH` — anti-forensic / tampering indicator sweep.
+///
+/// `PATH` may be a single database file or a profile directory. For a directory,
+/// every history database beneath it is checked and, in addition, network/state
+/// residue is compared against history for incognito-usage indicators. Every
+/// finding is an observation *consistent with* clearing/tampering, reported with
+/// an innocent alternative — never a conclusion.
+///
+/// # Errors
+/// Never fails on a per-artifact problem (best-effort); returns an error only if
+/// the path itself cannot be interpreted.
+pub fn run_tamper_check(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut indicators = Vec::new();
+    if path.is_dir() {
+        gather_profile_tamper_indicators(path, &mut indicators);
+    } else {
+        let family = browser_forensic_core::detect_browser(path)
+            .or_else(|| infer_browser_from_filename(path))
+            .unwrap_or(BrowserFamily::Chromium);
+        gather_db_tamper_indicators(path, family, &mut indicators);
+    }
+    emit_tamper_findings(&indicators, path, format);
+    Ok(())
+}
+
+/// Run every single-database tamper indicator over `path`, absorbing per-check
+/// errors so one unreadable check never suppresses the others.
+fn gather_db_tamper_indicators(
+    path: &Path,
+    family: BrowserFamily,
+    out: &mut Vec<browser_forensic_integrity::IntegrityIndicator>,
+) {
+    if let Ok(mut i) = browser_forensic_integrity::check_page_state(path) {
+        out.append(&mut i);
+    }
+    if let Ok(mut i) = browser_forensic_integrity::check_header_anomalies(path) {
+        out.append(&mut i);
+    }
+    if let Ok(mut i) = browser_forensic_integrity::check_history_integrity(path, family) {
+        out.append(&mut i);
+    }
+    if let Ok(mut i) = browser_forensic_integrity::check_database_integrity(path) {
+        out.append(&mut i);
+    }
+    if let Ok(mut i) = browser_forensic_carve::detect_recovered_deleted_history(path) {
+        out.append(&mut i);
+    }
+}
+
+/// Known history databases per profile, by browser family.
+const PROFILE_HISTORY_DBS: &[(&str, BrowserFamily)] = &[
+    ("History", BrowserFamily::Chromium),
+    ("places.sqlite", BrowserFamily::Firefox),
+    ("History.db", BrowserFamily::Safari),
+];
+
+/// Run the single-database checks over each history DB in a profile directory,
+/// then add the cross-artifact incognito-residue indicator.
+fn gather_profile_tamper_indicators(
+    dir: &Path,
+    out: &mut Vec<browser_forensic_integrity::IntegrityIndicator>,
+) {
+    for (name, family) in PROFILE_HISTORY_DBS {
+        let db = dir.join(name);
+        if db.is_file() {
+            gather_db_tamper_indicators(&db, family.clone(), out);
+        }
+    }
+
+    // Incognito residue: domains named in network/state artifacts that survive a
+    // clear, with no corresponding history entry.
+    let residual: Vec<(String, String)> = browser_forensic_triage::collect_recovered_domains(dir)
+        .iter()
+        .filter_map(|e| {
+            let domain = e.attrs.get("domain")?.as_str()?.to_string();
+            let source = e
+                .attrs
+                .get("source_artifact")
+                .and_then(|v| v.as_str())
+                .unwrap_or("network/state residue")
+                .to_string();
+            Some((domain, source))
+        })
+        .collect();
+    let history_domains = profile_history_domains(dir);
+    out.extend(browser_forensic_integrity::check_incognito_residue(
+        &residual,
+        &history_domains,
+    ));
+}
+
+/// Hosts that appear in the profile's browsing history, for the incognito
+/// residue comparison. Best-effort across families.
+fn profile_history_domains(dir: &Path) -> Vec<String> {
+    let mut events = Vec::new();
+    let chrome = dir.join("History");
+    if chrome.is_file() {
+        if let Ok(e) = browser_forensic_chrome::parse_history(&chrome) {
+            events.extend(e);
+        }
+    }
+    let ff = dir.join("places.sqlite");
+    if ff.is_file() {
+        if let Ok(e) = browser_forensic_firefox::parse_history(&ff) {
+            events.extend(e);
+        }
+    }
+    events
+        .iter()
+        .filter_map(|e| e.attrs.get("url").and_then(|v| v.as_str()))
+        .filter_map(tamper_host_of)
+        .collect()
+}
+
+/// Extract the host component of a URL, or `None` if it has no authority.
+fn tamper_host_of(url: &str) -> Option<String> {
+    let after_scheme = url.split_once("://")?.1;
+    let end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let host = &after_scheme[..end];
+    // Drop any userinfo@ and :port so the bare host remains.
+    let host = host.rsplit('@').next().unwrap_or(host);
+    let host = host.split(':').next().unwrap_or(host);
+    (!host.is_empty()).then(|| host.to_string())
+}
+
+/// The serialized kind (enum variant name) of an indicator, taken from its JSON
+/// object key so it stays in sync with the type automatically.
+fn indicator_kind(ind: &browser_forensic_integrity::IntegrityIndicator) -> String {
+    match serde_json::to_value(ind) {
+        Ok(serde_json::Value::Object(map)) => map
+            .keys()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| "Unknown".into()),
+        Ok(serde_json::Value::String(s)) => s,
+        _ => "Unknown".to_string(),
+    }
+}
+
+/// Render tamper findings with their observation and innocent alternative.
+fn emit_tamper_findings(
+    indicators: &[browser_forensic_integrity::IntegrityIndicator],
+    path: &Path,
+    format: OutputFormat,
+) {
+    if indicators.is_empty() {
+        match format {
+            OutputFormat::Text => {
+                println!("No tampering indicators detected in {}.", path.display());
+            }
+            OutputFormat::Jsonl => println!("{{\"status\":\"clean\"}}"),
+            OutputFormat::Csv => {
+                println!("kind,observation,innocent_alternative");
+            }
+        }
+        return;
+    }
+
+    match format {
+        OutputFormat::Text => {
+            println!(
+                "Found {} tampering indicator(s) in {} — each is consistent with \
+                 clearing/tampering, NOT proof of it:",
+                indicators.len(),
+                path.display()
+            );
+            for (n, ind) in indicators.iter().enumerate() {
+                println!("\n[{}] {}", n + 1, indicator_kind(ind));
+                println!("    observation: {}", ind.observation());
+                println!("    innocent alternative: {}", ind.innocent_alternative());
+            }
+        }
+        OutputFormat::Jsonl => {
+            for ind in indicators {
+                let obj = json!({
+                    "kind": indicator_kind(ind),
+                    "observation": ind.observation(),
+                    "innocent_alternative": ind.innocent_alternative(),
+                    "data": ind,
+                });
+                if let Ok(line) = serde_json::to_string(&obj) {
+                    println!("{line}");
+                }
+            }
+        }
+        OutputFormat::Csv => {
+            println!("kind,observation,innocent_alternative");
+            for ind in indicators {
+                println!(
+                    "{},{},{}",
+                    csv_field(&indicator_kind(ind)),
+                    csv_field(&ind.observation()),
+                    csv_field(ind.innocent_alternative()),
+                );
+            }
+        }
+    }
+}
+
+/// CSV-escape a field: neutralize a spreadsheet formula trigger, quote, and
+/// double any embedded quotes.
+fn csv_field(value: &str) -> String {
+    let guarded = if value.starts_with(['=', '+', '-', '@']) {
+        format!("'{value}")
+    } else {
+        value.to_string()
+    };
+    format!("\"{}\"", guarded.replace('"', "\"\""))
+}
+
 /// `br4n6 storage PATH` — parse web storage (Local/Session Storage, IndexedDB)
 /// for the auto-detected browser family. `PATH` may be a single LevelDB
 /// directory, a `webappsstore.sqlite` / IndexedDB `*.sqlite` file, or a profile
@@ -3432,6 +3650,59 @@ mod tests {
         for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
             run_integrity(&dirty, fmt).unwrap();
         }
+    }
+
+    #[test]
+    fn run_tamper_check_all_formats_clean_and_dirty() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let clean = dir.path().join("clean.db");
+        let conn = Connection::open(&clean).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
+             INSERT INTO visits VALUES (1, 1, 13300000000000000, 0, 0);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_tamper_check(&clean, fmt).unwrap();
+        }
+
+        let dirty = dir.path().join("dirty.db");
+        let conn = Connection::open(&dirty).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
+             INSERT INTO visits VALUES (1, 1, 13300000000000000, 0, 0);
+             INSERT INTO visits VALUES (50, 1, 13300000001000000, 0, 0);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_tamper_check(&dirty, fmt).unwrap();
+        }
+
+        // A profile directory path exercises the directory arm + incognito residue.
+        run_tamper_check(dir.path(), OutputFormat::Text).unwrap();
+    }
+
+    #[test]
+    fn csv_field_guards_formula_and_quotes() {
+        assert_eq!(csv_field("=SUM(A1)"), "\"'=SUM(A1)\"");
+        assert_eq!(csv_field("a,b"), "\"a,b\"");
+        assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
+    }
+
+    #[test]
+    fn tamper_host_of_extracts_bare_host() {
+        assert_eq!(
+            tamper_host_of("https://user@sub.example.com:443/path?q=1"),
+            Some("sub.example.com".to_string())
+        );
+        assert_eq!(tamper_host_of("not a url"), None);
     }
 
     #[test]

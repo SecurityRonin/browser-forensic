@@ -503,3 +503,81 @@ fn br4n6_history_accepts_safari_profile_directory() {
     let urls = urls_of(&jsonl_lines(&out.stdout));
     assert!(urls.contains(&"https://sf-one.example".to_string()));
 }
+
+// ── Tamper-check ─────────────────────────────────────────────────────────────
+
+/// A Chromium `History` with a visit-id gap (rows 1 then 50) — residue
+/// consistent with deleted visits — for the tamper-check fires/silent oracle.
+fn create_tampered_history() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let history = dir.path().join("History");
+    let conn = Connection::open(&history).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT,
+            visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+         CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL,
+            visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+         INSERT INTO urls VALUES (1,'https://a.example','A',1,13300000000000000);
+         INSERT INTO visits VALUES (1,1,13300000000000000,0,0);
+         INSERT INTO visits VALUES (50,1,13300000001000000,0,0);",
+    )
+    .unwrap();
+    conn.close().ok();
+    (dir, history)
+}
+
+fn create_pristine_history() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let history = dir.path().join("History");
+    let conn = Connection::open(&history).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT,
+            visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+         CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL,
+            visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+         INSERT INTO urls VALUES (1,'https://a.example','A',1,13300000000000000);
+         INSERT INTO visits VALUES (1,1,13300000000000000,0,0);",
+    )
+    .unwrap();
+    conn.close().ok();
+    (dir, history)
+}
+
+#[test]
+fn br4n6_tamper_check_fires_on_tampered_db() {
+    let (_d, history) = create_tampered_history();
+    let out = br4n6()
+        .args(["tamper-check", history.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "tamper-check should succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("indicator"),
+        "tampered DB should report indicators, got: {stdout}"
+    );
+    // Every finding must carry an innocent alternative (the framing rule).
+    assert!(
+        stdout.to_lowercase().contains("innocent alternative"),
+        "each finding must show an innocent alternative, got: {stdout}"
+    );
+}
+
+#[test]
+fn br4n6_tamper_check_clean_on_pristine_db() {
+    let (_d, history) = create_pristine_history();
+    let out = br4n6()
+        .args(["tamper-check", history.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.to_lowercase().contains("no tampering"),
+        "pristine DB should report no indicators, got: {stdout}"
+    );
+}

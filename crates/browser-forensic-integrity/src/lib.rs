@@ -5,10 +5,17 @@
 pub mod cookies;
 pub mod database;
 pub mod history;
+pub mod incognito;
+pub mod manual_edit;
+pub mod pages;
+pub mod sqlite_header;
 
 pub use cookies::check_cookie_integrity;
 pub use database::{check_database_integrity, check_wal_state};
 pub use history::check_history_integrity;
+pub use incognito::check_incognito_residue;
+pub use manual_edit::check_header_anomalies;
+pub use pages::check_page_state;
 
 use std::path::PathBuf;
 
@@ -66,6 +73,361 @@ pub enum IntegrityIndicator {
         max_rowid: i64,
         auto_increment: i64,
     },
+    /// The database holds free (unallocated) pages on its freelist. Consistent
+    /// with prior deletions that were not followed by `VACUUM`; those pages may
+    /// retain recoverable deleted records.
+    FreelistGrowth {
+        path: PathBuf,
+        free_pages: u32,
+        total_pages: u32,
+    },
+    /// The in-header page count disagrees with the page count implied by the file
+    /// length. Consistent with truncation, carving, or an out-of-band edit of the
+    /// file.
+    PageCountMismatch {
+        path: PathBuf,
+        header_pages: u32,
+        file_pages: u32,
+    },
+    /// A `urls` summary row records more visits than the number of surviving
+    /// `visits` rows referencing it. Consistent with individual visits having
+    /// been deleted while the summary row was retained.
+    VisitCountMismatch {
+        path: PathBuf,
+        url_id: i64,
+        recorded_visit_count: i64,
+        actual_visit_rows: i64,
+    },
+    /// A visit timestamp lies after the artifact's acquisition/reference time
+    /// (its own last-modified time). A row cannot record a visit that happened
+    /// after the file was last written. Consistent with a clock set wrong on the
+    /// originating device, or a synced/imported record.
+    TimestampInFuture {
+        path: PathBuf,
+        table: String,
+        row_id: i64,
+        ts_ns: i64,
+        reference_ns: i64,
+    },
+    /// A `urls`/`moz_places` summary row's recorded last-visit time does not equal
+    /// the maximum visit time of its surviving visit rows. Consistent with the
+    /// most-recent visits having been deleted while the summary row was retained.
+    LastVisitMismatch {
+        path: PathBuf,
+        url_id: i64,
+        recorded_last_visit_ns: i64,
+        max_visit_ns: i64,
+    },
+    /// The header's file change counter (offset 24) differs from its
+    /// version-valid-for field (offset 92). A modern SQLite writer keeps them
+    /// equal; a difference is consistent with a write by a tool that does not
+    /// maintain the field, or by a SQLite older than 3.7.0.
+    ChangeCounterMismatch {
+        path: PathBuf,
+        change_counter: u32,
+        version_valid_for: u32,
+    },
+    /// A header format version field (write @18 or read @19) is outside the
+    /// documented range {1 = legacy, 2 = WAL}. Consistent with corruption or an
+    /// out-of-band header edit.
+    HeaderVersionAnomaly {
+        path: PathBuf,
+        field: String,
+        value: u8,
+    },
+    /// A table's `sqlite_sequence` high-water mark exceeds its maximum surviving
+    /// rowid. Consistent with deletion of the highest-rowid rows, or an insert
+    /// rolled back by a crash (AUTOINCREMENT never reuses a value).
+    SqliteSequenceGap {
+        path: PathBuf,
+        table: String,
+        seq: i64,
+        max_rowid: i64,
+    },
+    /// A domain present in a network/state residue artifact has no corresponding
+    /// `history`/`visits` entry. Consistent with a private/incognito session (which
+    /// writes almost nothing to disk) OR with normal browsing whose history was
+    /// later cleared — both explanations apply.
+    IncognitoResidue {
+        residual_domain: String,
+        source_artifact: String,
+    },
+    /// Free-page / WAL carving recovered rows attributed to a history table while
+    /// few rows survive live. Consistent with history rows having been deleted;
+    /// equally with the browser's own per-item deletion or retention expiry, which
+    /// leave the same recoverable residue.
+    RecoveredDeletedHistory {
+        path: PathBuf,
+        table: String,
+        recovered_rows: usize,
+        live_rows: i64,
+    },
+}
+
+impl IntegrityIndicator {
+    /// A plain-language statement of what was *observed* in the artifact — the
+    /// raw fact, with the offending value(s), and never a conclusion. This is the
+    /// layer-1 "observed fact" of the expert-witness discipline: state what the
+    /// evidence shows, let the reader weigh it against [`Self::innocent_alternative`].
+    #[must_use]
+    pub fn observation(&self) -> String {
+        match self {
+            Self::HistoryCleared { path, .. } => format!(
+                "{}: history tables are empty (or near-empty) while the AUTOINCREMENT \
+                 counter records prior rows",
+                path.display()
+            ),
+            Self::VisitIdGap {
+                path,
+                expected_id,
+                found_id,
+            } => format!(
+                "{}: visit/row id sequence jumps from {expected_id} to {found_id} \
+                 (rows once occupied the intervening ids)",
+                path.display()
+            ),
+            Self::TimestampNonMonotonic {
+                path,
+                row_id,
+                prev_ts_ns,
+                this_ts_ns,
+            } => format!(
+                "{}: row {row_id} has timestamp {this_ts_ns} ns which is earlier than \
+                 the preceding row's {prev_ts_ns} ns despite a later id",
+                path.display()
+            ),
+            Self::CookieTimestampAnomaly {
+                path,
+                host,
+                creation_ns,
+                last_access_ns,
+            } => format!(
+                "{}: cookie for {host} has creation {creation_ns} ns after its \
+                 last-access {last_access_ns} ns",
+                path.display()
+            ),
+            Self::WalPresent { path } => format!(
+                "{}: a non-empty write-ahead log sits beside the database (uncheckpointed \
+                 page versions the main file does not yet reflect)",
+                path.display()
+            ),
+            Self::SqliteIntegrityFailure { path, message } => {
+                format!(
+                    "{}: PRAGMA integrity_check reported: {message}",
+                    path.display()
+                )
+            }
+            Self::HistoryTombstoneFound {
+                path,
+                url,
+                deleted_at_ns,
+            } => format!(
+                "{}: a deletion tombstone records the removal of {url} (at {deleted_at_ns} ns)",
+                path.display()
+            ),
+            Self::DownloadFileMissing { path, target_path } => format!(
+                "{}: a download record references {target_path}, which is not present on disk",
+                path.display()
+            ),
+            Self::AutoIncrementGap {
+                path,
+                table,
+                max_rowid,
+                auto_increment,
+            } => format!(
+                "{}: sqlite_sequence for {table} is {auto_increment} but the highest \
+                 surviving rowid is {max_rowid}",
+                path.display()
+            ),
+            Self::FreelistGrowth {
+                path,
+                free_pages,
+                total_pages,
+            } => format!(
+                "{}: {free_pages} of {total_pages} pages are on the freelist (freed, \
+                 unallocated space)",
+                path.display()
+            ),
+            Self::PageCountMismatch {
+                path,
+                header_pages,
+                file_pages,
+            } => format!(
+                "{}: header records {header_pages} pages but the file length implies \
+                 {file_pages}",
+                path.display()
+            ),
+            Self::VisitCountMismatch {
+                path,
+                url_id,
+                recorded_visit_count,
+                actual_visit_rows,
+            } => format!(
+                "{}: url {url_id} records visit_count {recorded_visit_count} but only \
+                 {actual_visit_rows} visits rows reference it",
+                path.display()
+            ),
+            Self::TimestampInFuture {
+                path,
+                table,
+                row_id,
+                ts_ns,
+                reference_ns,
+            } => format!(
+                "{}: {table} row {row_id} has timestamp {ts_ns} ns, after the artifact \
+                 reference time {reference_ns} ns",
+                path.display()
+            ),
+            Self::LastVisitMismatch {
+                path,
+                url_id,
+                recorded_last_visit_ns,
+                max_visit_ns,
+            } => format!(
+                "{}: url {url_id} records last-visit {recorded_last_visit_ns} ns but the \
+                 latest surviving visit is {max_visit_ns} ns",
+                path.display()
+            ),
+            Self::ChangeCounterMismatch {
+                path,
+                change_counter,
+                version_valid_for,
+            } => format!(
+                "{}: header change counter is {change_counter} but version-valid-for is \
+                 {version_valid_for}",
+                path.display()
+            ),
+            Self::HeaderVersionAnomaly { path, field, value } => format!(
+                "{}: header {field} is {value}, outside the documented range 1..=2",
+                path.display()
+            ),
+            Self::SqliteSequenceGap {
+                path,
+                table,
+                seq,
+                max_rowid,
+            } => format!(
+                "{}: sqlite_sequence for {table} is {seq} but the highest surviving \
+                 rowid is {max_rowid}",
+                path.display()
+            ),
+            Self::IncognitoResidue {
+                residual_domain,
+                source_artifact,
+            } => format!(
+                "{residual_domain} appears in {source_artifact} but has no history/visits \
+                 entry"
+            ),
+            Self::RecoveredDeletedHistory {
+                path,
+                table,
+                recovered_rows,
+                live_rows,
+            } => format!(
+                "{}: carving recovered {recovered_rows} deleted {table} row(s) while \
+                 {live_rows} survive live",
+                path.display()
+            ),
+        }
+    }
+
+    /// At least one benign explanation that would produce the same observation.
+    /// The framing rule: SQLite id gaps, freelist growth, non-monotonic
+    /// timestamps and counter jumps are ALSO produced by ordinary deletion,
+    /// VACUUM, crashes, imports and clock skew — so a finding is *consistent with*
+    /// clearing/tampering, never proof of it (expert-witness layer 2).
+    #[must_use]
+    pub fn innocent_alternative(&self) -> &'static str {
+        match self {
+            Self::HistoryCleared { .. } => {
+                "Also consistent with the user clearing browsing data through the \
+                 browser's own UI, an expiry/retention policy, or a fresh profile whose \
+                 rows were pruned — none of which require external manipulation."
+            }
+            Self::VisitIdGap { .. } => {
+                "Gaps are normal after ordinary record deletion, history expiry, or a \
+                 rolled-back transaction; SQLite does not renumber surviving rows."
+            }
+            Self::TimestampNonMonotonic { .. } => {
+                "Can arise from clock changes (DST, NTP correction, timezone), history \
+                 imported/synced from another device, or rows inserted out of visit order."
+            }
+            Self::CookieTimestampAnomaly { .. } => {
+                "May result from a system clock adjustment between the two writes, or \
+                 from a cookie migrated/imported with a preserved creation time."
+            }
+            Self::WalPresent { .. } => {
+                "A WAL is present during normal operation whenever the database was \
+                 captured before checkpointing, or the browser was still running."
+            }
+            Self::SqliteIntegrityFailure { .. } => {
+                "Corruption is commonly produced by crashes, power loss, storage faults, \
+                 or copying a live database, independent of any deliberate edit."
+            }
+            Self::HistoryTombstoneFound { .. } => {
+                "Tombstones are created by the browser's normal sync/delete bookkeeping \
+                 when a user removes an item, and can also be seeded by cross-device sync."
+            }
+            Self::DownloadFileMissing { .. } => {
+                "A referenced file can be absent simply because the user moved, renamed, or \
+                 deleted the download, or it lived on removable/other media."
+            }
+            Self::AutoIncrementGap { .. } => {
+                "AUTOINCREMENT never reuses values, so this can arise from ordinary \
+                 deletion of the highest-id rows, or inserts rolled back by a crash, \
+                 leaving the counter ahead of the max rowid without any external editing."
+            }
+            Self::FreelistGrowth { .. } => {
+                "Free pages are a normal by-product of ordinary DELETEs without VACUUM, \
+                 of the browser's own history-expiry/eviction, and of index churn — the \
+                 database reuses them for later inserts."
+            }
+            Self::PageCountMismatch { .. } => {
+                "A page-count mismatch can be produced by an interrupted write, a copy \
+                 captured mid-checkpoint, or trailing bytes appended by a backup tool, \
+                 not only by deliberate truncation."
+            }
+            Self::VisitCountMismatch { .. } => {
+                "Chromium prunes visits older than its retention window while keeping \
+                 the urls row, and cross-device sync can adjust visit_count, so a higher \
+                 recorded count than surviving rows can arise with no manual deletion."
+            }
+            Self::TimestampInFuture { .. } => {
+                "A future timestamp is commonly produced by a wrong device clock (never \
+                 set, dead RTC battery, bad NTP), a timezone/DST error, or a record \
+                 synced from a device whose clock was ahead."
+            }
+            Self::LastVisitMismatch { .. } => {
+                "The summary can lag its visits after ordinary visit expiry/pruning, an \
+                 interrupted write, or sync reconciliation, so a mismatch need not mean \
+                 manual removal."
+            }
+            Self::ChangeCounterMismatch { .. } => {
+                "The fields can also diverge when a database is written by a SQLite older \
+                 than 3.7.0 or by a library/tool that does not update version-valid-for, \
+                 independent of any deliberate edit."
+            }
+            Self::HeaderVersionAnomaly { .. } => {
+                "An out-of-range version byte can result from on-disk corruption (storage \
+                 fault, torn write) rather than an intentional header edit."
+            }
+            Self::SqliteSequenceGap { .. } => {
+                "AUTOINCREMENT never reuses values, so this can arise from ordinary \
+                 deletion of the highest-rowid rows or an insert rolled back by a crash, \
+                 with no external editing."
+            }
+            Self::IncognitoResidue { .. } => {
+                "Equally consistent with normal browsing whose history was later cleared, \
+                 or with a domain reached only by a background/prefetch request that the \
+                 browser does not record in history — not only a private session."
+            }
+            Self::RecoveredDeletedHistory { .. } => {
+                "Recoverable residue is a normal by-product of deleting any single \
+                 history item and of the browser's own retention expiry; it does not by \
+                 itself indicate wholesale clearing."
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -184,5 +546,175 @@ mod tests {
             check_cookie_integrity;
         let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>> = check_database_integrity;
         let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>> = check_wal_state;
+    }
+
+    /// One representative instance of every [`IntegrityIndicator`] variant, so the
+    /// framing tests below exercise the full enum. Extend this when a variant is
+    /// added — the framing rule (observation + innocent alternative, no
+    /// conclusion language) must hold for every finding the tool can emit.
+    fn sample_all_indicators() -> Vec<IntegrityIndicator> {
+        vec![
+            IntegrityIndicator::HistoryCleared {
+                browser: BrowserFamily::Chromium,
+                path: PathBuf::from("/tmp/History"),
+                detected_at_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::VisitIdGap {
+                path: PathBuf::from("/tmp/History"),
+                expected_id: 42,
+                found_id: 100,
+            },
+            IntegrityIndicator::TimestampNonMonotonic {
+                path: PathBuf::from("/tmp/History"),
+                row_id: 5,
+                prev_ts_ns: 2_000_000_000,
+                this_ts_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::CookieTimestampAnomaly {
+                path: PathBuf::from("/tmp/Cookies"),
+                host: "example.com".to_string(),
+                creation_ns: 2_000_000_000,
+                last_access_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::WalPresent {
+                path: PathBuf::from("/tmp/History-wal"),
+            },
+            IntegrityIndicator::SqliteIntegrityFailure {
+                path: PathBuf::from("/tmp/History"),
+                message: "page 5: corrupt".to_string(),
+            },
+            IntegrityIndicator::HistoryTombstoneFound {
+                path: PathBuf::from("/tmp/History.db"),
+                url: "https://deleted.example.com".to_string(),
+                deleted_at_ns: 3_000_000_000,
+            },
+            IntegrityIndicator::DownloadFileMissing {
+                path: PathBuf::from("/tmp/History"),
+                target_path: "/tmp/gone.bin".to_string(),
+            },
+            IntegrityIndicator::AutoIncrementGap {
+                path: PathBuf::from("/tmp/History"),
+                table: "urls".to_string(),
+                max_rowid: 10,
+                auto_increment: 500,
+            },
+            IntegrityIndicator::FreelistGrowth {
+                path: PathBuf::from("/tmp/History"),
+                free_pages: 12,
+                total_pages: 40,
+            },
+            IntegrityIndicator::PageCountMismatch {
+                path: PathBuf::from("/tmp/History"),
+                header_pages: 40,
+                file_pages: 30,
+            },
+            IntegrityIndicator::VisitCountMismatch {
+                path: PathBuf::from("/tmp/History"),
+                url_id: 1,
+                recorded_visit_count: 5,
+                actual_visit_rows: 2,
+            },
+            IntegrityIndicator::TimestampInFuture {
+                path: PathBuf::from("/tmp/History"),
+                table: "visits".to_string(),
+                row_id: 1,
+                ts_ns: 4_355_000_000_000_000_000,
+                reference_ns: 1_700_000_000_000_000_000,
+            },
+            IntegrityIndicator::LastVisitMismatch {
+                path: PathBuf::from("/tmp/History"),
+                url_id: 1,
+                recorded_last_visit_ns: 2_000_000_000,
+                max_visit_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::ChangeCounterMismatch {
+                path: PathBuf::from("/tmp/History"),
+                change_counter: 42,
+                version_valid_for: 35,
+            },
+            IntegrityIndicator::HeaderVersionAnomaly {
+                path: PathBuf::from("/tmp/History"),
+                field: "write_version".to_string(),
+                value: 9,
+            },
+            IntegrityIndicator::SqliteSequenceGap {
+                path: PathBuf::from("/tmp/History"),
+                table: "urls".to_string(),
+                seq: 3,
+                max_rowid: 2,
+            },
+            IntegrityIndicator::IncognitoResidue {
+                residual_domain: "secret.example.com".to_string(),
+                source_artifact: "Network Persistent State".to_string(),
+            },
+            IntegrityIndicator::RecoveredDeletedHistory {
+                path: PathBuf::from("/tmp/History"),
+                table: "moz_places".to_string(),
+                recovered_rows: 2,
+                live_rows: 3,
+            },
+        ]
+    }
+
+    /// Words that assert a conclusion rather than an observation. The framing rule
+    /// forbids them in any finding text: a finding is *consistent with* clearing or
+    /// tampering, never proof of it (fleet expert-witness discipline, layer 2).
+    const CONCLUSION_WORDS: &[&str] = &[
+        "tamper",
+        "confirmed",
+        "proves",
+        "proof",
+        "user deleted",
+        "definitely",
+    ];
+
+    #[test]
+    fn every_indicator_has_observation_and_innocent_alternative() {
+        for ind in sample_all_indicators() {
+            let observation = ind.observation();
+            let innocent = ind.innocent_alternative();
+            assert!(
+                !observation.trim().is_empty(),
+                "{ind:?} has an empty observation"
+            );
+            assert!(
+                !innocent.trim().is_empty(),
+                "{ind:?} has no innocent alternative — the framing rule requires one"
+            );
+        }
+    }
+
+    #[test]
+    fn no_finding_text_asserts_a_conclusion() {
+        for ind in sample_all_indicators() {
+            let combined = format!(
+                "{} {}",
+                ind.observation().to_lowercase(),
+                ind.innocent_alternative().to_lowercase()
+            );
+            for banned in CONCLUSION_WORDS {
+                assert!(
+                    !combined.contains(banned),
+                    "{ind:?} finding text contains conclusion word {banned:?}: {combined:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn innocent_alternative_uses_hedged_language() {
+        // Every innocent alternative should read as a plausible benign cause,
+        // signalled by hedged phrasing rather than a verdict.
+        for ind in sample_all_indicators() {
+            let innocent = ind.innocent_alternative().to_lowercase();
+            assert!(
+                innocent.contains("consistent with")
+                    || innocent.contains("may")
+                    || innocent.contains("can")
+                    || innocent.contains("normal")
+                    || innocent.contains("produced by"),
+                "{ind:?} innocent alternative is not hedged: {innocent:?}"
+            );
+        }
     }
 }
