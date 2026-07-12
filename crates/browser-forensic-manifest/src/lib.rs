@@ -109,8 +109,22 @@ impl RunMetadata {
         tz: Option<Tz>,
         now: DateTime<Utc>,
     ) -> Self {
-        let _ = (tool, version, args, tz, now);
-        unimplemented!("capture_at")
+        let (timezone, acquired_at_local) = match tz {
+            Some(zone) => (
+                zone.name().to_string(),
+                now.with_timezone(&zone).to_rfc3339(),
+            ),
+            None => ("UTC".to_string(), now.to_rfc3339()),
+        };
+        Self {
+            tool: tool.to_string(),
+            version: version.to_string(),
+            invocation: args.join(" "),
+            acquired_at_utc: now.to_rfc3339(),
+            timezone,
+            acquired_at_local,
+            host_os: std::env::consts::OS.to_string(),
+        }
     }
 }
 
@@ -164,8 +178,30 @@ pub struct Manifest {
 /// # Errors
 /// Returns an error if the file cannot be opened or read.
 pub fn hash_file(path: &Path) -> io::Result<FileDigest> {
-    let _ = path;
-    unimplemented!("hash_file")
+    let mut file = fs::File::open(path)?;
+    let mut sha = Sha256::new();
+    let mut md5 = Md5::new();
+    let mut buf = vec![0u8; 65_536];
+    let mut size_bytes: u64 = 0;
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        sha.update(&buf[..n]);
+        md5.update(&buf[..n]);
+        size_bytes += n as u64;
+    }
+    let mtime_utc = fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .map(rfc3339_utc);
+    Ok(FileDigest {
+        size_bytes,
+        sha256: hex_lower(&sha.finalize()),
+        md5: hex_lower(&md5.finalize()),
+        mtime_utc,
+    })
 }
 
 /// Enumerate the evidence input files under `path`.
@@ -175,15 +211,63 @@ pub fn hash_file(path: &Path) -> io::Result<FileDigest> {
 /// files each family stores. The result is absolute, sorted, and de-duplicated.
 #[must_use]
 pub fn enumerate_evidence(path: &Path) -> Vec<PathBuf> {
-    let _ = path;
-    unimplemented!("enumerate_evidence")
+    if path.is_file() {
+        return vec![absolute(path)];
+    }
+    let mut out = Vec::new();
+    let profiles = browser_forensic_discovery::discover_profiles(path);
+    if profiles.is_empty() {
+        for family in [
+            BrowserFamily::Chromium,
+            BrowserFamily::Firefox,
+            BrowserFamily::Safari,
+        ] {
+            collect_artifacts(path, &family, &mut out);
+        }
+    } else {
+        for profile in &profiles {
+            collect_artifacts(&profile.path, &profile.browser, &mut out);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Build a manifest by hashing every input and attaching the run metadata.
 #[must_use]
 pub fn build_manifest(inputs: &[PathBuf], run: RunMetadata) -> Manifest {
-    let _ = (inputs, run);
-    unimplemented!("build_manifest")
+    let mut files: Vec<InputFile> = inputs
+        .iter()
+        .map(|p| {
+            let path = p.display().to_string();
+            match hash_file(p) {
+                Ok(d) => InputFile {
+                    path,
+                    size_bytes: d.size_bytes,
+                    sha256: d.sha256,
+                    md5: d.md5,
+                    mtime_utc: d.mtime_utc,
+                    error: None,
+                },
+                Err(e) => InputFile {
+                    path,
+                    size_bytes: 0,
+                    sha256: String::new(),
+                    md5: String::new(),
+                    mtime_utc: None,
+                    error: Some(e.to_string()),
+                },
+            }
+        })
+        .collect();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Manifest {
+        schema: SCHEMA_ID.to_string(),
+        about: ManifestAbout::default(),
+        run,
+        inputs: files,
+    }
 }
 
 /// Serialize a manifest to deterministic, pretty-printed JSON.
@@ -191,8 +275,7 @@ pub fn build_manifest(inputs: &[PathBuf], run: RunMetadata) -> Manifest {
 /// # Errors
 /// Returns an error if serialization fails.
 pub fn to_json(manifest: &Manifest) -> serde_json::Result<String> {
-    let _ = manifest;
-    unimplemented!("to_json")
+    serde_json::to_string_pretty(manifest)
 }
 
 // ---- private helpers -------------------------------------------------------
