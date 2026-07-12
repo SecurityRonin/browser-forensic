@@ -93,6 +93,26 @@ pub enum IntegrityIndicator {
         recorded_visit_count: i64,
         actual_visit_rows: i64,
     },
+    /// A visit timestamp lies after the artifact's acquisition/reference time
+    /// (its own last-modified time). A row cannot record a visit that happened
+    /// after the file was last written. Consistent with a clock set wrong on the
+    /// originating device, or a synced/imported record.
+    TimestampInFuture {
+        path: PathBuf,
+        table: String,
+        row_id: i64,
+        ts_ns: i64,
+        reference_ns: i64,
+    },
+    /// A `urls`/`moz_places` summary row's recorded last-visit time does not equal
+    /// the maximum visit time of its surviving visit rows. Consistent with the
+    /// most-recent visits having been deleted while the summary row was retained.
+    LastVisitMismatch {
+        path: PathBuf,
+        url_id: i64,
+        recorded_last_visit_ns: i64,
+        max_visit_ns: i64,
+    },
 }
 
 impl IntegrityIndicator {
@@ -198,6 +218,27 @@ impl IntegrityIndicator {
                  {actual_visit_rows} visits rows reference it",
                 path.display()
             ),
+            Self::TimestampInFuture {
+                path,
+                table,
+                row_id,
+                ts_ns,
+                reference_ns,
+            } => format!(
+                "{}: {table} row {row_id} has timestamp {ts_ns} ns, after the artifact \
+                 reference time {reference_ns} ns",
+                path.display()
+            ),
+            Self::LastVisitMismatch {
+                path,
+                url_id,
+                recorded_last_visit_ns,
+                max_visit_ns,
+            } => format!(
+                "{}: url {url_id} records last-visit {recorded_last_visit_ns} ns but the \
+                 latest surviving visit is {max_visit_ns} ns",
+                path.display()
+            ),
         }
     }
 
@@ -261,6 +302,16 @@ impl IntegrityIndicator {
                 "Chromium prunes visits older than its retention window while keeping \
                  the urls row, and cross-device sync can adjust visit_count, so a higher \
                  recorded count than surviving rows can arise with no manual deletion."
+            }
+            Self::TimestampInFuture { .. } => {
+                "A future timestamp is commonly produced by a wrong device clock (never \
+                 set, dead RTC battery, bad NTP), a timezone/DST error, or a record \
+                 synced from a device whose clock was ahead."
+            }
+            Self::LastVisitMismatch { .. } => {
+                "The summary can lag its visits after ordinary visit expiry/pruning, an \
+                 interrupted write, or sync reconciliation, so a mismatch need not mean \
+                 manual removal."
             }
         }
     }
@@ -449,6 +500,19 @@ mod tests {
                 url_id: 1,
                 recorded_visit_count: 5,
                 actual_visit_rows: 2,
+            },
+            IntegrityIndicator::TimestampInFuture {
+                path: PathBuf::from("/tmp/History"),
+                table: "visits".to_string(),
+                row_id: 1,
+                ts_ns: 4_355_000_000_000_000_000,
+                reference_ns: 1_700_000_000_000_000_000,
+            },
+            IntegrityIndicator::LastVisitMismatch {
+                path: PathBuf::from("/tmp/History"),
+                url_id: 1,
+                recorded_last_visit_ns: 2_000_000_000,
+                max_visit_ns: 1_000_000_000,
             },
         ]
     }

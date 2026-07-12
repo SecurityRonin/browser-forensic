@@ -4,11 +4,31 @@ use std::path::Path;
 
 use anyhow::Result;
 use browser_forensic_core::sqlite::open_evidence_db;
-use browser_forensic_core::timestamp::webkit_micros_to_unix_nanos;
+use browser_forensic_core::timestamp::{unix_micros_to_nanos, webkit_micros_to_unix_nanos};
 use browser_forensic_core::BrowserFamily;
 use rusqlite::Connection;
 
 use crate::IntegrityIndicator;
+
+/// The reference instant a recorded event cannot legitimately post-date: the
+/// artifact's own last-modified time (a lower bound on acquisition). A visit
+/// stamped after the file was last written is impossible, so this is an
+/// oracle-free "future" reference. Falls back to the current wall clock if the
+/// file's mtime is unreadable, so a genuine future timestamp is still caught.
+fn acquisition_reference_ns(path: &Path) -> i64 {
+    let from_mtime = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| i64::try_from(d.as_nanos()).ok());
+    from_mtime.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|d| i64::try_from(d.as_nanos()).ok())
+            .unwrap_or(i64::MAX)
+    })
+}
 
 /// Check a browser history database for integrity anomalies.
 ///
@@ -99,7 +119,36 @@ fn check_firefox_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
     let mut indicators = Vec::new();
     check_firefox_visit_id_gaps(conn, path, &mut indicators)?;
     check_firefox_timestamp_monotonicity(conn, path, &mut indicators)?;
+    check_firefox_future_timestamps(conn, path, &mut indicators)?;
     Ok(indicators)
+}
+
+/// Flag `moz_historyvisits` rows whose visit date is after the reference time.
+fn check_firefox_future_timestamps(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let reference_ns = acquisition_reference_ns(path);
+    let mut stmt =
+        conn.prepare("SELECT id, visit_date FROM moz_historyvisits WHERE visit_date > 0")?;
+    let rows: Vec<(i64, i64)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+        .filter_map(std::result::Result::ok)
+        .collect();
+    for (row_id, visit_date) in rows {
+        let ts_ns = unix_micros_to_nanos(visit_date);
+        if ts_ns > reference_ns {
+            indicators.push(IntegrityIndicator::TimestampInFuture {
+                path: path.to_path_buf(),
+                table: "moz_historyvisits".to_string(),
+                row_id,
+                ts_ns,
+                reference_ns,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn check_firefox_visit_id_gaps(
@@ -164,7 +213,71 @@ fn check_chromium_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
     check_chromium_visit_id_gaps(conn, path, &mut indicators)?;
     check_chromium_timestamp_monotonicity(conn, path, &mut indicators)?;
     check_chromium_visit_count_consistency(conn, path, &mut indicators)?;
+    check_chromium_future_timestamps(conn, path, &mut indicators)?;
+    check_chromium_last_visit_consistency(conn, path, &mut indicators)?;
     Ok(indicators)
+}
+
+/// Flag `visits` rows whose visit time is after the artifact reference time.
+fn check_chromium_future_timestamps(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let reference_ns = acquisition_reference_ns(path);
+    let mut stmt = conn.prepare("SELECT id, visit_time FROM visits WHERE visit_time > 0")?;
+    let rows: Vec<(i64, i64)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+        .filter_map(std::result::Result::ok)
+        .collect();
+    for (row_id, visit_time) in rows {
+        let ts_ns = webkit_micros_to_unix_nanos(visit_time);
+        if ts_ns > reference_ns {
+            indicators.push(IntegrityIndicator::TimestampInFuture {
+                path: path.to_path_buf(),
+                table: "visits".to_string(),
+                row_id,
+                ts_ns,
+                reference_ns,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Flag `urls` rows whose recorded `last_visit_time` differs from the maximum
+/// `visits.visit_time` referencing them.
+fn check_chromium_last_visit_consistency(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT u.id, u.last_visit_time, MAX(v.visit_time) \
+         FROM urls u JOIN visits v ON v.url = u.id \
+         WHERE u.last_visit_time > 0 \
+         GROUP BY u.id, u.last_visit_time \
+         HAVING u.last_visit_time <> MAX(v.visit_time)",
+    )?;
+    let rows: Vec<(i64, i64, i64)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?
+        .filter_map(std::result::Result::ok)
+        .collect();
+    for (url_id, last_visit, max_visit) in rows {
+        indicators.push(IntegrityIndicator::LastVisitMismatch {
+            path: path.to_path_buf(),
+            url_id,
+            recorded_last_visit_ns: webkit_micros_to_unix_nanos(last_visit),
+            max_visit_ns: webkit_micros_to_unix_nanos(max_visit),
+        });
+    }
+    Ok(())
 }
 
 /// Flag `urls` rows whose recorded `visit_count` exceeds the number of surviving
