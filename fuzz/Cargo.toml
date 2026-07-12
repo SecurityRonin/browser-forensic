@@ -89,3 +89,15 @@ name = "fuzz_cache_decompress"
 path = "fuzz_targets/fuzz_cache_decompress.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_firefox_cache2"
+path = "fuzz_targets/fuzz_firefox_cache2.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_safari_response_object"
+path = "fuzz_targets/fuzz_safari_response_object.rs"
+test = false
+doc = false

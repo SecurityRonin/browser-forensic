@@ -247,6 +247,18 @@ fn decode_safari_body(
     }
 }
 
+/// Parse an archived-`NSHTTPURLResponse` `response_object` binary-plist blob
+/// into `(status, header count, content-encoding)`.
+///
+/// Public so callers (and the fuzz target) can decode the response metadata of
+/// a single cache entry without opening a database. Never panics on malformed
+/// input — recovers what it can, returns empties otherwise.
+#[must_use]
+pub fn parse_safari_response_object(blob: &[u8]) -> (Option<u16>, usize, Option<String>) {
+    let m = parse_response_object(blob);
+    (m.http_status, m.headers.len(), m.content_encoding)
+}
+
 /// Metadata recovered from an archived `NSHTTPURLResponse` binary plist.
 #[derive(Default)]
 struct ResponseMeta {

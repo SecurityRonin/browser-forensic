@@ -30,5 +30,5 @@ pub use resource::{
     parse_simple_cache_dir, parse_simple_cache_dir_with, parse_simple_cache_file,
     resource_from_entry_bytes, CachedResource,
 };
-pub use safari::{parse_safari_cache_db, try_parse_safari_cache_db};
+pub use safari::{parse_safari_cache_db, parse_safari_response_object, try_parse_safari_cache_db};
 pub use simple::{parse_simple_entry, SimpleEntry};
