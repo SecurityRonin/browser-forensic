@@ -1406,6 +1406,32 @@ pub fn decrypt_chromium_cookies(path: &Path, storage_key: &[u8; 16]) -> Result<V
     Ok(events)
 }
 
+/// Recover the 32-byte Windows Chromium AES-256-GCM key from a `Local State`
+/// file and an opt-in DPAPI secret. Supply EITHER a pre-decrypted 64-byte master
+/// key as hex (`dpapi_masterkey_hex`), OR all three of `password` + `sid` +
+/// `masterkey_file`. STUB — implemented in the GREEN step.
+///
+/// # Errors
+/// STUB.
+pub fn resolve_dpapi_key(
+    _local_state: &Path,
+    _dpapi_masterkey_hex: Option<&str>,
+    _password: Option<&str>,
+    _sid: Option<&str>,
+    _masterkey_file: Option<&Path>,
+) -> Result<[u8; 32]> {
+    anyhow::bail!("not implemented")
+}
+
+/// Decrypt Windows Chromium `v10`/`v11` cookie values from a `Cookies` SQLite DB
+/// with an already-recovered 32-byte key. STUB — implemented in the GREEN step.
+///
+/// # Errors
+/// STUB.
+pub fn decrypt_chromium_cookies_win(_path: &Path, _key: &[u8; 32]) -> Result<Vec<BrowserEvent>> {
+    anyhow::bail!("not implemented")
+}
+
 /// Route `cookies`: opt-in macOS `v10` decryption, else the plain parser.
 fn dispatch_cookies(
     path: &Path,
@@ -3898,5 +3924,123 @@ mod tests {
             triage_summary_lines(&report)[0],
             "Browser Forensic Triage Report"
         );
+    }
+
+    // ---- Windows Chromium DPAPI + AES-256-GCM (Milestone 2b) ----
+    //
+    // Vectors from the decrypt crate's impacket-confirmed / NIST fixture. The
+    // recovered Local-State key equals the GCM key (both are bytes 0x00..0x1f),
+    // so the recovered key decrypts the v10 value end-to-end.
+    const WIN_VECTORS: &str =
+        include_str!("../../browser-forensic-decrypt/tests/data/win_dpapi_vectors.json");
+
+    fn win_vec() -> serde_json::Value {
+        serde_json::from_str(WIN_VECTORS).unwrap()
+    }
+
+    fn win_unhex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn write_win_profile(dir: &Path, v10_blob: &[u8]) -> (PathBuf, PathBuf) {
+        let v = win_vec();
+        let local_state = dir.join("Local State");
+        std::fs::write(&local_state, v["LOCAL_STATE_JSON"].as_str().unwrap()).unwrap();
+        let cookies = dir.join("Cookies");
+        let conn = rusqlite::Connection::open(&cookies).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cookies (creation_utc INTEGER NOT NULL, host_key TEXT NOT NULL, \
+             name TEXT NOT NULL, path TEXT NOT NULL, encrypted_value BLOB DEFAULT '');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, encrypted_value) \
+             VALUES (13327626000000000, '.example.com', 'session', '/', ?1)",
+            rusqlite::params![v10_blob],
+        )
+        .unwrap();
+        drop(conn);
+        (local_state, cookies)
+    }
+
+    #[test]
+    fn resolve_dpapi_key_via_masterkey_hex_recovers_known_key() {
+        let v = win_vec();
+        let dir = tempfile::tempdir().unwrap();
+        let (local_state, _cookies) = write_win_profile(dir.path(), &[]);
+        let key = resolve_dpapi_key(
+            &local_state,
+            Some(v["MASTERKEY64_HEX"].as_str().unwrap()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            key.to_vec(),
+            win_unhex(v["CHROMIUM_KEY_HEX"].as_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn resolve_dpapi_key_via_password_recovers_known_key() {
+        let v = win_vec();
+        let dir = tempfile::tempdir().unwrap();
+        let (local_state, _cookies) = write_win_profile(dir.path(), &[]);
+        let mkf_path = dir.path().join("masterkey");
+        std::fs::write(
+            &mkf_path,
+            win_unhex(v["MASTERKEY_FILE_HEX"].as_str().unwrap()),
+        )
+        .unwrap();
+        let key = resolve_dpapi_key(
+            &local_state,
+            None,
+            Some(v["PASSWORD"].as_str().unwrap()),
+            Some(v["SID"].as_str().unwrap()),
+            Some(&mkf_path),
+        )
+        .unwrap();
+        assert_eq!(
+            key.to_vec(),
+            win_unhex(v["CHROMIUM_KEY_HEX"].as_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn resolve_dpapi_key_requires_a_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let (local_state, _cookies) = write_win_profile(dir.path(), &[]);
+        assert!(resolve_dpapi_key(&local_state, None, None, None, None).is_err());
+    }
+
+    #[test]
+    fn resolve_dpapi_key_rejects_bad_masterkey_hex() {
+        let dir = tempfile::tempdir().unwrap();
+        let (local_state, _cookies) = write_win_profile(dir.path(), &[]);
+        assert!(resolve_dpapi_key(&local_state, Some("abcd"), None, None, None).is_err());
+    }
+
+    #[test]
+    fn decrypt_chromium_cookies_win_recovers_plaintext_end_to_end() {
+        let v = win_vec();
+        let dir = tempfile::tempdir().unwrap();
+        let v10 = win_unhex(v["V10_BLOB_HEX"].as_str().unwrap());
+        let (local_state, cookies) = write_win_profile(dir.path(), &v10);
+        let key = resolve_dpapi_key(
+            &local_state,
+            Some(v["MASTERKEY64_HEX"].as_str().unwrap()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let events = decrypt_chromium_cookies_win(&cookies, &key).unwrap();
+        assert_eq!(events.len(), 1);
+        let value = events[0].attrs.get("value").unwrap().as_str().unwrap();
+        assert_eq!(value, v["GCM_PLAINTEXT"].as_str().unwrap());
     }
 }
