@@ -11,6 +11,7 @@
 //! Untrusted-input posture: `#![forbid(unsafe_code)]`, no `unwrap`/`expect` in
 //! production code, every offset/size bounds-checked before use.
 
+pub mod cachestorage;
 pub mod decompress;
 pub mod error;
 pub mod firefox;
@@ -19,6 +20,7 @@ pub mod resource;
 pub mod safari;
 pub mod simple;
 
+pub use cachestorage::{parse_cachestorage_index, CacheEntry, CacheStorageIndex};
 pub use decompress::{decode_body, DecodeOutcome, DecompressLimits};
 pub use error::CacheError;
 pub use firefox::{
