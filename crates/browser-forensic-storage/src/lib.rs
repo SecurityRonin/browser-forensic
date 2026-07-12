@@ -315,8 +315,73 @@ mod tests {
             .any(|e| e.attrs["storage_type"] == json_indexeddb()));
     }
 
+    #[test]
+    fn parse_path_classifies_session_storage_dir() {
+        let profile = TempDir::new().unwrap();
+        let ss = profile.path().join("Session Storage");
+        build_real_leveldb(&ss, &[(b"map-1-tab", b"\x01open")]);
+        let events = parse_path(&ss).unwrap();
+        assert!(!events.is_empty());
+        assert!(events
+            .iter()
+            .all(|e| e.attrs["storage_type"] == json_session()));
+    }
+
+    #[test]
+    fn parse_path_classifies_indexeddb_dir() {
+        let profile = TempDir::new().unwrap();
+        let idb = profile
+            .path()
+            .join("IndexedDB")
+            .join("https_example.com_0.indexeddb.leveldb");
+        build_real_leveldb(&idb, &[(b"\x00key", b"v8-blob")]);
+        let events = parse_path(&idb).unwrap();
+        assert!(!events.is_empty());
+        assert!(events
+            .iter()
+            .all(|e| e.attrs["storage_type"] == json_indexeddb()));
+    }
+
+    #[test]
+    fn parse_path_routes_stray_sqlite_as_indexeddb() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("1234.sqlite");
+        let conn = rusqlite::Connection::open(&f).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE object_data (object_store_id INTEGER, key BLOB, data BLOB);
+             INSERT INTO object_data VALUES (1, x'01', x'02');",
+        )
+        .unwrap();
+        drop(conn);
+        let events = parse_path(&f).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].attrs["storage_type"], json_indexeddb());
+    }
+
+    #[test]
+    fn collect_chromium_aggregates_indexeddb() {
+        let profile = TempDir::new().unwrap();
+        let idb = profile
+            .path()
+            .join("IndexedDB")
+            .join("https_example.com_0.indexeddb.leveldb");
+        build_real_leveldb(&idb, &[(b"\x00k", b"v")]);
+        let events = collect_chromium_web_storage(profile.path());
+        assert!(events
+            .iter()
+            .any(|e| e.attrs["storage_type"] == json_indexeddb()));
+    }
+
+    #[test]
+    fn is_leveldb_dir_nonexistent_is_false() {
+        assert!(!is_leveldb_dir(Path::new("/nonexistent/leveldb-dir")));
+    }
+
     fn json_local() -> serde_json::Value {
         serde_json::json!(STORAGE_TYPE_LOCAL)
+    }
+    fn json_session() -> serde_json::Value {
+        serde_json::json!(STORAGE_TYPE_SESSION)
     }
     fn json_indexeddb() -> serde_json::Value {
         serde_json::json!(STORAGE_TYPE_INDEXEDDB)
