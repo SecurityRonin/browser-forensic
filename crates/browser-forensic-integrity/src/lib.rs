@@ -152,6 +152,16 @@ pub enum IntegrityIndicator {
         residual_domain: String,
         source_artifact: String,
     },
+    /// Free-page / WAL carving recovered rows attributed to a history table while
+    /// few rows survive live. Consistent with history rows having been deleted;
+    /// equally with the browser's own per-item deletion or retention expiry, which
+    /// leave the same recoverable residue.
+    RecoveredDeletedHistory {
+        path: PathBuf,
+        table: String,
+        recovered_rows: usize,
+        live_rows: i64,
+    },
 }
 
 impl IntegrityIndicator {
@@ -308,6 +318,16 @@ impl IntegrityIndicator {
                 "{residual_domain} appears in {source_artifact} but has no history/visits \
                  entry"
             ),
+            Self::RecoveredDeletedHistory {
+                path,
+                table,
+                recovered_rows,
+                live_rows,
+            } => format!(
+                "{}: carving recovered {recovered_rows} deleted {table} row(s) while \
+                 {live_rows} survive live",
+                path.display()
+            ),
         }
     }
 
@@ -400,6 +420,11 @@ impl IntegrityIndicator {
                 "Equally consistent with normal browsing whose history was later cleared, \
                  or with a domain reached only by a background/prefetch request that the \
                  browser does not record in history — not only a private session."
+            }
+            Self::RecoveredDeletedHistory { .. } => {
+                "Recoverable residue is a normal by-product of deleting any single \
+                 history item and of the browser's own retention expiry; it does not by \
+                 itself indicate wholesale clearing."
             }
         }
     }
@@ -621,6 +646,12 @@ mod tests {
             IntegrityIndicator::IncognitoResidue {
                 residual_domain: "secret.example.com".to_string(),
                 source_artifact: "Network Persistent State".to_string(),
+            },
+            IntegrityIndicator::RecoveredDeletedHistory {
+                path: PathBuf::from("/tmp/History"),
+                table: "moz_places".to_string(),
+                recovered_rows: 2,
+                live_rows: 3,
             },
         ]
     }
