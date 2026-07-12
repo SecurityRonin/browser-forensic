@@ -50,6 +50,10 @@ enum Command {
         /// Home directory to scan (defaults to the current user's home).
         #[arg(long, value_name = "DIR")]
         home: Option<PathBuf>,
+        /// Recursively sweep an evidence tree for browser AND embedded-Chromium
+        /// containers (Electron / WebView2 / CEF), attributed to their app.
+        #[arg(long, value_name = "ROOT")]
+        sweep: Option<PathBuf>,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -172,7 +176,14 @@ where
     match cli.command {
         None => launch_tui(None).map_err(anyhow::Error::from),
         Some(Command::Tui { path }) => launch_tui(path).map_err(anyhow::Error::from),
-        Some(Command::Browsers { home, format }) => run_browsers(home.as_deref(), format),
+        Some(Command::Browsers {
+            home,
+            sweep,
+            format,
+        }) => match sweep {
+            Some(root) => run_browsers_sweep(&root, format),
+            None => run_browsers(home.as_deref(), format),
+        },
         Some(Command::History {
             path,
             no_collapse,
@@ -455,6 +466,70 @@ pub fn run_browsers(home: Option<&Path>, format: OutputFormat) -> Result<()> {
                 println!(
                     "{},{},{}",
                     csv_escape(&p.browser.to_string()),
+                    csv_escape(&p.name),
+                    csv_escape(&p.path.to_string_lossy())
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `br4n6 browsers --sweep <ROOT>` — recursively sweep an evidence tree for
+/// browser and embedded-Chromium containers (Electron / WebView2 / CEF), each
+/// attributed to its app where recognized (unknown Chromium-shaped directories
+/// are still listed, with an empty app column).
+///
+/// # Errors
+/// Returns an error if `root` does not exist (a mistyped path must fail loud,
+/// not silently report zero containers).
+pub fn run_browsers_sweep(root: &Path, format: OutputFormat) -> Result<()> {
+    if !root.exists() {
+        anyhow::bail!("sweep root does not exist: {}", root.display());
+    }
+    let profiles = browser_forensic_discovery::sweep_containers(root);
+    let kind_label = |p: &browser_forensic_discovery::DiscoveredProfile| {
+        p.container
+            .map_or_else(String::new, |c| format!("{:?}", c.kind))
+    };
+    let app_label =
+        |p: &browser_forensic_discovery::DiscoveredProfile| p.container.map_or("", |c| c.app);
+    match format {
+        OutputFormat::Text => {
+            for p in &profiles {
+                println!(
+                    "{}\t{}\t{}\t{}\t{}",
+                    p.browser,
+                    app_label(p),
+                    kind_label(p),
+                    p.name,
+                    p.path.display()
+                );
+            }
+        }
+        OutputFormat::Jsonl => {
+            for p in &profiles {
+                println!(
+                    "{}",
+                    json!({
+                        "browser": p.browser.to_string(),
+                        "app": p.container.map(|c| c.app),
+                        "vendor": p.container.map(|c| c.vendor),
+                        "kind": p.container.map(|c| format!("{:?}", c.kind)),
+                        "name": p.name,
+                        "path": p.path.to_string_lossy(),
+                    })
+                );
+            }
+        }
+        OutputFormat::Csv => {
+            println!("browser,app,kind,name,path");
+            for p in &profiles {
+                println!(
+                    "{},{},{},{},{}",
+                    csv_escape(&p.browser.to_string()),
+                    csv_escape(app_label(p)),
+                    csv_escape(&kind_label(p)),
                     csv_escape(&p.name),
                     csv_escape(&p.path.to_string_lossy())
                 );
@@ -1567,6 +1642,26 @@ mod tests {
         }
         // None → resolves the real home dir; just exercise the path.
         run_browsers(None, OutputFormat::Text).unwrap();
+    }
+
+    #[test]
+    fn run_browsers_sweep_all_formats() {
+        let root = tempfile::tempdir().unwrap();
+        let default = root
+            .path()
+            .join("Users/x/AppData/Local/Google/Chrome/User Data/Default");
+        std::fs::create_dir_all(&default).unwrap();
+        std::fs::write(default.join("History"), b"").unwrap();
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_browsers_sweep(root.path(), fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_browsers_sweep_missing_root_errors() {
+        let err = run_browsers_sweep(Path::new("/no/such/sweep/root"), OutputFormat::Text)
+            .expect_err("missing root must fail loud");
+        assert!(err.to_string().contains("sweep root does not exist"));
     }
 
     #[test]

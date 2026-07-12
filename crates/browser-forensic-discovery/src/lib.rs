@@ -4,7 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use browser_forensic_core::BrowserFamily;
-use forensicnomicon::browser_profiles::{attribute_container, AppKind, ContainerApp};
+use forensicnomicon::browser_profiles::{
+    attribute_container, chromium_profile_markers, firefox_profile_markers, AppKind, ContainerApp,
+    MarkerKind, ProfileMarker, FIREFOX_PROFILE_MARKER_SUFFIXES,
+};
 use serde::Serialize;
 
 /// A browser profile discovered on the filesystem.
@@ -48,14 +51,181 @@ fn attribution_for(path: &Path) -> Option<ContainerAttribution> {
     attribute_container(&path.to_string_lossy()).map(ContainerAttribution::from)
 }
 
+/// Maximum directory depth the sweep descends below `root`. Browser containers
+/// sit within the first several levels; this bounds worst-case cost and caps
+/// recursion so a pathologically deep tree cannot overflow the stack.
+const SWEEP_MAX_DEPTH: usize = 24;
+
+/// Subdirectory names that, together with an app-token path, mark a directory as
+/// an embedded container even when it lacks a full Chromium/Firefox signature.
+const EMBEDDED_CONTAINER_SUBDIRS: &[&str] = &[
+    "Cache",
+    "Local Storage",
+    "IndexedDB",
+    "Session Storage",
+    "Extensions",
+];
+
 /// Recursively sweep an evidence tree rooted at `root` for Chromium/Firefox
 /// profiles and embedded-Chromium containers (Electron / WebView2 / CEF),
 /// attributing each match to a known app where possible.
 ///
-/// (RED: stub — implemented in the GREEN commit.)
+/// This is a *structural* sweep: a directory is a container if it carries a
+/// Chromium or Firefox profile signature (see
+/// [`forensicnomicon::browser_profiles`]), regardless of its name — so an
+/// unknown app is still discovered, just without attribution. The walk never
+/// follows symlinks, is depth-bounded, reads each directory once, and is
+/// panic-free, so it is safe to point at a whole evidence tree.
 #[must_use]
-pub fn sweep_containers(_root: &Path) -> Vec<DiscoveredProfile> {
-    Vec::new()
+pub fn sweep_containers(root: &Path) -> Vec<DiscoveredProfile> {
+    let mut out = Vec::new();
+    sweep_dir(root, 0, &mut out);
+    out
+}
+
+fn sweep_dir(dir: &Path, depth: usize, out: &mut Vec<DiscoveredProfile>) {
+    if depth > SWEEP_MAX_DEPTH {
+        return;
+    }
+    // Read children once and reuse for classification and recursion. A directory
+    // we cannot read is skipped — a best-effort sweep, never a hard failure.
+    let entries: Vec<std::fs::DirEntry> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd.flatten().collect(),
+        Err(_) => return,
+    };
+
+    if let Some(profile) = classify_dir(dir, &entries) {
+        out.push(profile);
+        // A matched profile's children are its own artifacts (Cache, IndexedDB,
+        // Local Storage, …), not nested profiles — do not descend into them.
+        return;
+    }
+
+    for entry in &entries {
+        // Never follow symlinks: cycle-safe and prevents escaping the tree.
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if ft.is_symlink() || !ft.is_dir() {
+            continue;
+        }
+        sweep_dir(&entry.path(), depth + 1, out);
+    }
+}
+
+/// Classify a single directory as a Chromium profile, a Firefox profile, an
+/// attributed embedded container, or nothing.
+fn classify_dir(dir: &Path, entries: &[std::fs::DirEntry]) -> Option<DiscoveredProfile> {
+    if has_chromium_signature(dir, entries) {
+        return Some(make_profile(BrowserFamily::Chromium, dir));
+    }
+    if has_firefox_signature(dir, entries) {
+        return Some(make_profile(BrowserFamily::Firefox, dir));
+    }
+    // Embedded fallback: an app-token path carrying a web-container subdir but no
+    // strict profile signature is still a container.
+    if let Some(app) = attribute_container(&dir.to_string_lossy()) {
+        if has_embedded_container_subdir(entries) {
+            return Some(DiscoveredProfile {
+                browser: BrowserFamily::Chromium,
+                name: dir_name(dir),
+                path: dir.to_path_buf(),
+                container: Some(ContainerAttribution::from(app)),
+            });
+        }
+    }
+    None
+}
+
+fn make_profile(browser: BrowserFamily, dir: &Path) -> DiscoveredProfile {
+    DiscoveredProfile {
+        browser,
+        name: dir_name(dir),
+        path: dir.to_path_buf(),
+        container: attribution_for(dir),
+    }
+}
+
+fn dir_name(dir: &Path) -> String {
+    dir.file_name().map_or_else(
+        || dir.to_string_lossy().into_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+fn has_chromium_signature(dir: &Path, entries: &[std::fs::DirEntry]) -> bool {
+    chromium_profile_markers()
+        .iter()
+        .any(|m| marker_present(dir, entries, m))
+}
+
+fn has_firefox_signature(dir: &Path, entries: &[std::fs::DirEntry]) -> bool {
+    if firefox_profile_markers()
+        .iter()
+        .any(|m| marker_present(dir, entries, m))
+    {
+        return true;
+    }
+    // Any regular file with a mozLz4 session/bookmark extension also marks a
+    // Firefox profile.
+    entries.iter().any(|e| {
+        e.file_type().is_ok_and(|t| t.is_file()) && {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            FIREFOX_PROFILE_MARKER_SUFFIXES
+                .iter()
+                .any(|s| name.ends_with(s))
+        }
+    })
+}
+
+/// Is a single profile marker present in `dir`? Top-level markers are matched by
+/// name and kind against the already-read `entries` (no extra stat); nested
+/// markers (`Local Storage/leveldb`, `Network/Cookies`) require the first path
+/// segment as a child directory, then a single stat of the leaf.
+fn marker_present(dir: &Path, entries: &[std::fs::DirEntry], m: &ProfileMarker) -> bool {
+    let first = match m.relative_path.split('/').next() {
+        Some(f) => f,
+        None => return false,
+    };
+    if m.relative_path.contains('/') {
+        if !entries
+            .iter()
+            .any(|e| entry_matches(e, first, MarkerKind::Dir))
+        {
+            return false;
+        }
+        let full = dir.join(m.relative_path);
+        match m.kind {
+            MarkerKind::File => full.is_file(),
+            MarkerKind::Dir => full.is_dir(),
+        }
+    } else {
+        entries.iter().any(|e| entry_matches(e, first, m.kind))
+    }
+}
+
+fn entry_matches(e: &std::fs::DirEntry, name: &str, kind: MarkerKind) -> bool {
+    if e.file_name().to_string_lossy() != name {
+        return false;
+    }
+    e.file_type().is_ok_and(|t| match kind {
+        MarkerKind::File => t.is_file(),
+        MarkerKind::Dir => t.is_dir(),
+    })
+}
+
+fn has_embedded_container_subdir(entries: &[std::fs::DirEntry]) -> bool {
+    entries.iter().any(|e| {
+        e.file_type().is_ok_and(|t| t.is_dir()) && {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            EMBEDDED_CONTAINER_SUBDIRS
+                .iter()
+                .any(|s| name.eq_ignore_ascii_case(s))
+        }
+    })
 }
 
 /// Known Chromium-based browser base directories relative to `home`.

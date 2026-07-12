@@ -59,9 +59,27 @@ pub fn triage_profile(profile_path: &Path, browser: BrowserFamily) -> Result<Tri
     })
 }
 
-/// Triage all discovered profiles under a home directory.
+/// Triage all browser profiles discovered under a home directory.
 pub fn triage(home_dir: &Path) -> Result<TriageReport> {
-    let profiles = browser_forensic_discovery::discover_profiles(home_dir);
+    Ok(triage_profiles(
+        browser_forensic_discovery::discover_profiles(home_dir),
+    ))
+}
+
+/// Triage every Chromium/Firefox profile and embedded-Chromium container found
+/// by a recursive structural sweep of an evidence tree rooted at `root`.
+///
+/// This is the general path: it discovers browser *and* embedded-Chromium
+/// containers (Electron / WebView2 / CEF) anywhere under `root`, not only the
+/// canonical per-user profile locations that [`triage`] scans.
+pub fn triage_sweep(root: &Path) -> Result<TriageReport> {
+    Ok(triage_profiles(
+        browser_forensic_discovery::sweep_containers(root),
+    ))
+}
+
+/// Triage a set of already-discovered profiles into one consolidated report.
+fn triage_profiles(profiles: Vec<DiscoveredProfile>) -> TriageReport {
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as i64);
@@ -109,13 +127,13 @@ pub fn triage(home_dir: &Path) -> Result<TriageReport> {
 
     all_events.sort_by_key(|e| e.timestamp_ns);
 
-    Ok(TriageReport {
+    TriageReport {
         events: all_events,
         carved: all_carved,
         integrity: all_integrity,
         profiles,
         generated_at_ns: now_ns,
-    })
+    }
 }
 
 fn triage_chromium_profile(
@@ -321,5 +339,37 @@ mod tests {
         let _ = report.integrity.len();
         let _ = report.profiles.len();
         let _ = report.generated_at_ns;
+    }
+
+    #[test]
+    fn triage_sweep_discovers_and_attributes_nested_chrome_profile() {
+        let root = TempDir::new().expect("tempdir");
+        let default = root
+            .path()
+            .join("Users/x/AppData/Local/Google/Chrome/User Data/Default");
+        std::fs::create_dir_all(&default).expect("mkdir");
+        let history = default.join("History");
+        let conn = rusqlite::Connection::open(&history).expect("open");
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
+             INSERT INTO visits VALUES (1, 1, 13300000000000000, 0, 0);",
+        )
+        .expect("setup");
+        drop(conn);
+
+        let report = triage_sweep(root.path()).expect("triage_sweep");
+        assert!(
+            report
+                .profiles
+                .iter()
+                .any(|p| p.container.map(|c| c.app) == Some("Google Chrome")),
+            "sweep should discover + attribute the nested Chrome profile"
+        );
+        assert!(
+            !report.events.is_empty(),
+            "should have parsed history events"
+        );
     }
 }
