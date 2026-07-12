@@ -69,6 +69,9 @@ pub enum ArtifactKind {
     /// A page the browser stored a favicon for (Chromium `Favicons`). The
     /// `page_url` is an independent, cleartext source of visited URLs.
     Favicon,
+    /// A most-visited page cached for the new-tab page (Chromium `Top Sites`).
+    /// Frecency-ranked; no per-visit timestamp.
+    TopSite,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -93,6 +96,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::AuthToken => write!(f, "AuthToken"),
             Self::RecoveredDomain => write!(f, "RecoveredDomain"),
             Self::Favicon => write!(f, "Favicon"),
+            Self::TopSite => write!(f, "TopSite"),
         }
     }
 }
@@ -371,6 +375,12 @@ mod tests {
     fn artifact_kind_has_favicon_variant() {
         let _f = ArtifactKind::Favicon;
         assert_eq!(format!("{}", ArtifactKind::Favicon), "Favicon");
+    }
+
+    #[test]
+    fn artifact_kind_has_top_site_variant() {
+        let _t = ArtifactKind::TopSite;
+        assert_eq!(format!("{}", ArtifactKind::TopSite), "TopSite");
     }
 
     #[test]
