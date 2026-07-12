@@ -59,13 +59,7 @@ fn hsts_event(source: &str, host_hash: &str, entry: &Value) -> BrowserEvent {
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or is not valid JSON.
-pub fn parse_transport_security(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub: real implementation lands in the GREEN commit.
-    Ok(Vec::new())
-}
-
-#[allow(dead_code)]
-fn parse_transport_security_impl(path: &Path) -> Result<Vec<BrowserEvent>> {
+pub fn parse_transport_security(path: &Path) -> Result<Vec<BrowserEvent>> {
     let data = std::fs::read_to_string(path)?;
     let root: Value = serde_json::from_str(&data)?;
     let source = path.to_string_lossy().into_owned();
