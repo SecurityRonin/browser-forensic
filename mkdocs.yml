@@ -42,6 +42,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Product Requirements: prd.md
+  - Decryption validation: validation.md
   - Decisions:
       - Layered multi-crate workspace: decisions/0001-layered-multi-crate-workspace.md
       - One normalized BrowserEvent schema: decisions/0002-normalized-browserevent-schema.md
