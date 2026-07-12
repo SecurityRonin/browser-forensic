@@ -181,6 +181,32 @@ fn triage_chromium_profile(
         }
     }
 
+    // Credential / account metadata (secrets never decrypted). Per-artifact
+    // failures are absorbed so triage stays best-effort.
+    let login_data = path.join("Login Data");
+    if login_data.is_file() {
+        if let Ok(mut evts) = browser_forensic_chrome::parse_login_data(&login_data) {
+            events.append(&mut evts);
+        }
+    }
+    let web_data = path.join("Web Data");
+    if web_data.is_file() {
+        if let Ok(mut evts) = browser_forensic_chrome::parse_web_data(&web_data) {
+            events.append(&mut evts);
+        }
+    }
+    for prefs_name in ["Preferences", "Secure Preferences"] {
+        let prefs = path.join(prefs_name);
+        if prefs.is_file() {
+            if let Ok(mut evts) = browser_forensic_chrome::parse_preferences(&prefs) {
+                events.append(&mut evts);
+            }
+            if let Ok(mut evts) = browser_forensic_chrome::parse_permissions(&prefs) {
+                events.append(&mut evts);
+            }
+        }
+    }
+
     // Web storage: Local/Session Storage (LevelDB) and IndexedDB. Per-source
     // failures are absorbed inside the collector so triage stays best-effort.
     events.extend(browser_forensic_storage::collect_chromium_web_storage(path));
@@ -221,6 +247,20 @@ fn triage_firefox_profile(
             BrowserFamily::Firefox,
         ) {
             integrity.append(&mut ind);
+        }
+    }
+
+    // Credential / account metadata (secrets never decrypted).
+    let logins = path.join("logins.json");
+    if logins.is_file() {
+        if let Ok(mut evts) = browser_forensic_firefox::parse_login_data(&logins) {
+            events.append(&mut evts);
+        }
+    }
+    let perms = path.join("permissions.sqlite");
+    if perms.is_file() {
+        if let Ok(mut evts) = browser_forensic_firefox::parse_firefox_permissions(&perms) {
+            events.append(&mut evts);
         }
     }
 
