@@ -1742,6 +1742,41 @@ mod tests {
     }
 
     #[test]
+    fn run_recovered_domains_dips_dir_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join("DIPS")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE bounces(site TEXT PRIMARY KEY NOT NULL, first_user_activation_time INTEGER, last_user_activation_time INTEGER, first_bounce_time INTEGER, last_bounce_time INTEGER, first_web_authn_assertion_time INTEGER, last_web_authn_assertion_time INTEGER);
+             INSERT INTO bounces (site, last_user_activation_time) VALUES ('recovered.example.com', 13300000000000000);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_recovered_domains(dir.path(), fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_recovered_domains_network_persistent_state_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Network Persistent State");
+        std::fs::write(
+            &p,
+            br#"{"net":{"http_server_properties":{"servers":[{"server":"https://cdn.example.net"}]}}}"#,
+        )
+        .unwrap();
+        run_recovered_domains(&p, OutputFormat::Jsonl).unwrap();
+    }
+
+    #[test]
+    fn run_recovered_domains_unknown_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("random.dat");
+        std::fs::write(&p, b"x").unwrap();
+        assert!(run_recovered_domains(&p, OutputFormat::Text).is_err());
+    }
+
+    #[test]
     fn run_artifact_session_rejects_non_firefox() {
         let dir = chrome_history_dir();
         let p = chrome_history_path(&dir);
