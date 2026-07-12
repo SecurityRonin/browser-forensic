@@ -7,6 +7,53 @@
 //! consistent with a private session — or, equally, with normal browsing whose
 //! history was later cleared. Both explanations are reported; neither is proof.
 
+use std::collections::HashSet;
+
+use crate::IntegrityIndicator;
+
+/// Normalize a domain for comparison: trimmed, lowercased, without a leading
+/// `www.` so `www.example.com` and `example.com` compare equal.
+fn normalize(domain: &str) -> String {
+    let d = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+    d.strip_prefix("www.").map_or(d.clone(), str::to_string)
+}
+
+/// Compare domains recovered from network/state residue against the domains that
+/// appear in `history`/`visits`, returning an [`IntegrityIndicator::IncognitoResidue`]
+/// for every residual `(domain, source_artifact)` with no history match.
+///
+/// Pure and deterministic: the CLI/triage layer supplies the two domain sets it
+/// extracts from parsed artifacts. Each residual domain fires at most once per
+/// source artifact (deduplicated), and a domain present in history is never
+/// reported.
+#[must_use]
+pub fn check_incognito_residue(
+    residual_domains: &[(String, String)],
+    history_domains: &[String],
+) -> Vec<IntegrityIndicator> {
+    let history: HashSet<String> = history_domains
+        .iter()
+        .map(|d| normalize(d))
+        .filter(|d| !d.is_empty())
+        .collect();
+
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut indicators = Vec::new();
+    for (domain, source) in residual_domains {
+        let norm = normalize(domain);
+        if norm.is_empty() || history.contains(&norm) {
+            continue;
+        }
+        if seen.insert((norm.clone(), source.clone())) {
+            indicators.push(IntegrityIndicator::IncognitoResidue {
+                residual_domain: norm,
+                source_artifact: source.clone(),
+            });
+        }
+    }
+    indicators
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

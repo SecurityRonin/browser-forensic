@@ -13,6 +13,7 @@ pub mod sqlite_header;
 pub use cookies::check_cookie_integrity;
 pub use database::{check_database_integrity, check_wal_state};
 pub use history::check_history_integrity;
+pub use incognito::check_incognito_residue;
 pub use manual_edit::check_header_anomalies;
 pub use pages::check_page_state;
 
@@ -142,6 +143,14 @@ pub enum IntegrityIndicator {
         table: String,
         seq: i64,
         max_rowid: i64,
+    },
+    /// A domain present in a network/state residue artifact has no corresponding
+    /// `history`/`visits` entry. Consistent with a private/incognito session (which
+    /// writes almost nothing to disk) OR with normal browsing whose history was
+    /// later cleared — both explanations apply.
+    IncognitoResidue {
+        residual_domain: String,
+        source_artifact: String,
     },
 }
 
@@ -292,6 +301,13 @@ impl IntegrityIndicator {
                  rowid is {max_rowid}",
                 path.display()
             ),
+            Self::IncognitoResidue {
+                residual_domain,
+                source_artifact,
+            } => format!(
+                "{residual_domain} appears in {source_artifact} but has no history/visits \
+                 entry"
+            ),
         }
     }
 
@@ -379,6 +395,11 @@ impl IntegrityIndicator {
                 "AUTOINCREMENT never reuses values, so this can arise from ordinary \
                  deletion of the highest-rowid rows or an insert rolled back by a crash, \
                  with no external editing."
+            }
+            Self::IncognitoResidue { .. } => {
+                "Equally consistent with normal browsing whose history was later cleared, \
+                 or with a domain reached only by a background/prefetch request that the \
+                 browser does not record in history — not only a private session."
             }
         }
     }
@@ -596,6 +617,10 @@ mod tests {
                 table: "urls".to_string(),
                 seq: 3,
                 max_rowid: 2,
+            },
+            IntegrityIndicator::IncognitoResidue {
+                residual_domain: "secret.example.com".to_string(),
+                source_artifact: "Network Persistent State".to_string(),
             },
         ]
     }
