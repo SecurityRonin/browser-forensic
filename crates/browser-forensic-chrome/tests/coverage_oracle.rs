@@ -107,3 +107,23 @@ fn top_sites_count_matches_sqlite3_oracle() {
     );
     eprintln!("Top Sites oracle matched: {oracle} sites");
 }
+
+#[test]
+fn shortcuts_count_matches_sqlite3_oracle() {
+    let Some((_profile, shortcuts)) = setup("Shortcuts") else {
+        return;
+    };
+    let parsed = browser_forensic_chrome::parse_shortcuts(&shortcuts).expect("parse Shortcuts");
+    let oracle = sqlite_count(
+        &shortcuts,
+        "SELECT count(*) FROM omni_box_shortcuts WHERE text <> ''",
+    )
+    .expect("oracle");
+    assert_eq!(
+        parsed.len() as i64,
+        oracle,
+        "Shortcuts count: parser {} vs sqlite3 {oracle}",
+        parsed.len()
+    );
+    eprintln!("Shortcuts oracle matched: {oracle} typed shortcuts");
+}

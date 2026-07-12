@@ -24,9 +24,64 @@ const SHORTCUT_NOTE: &str =
 /// # Errors
 ///
 /// Returns an error only if the SQLite file cannot be opened.
-pub fn parse_shortcuts(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub — replaced by the real query in GREEN.
-    Ok(Vec::new())
+pub fn parse_shortcuts(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let source = path.to_string_lossy().into_owned();
+
+    let sql = "SELECT text, fill_into_edit, url, contents, last_access_time, number_of_hits \
+               FROM omni_box_shortcuts \
+               WHERE text <> '' \
+               ORDER BY last_access_time ASC";
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return Ok(Vec::new());
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let text: String = row.get(0)?;
+        let fill_into_edit: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+        let url: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        let contents: String = row.get::<_, Option<String>>(3)?.unwrap_or_default();
+        let last_access_time: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or_default();
+        let number_of_hits: i64 = row.get::<_, Option<i64>>(5)?.unwrap_or_default();
+        Ok((
+            text,
+            fill_into_edit,
+            url,
+            contents,
+            last_access_time,
+            number_of_hits,
+        ))
+    }) else {
+        return Ok(Vec::new());
+    };
+
+    let events = rows
+        .filter_map(std::result::Result::ok)
+        .map(
+            |(text, fill_into_edit, url, contents, last_access_time, number_of_hits)| {
+                let ts_ns = if last_access_time > 0 {
+                    webkit_micros_to_unix_nanos(last_access_time)
+                } else {
+                    0
+                };
+                BrowserEvent::new(
+                    ts_ns,
+                    BrowserFamily::Chromium,
+                    ArtifactKind::Shortcut,
+                    &source,
+                    format!("typed \u{201c}{text}\u{201d} \u{2192} {url}"),
+                )
+                .with_attr("typed_text", json!(text))
+                .with_attr("fill_into_edit", json!(fill_into_edit))
+                .with_attr("url", json!(url))
+                .with_attr("contents", json!(contents))
+                .with_attr("last_access_time", json!(last_access_time))
+                .with_attr("number_of_hits", json!(number_of_hits))
+                .with_attr("note", json!(SHORTCUT_NOTE))
+            },
+        )
+        .collect();
+    Ok(events)
 }
 
 #[cfg(test)]

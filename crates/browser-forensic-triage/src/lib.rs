@@ -247,6 +247,13 @@ fn triage_chromium_profile(
         }
     }
 
+    let shortcuts_path = path.join("Shortcuts");
+    if shortcuts_path.is_file() {
+        if let Ok(mut evts) = browser_forensic_chrome::parse_shortcuts(&shortcuts_path) {
+            events.append(&mut evts);
+        }
+    }
+
     // Credential / account metadata (secrets never decrypted). Per-artifact
     // failures are absorbed so triage stays best-effort.
     let login_data = path.join("Login Data");
@@ -500,6 +507,29 @@ mod tests {
                 .any(|e| e.artifact == ArtifactKind::TopSite
                     && e.attrs.get("url") == Some(&serde_json::json!("https://most.example/"))),
             "expected TopSite events"
+        );
+    }
+
+    #[test]
+    fn triage_chromium_includes_shortcuts() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        let sc = dir.path().join("Shortcuts");
+        let conn = rusqlite::Connection::open(&sc).expect("open shortcuts");
+        conn.execute_batch(
+            "CREATE TABLE omni_box_shortcuts (id VARCHAR PRIMARY KEY, text VARCHAR, fill_into_edit VARCHAR, url VARCHAR, contents VARCHAR, last_access_time INTEGER, number_of_hits INTEGER);
+             INSERT INTO omni_box_shortcuts (id, text, url, last_access_time, number_of_hits) VALUES ('s1', 'secret site', 'https://secret.example/', 13300000000000000, 2);",
+        ).expect("setup shortcuts");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        assert!(
+            report
+                .events
+                .iter()
+                .any(|e| e.artifact == ArtifactKind::Shortcut
+                    && e.attrs.get("typed_text") == Some(&serde_json::json!("secret site"))),
+            "expected Shortcut events surfacing the typed text"
         );
     }
 

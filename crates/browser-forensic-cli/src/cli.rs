@@ -143,6 +143,8 @@ enum Command {
     Favicons(ArtifactArgs),
     /// Parse a Chromium `Top Sites` database (most-visited / frecency).
     TopSites(ArtifactArgs),
+    /// Parse a Chromium `Shortcuts` database (omnibox strings the user typed).
+    Shortcuts(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -246,6 +248,7 @@ where
         Some(Command::Storage(a)) => run_storage(&a.path, a.format),
         Some(Command::Favicons(a)) => run_favicons(&a.path, a.format),
         Some(Command::TopSites(a)) => run_top_sites(&a.path, a.format),
+        Some(Command::Shortcuts(a)) => run_shortcuts(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -1321,6 +1324,19 @@ pub fn run_top_sites(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 shortcuts PATH` — parse a Chromium `Shortcuts` database: the omnibox
+/// strings the user typed and the URLs they selected. Chromium-only.
+///
+/// # Errors
+/// Returns an error if the `Shortcuts` database cannot be opened.
+pub fn run_shortcuts(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_chrome::parse_shortcuts(path)
+        .with_context(|| format!("parsing Shortcuts from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
 /// `br4n6 recovered-domains PATH` — recover domains the user contacted that
 /// survive a history clear, from network/state artifacts. `PATH` is a profile
 /// directory (every recovered-domain source beneath it is aggregated) or a
@@ -1773,6 +1789,22 @@ mod tests {
         drop(conn);
         for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
             run_top_sites(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_shortcuts_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Shortcuts");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE omni_box_shortcuts (id VARCHAR PRIMARY KEY, text VARCHAR, fill_into_edit VARCHAR, url VARCHAR, contents VARCHAR, last_access_time INTEGER, number_of_hits INTEGER);
+             INSERT INTO omni_box_shortcuts (id, text, url, last_access_time, number_of_hits) VALUES ('s1', 'gh', 'https://github.com/', 13327626000000000, 3);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_shortcuts(&p, fmt).unwrap();
         }
     }
 
