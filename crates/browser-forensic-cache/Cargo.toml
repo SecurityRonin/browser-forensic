@@ -8,7 +8,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
 thiserror = { workspace = true }
 flate2 = { workspace = true }
 brotli = { workspace = true }

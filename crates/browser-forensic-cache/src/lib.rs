@@ -14,9 +14,14 @@
 pub mod decompress;
 pub mod error;
 pub mod http_meta;
+pub mod resource;
 pub mod simple;
 
 pub use decompress::{decode_body, DecodeOutcome, DecompressLimits};
 pub use error::CacheError;
 pub use http_meta::{parse_http_meta, HttpMeta};
+pub use resource::{
+    parse_simple_cache_dir, parse_simple_cache_dir_with, parse_simple_cache_file,
+    resource_from_entry_bytes, CachedResource,
+};
 pub use simple::{parse_simple_entry, SimpleEntry};

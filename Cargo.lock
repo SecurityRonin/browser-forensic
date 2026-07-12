@@ -251,7 +251,6 @@ name = "browser-forensic-cache"
 version = "0.1.0"
 dependencies = [
  "brotli",
- "browser-forensic-core",
  "flate2",
  "ruzstd",
  "tempfile",
