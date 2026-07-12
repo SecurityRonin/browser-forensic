@@ -22,6 +22,15 @@ pub fn unix_secs_to_nanos(secs: i64) -> i64 {
     secs * 1_000_000_000
 }
 
+/// Convert Unix epoch **seconds** carried as a floating-point value (Chromium's
+/// `TransportSecurity` `sts_observed` / `expiry`) into Unix nanoseconds,
+/// preserving sub-second precision without hand-rolling epoch math.
+pub fn unix_secs_f64_to_nanos(secs: f64) -> i64 {
+    let whole = secs.trunc() as i64;
+    let frac_ns = (secs.fract() * 1_000_000_000.0) as i64;
+    whole * 1_000_000_000 + frac_ns
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +79,15 @@ mod tests {
     #[test]
     fn unix_secs_to_nanos_multiplies_by_1_000_000_000() {
         assert_eq!(unix_secs_to_nanos(1), 1_000_000_000);
+    }
+
+    #[test]
+    fn unix_secs_f64_preserves_subsecond() {
+        assert_eq!(unix_secs_f64_to_nanos(1.0), 1_000_000_000);
+        assert_eq!(
+            unix_secs_f64_to_nanos(1_700_000_000.5),
+            1_700_000_000_500_000_000
+        );
+        assert_eq!(unix_secs_f64_to_nanos(0.0), 0);
     }
 }

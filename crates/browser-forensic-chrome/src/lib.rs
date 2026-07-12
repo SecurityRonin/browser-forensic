@@ -16,6 +16,7 @@ pub mod network_persistent_state;
 pub mod permissions;
 pub mod preferences;
 pub mod session;
+pub mod transport_security;
 pub mod visits;
 pub mod web_data;
 
@@ -34,5 +35,6 @@ pub use network_persistent_state::parse_network_persistent_state;
 pub use permissions::parse_permissions;
 pub use preferences::parse_preferences;
 pub use session::parse_session;
+pub use transport_security::parse_transport_security;
 pub use visits::{collapse_redirects, parse_visits};
 pub use web_data::parse_web_data;
