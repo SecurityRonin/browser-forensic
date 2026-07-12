@@ -40,13 +40,7 @@ pub fn parse_site_security(path: &Path) -> anyhow::Result<Vec<BrowserEvent>> {
 
 /// Pure line parser (testable and fuzzable without touching the filesystem).
 #[must_use]
-pub fn parse_lines(_text: &str, _source: &str) -> Vec<BrowserEvent> {
-    // RED stub: real implementation lands in the GREEN commit.
-    Vec::new()
-}
-
-#[allow(dead_code)]
-fn parse_lines_impl(text: &str, source: &str) -> Vec<BrowserEvent> {
+pub fn parse_lines(text: &str, source: &str) -> Vec<BrowserEvent> {
     let mut events = Vec::new();
     for line in text.lines() {
         if let Some(ev) = parse_line(line, source) {
