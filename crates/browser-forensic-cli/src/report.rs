@@ -81,6 +81,9 @@ fn timestamp_semantic(kind: &ArtifactKind) -> (Macb, &'static str) {
         ArtifactKind::Shortcut => (Macb::Access, "Last Used Time"),
         ArtifactKind::NetworkPrediction => (Macb::Access, "Last Used Time"),
         ArtifactKind::MediaPlayback => (Macb::Access, "Last Playback Time"),
+        ArtifactKind::TypedInput => (Macb::Access, "Typed Input Time"),
+        ArtifactKind::Annotation => (Macb::Birth, "Annotation Added Time"),
+        ArtifactKind::RecoveredBookmark => (Macb::Birth, "Added Time (from backup)"),
     }
 }
 

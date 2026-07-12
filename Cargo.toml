@@ -92,6 +92,10 @@ similar_names = { level = "allow", priority = 1 }
 doc_markdown = { level = "allow", priority = 1 }
 needless_pass_by_value = { level = "allow", priority = 1 }
 items_after_statements = { level = "allow", priority = 1 }
+# Function length is a subjective structure lint, not a safety property; the
+# never-panic/bounds-check guarantees are enforced by the denies above and by
+# fuzzing, not by an arbitrary line cap. Left to author discretion.
+too_many_lines = { level = "allow", priority = 1 }
 # `match { Ok(x)=>x, Err(_)=>return/continue }` vs `let Ok(x)=.. else {..}` is a
 # style preference; the existing match form is clear and behavior-identical.
 manual_let_else = { level = "allow", priority = 1 }

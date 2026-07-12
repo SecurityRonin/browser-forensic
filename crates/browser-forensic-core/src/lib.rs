@@ -81,6 +81,18 @@ pub enum ArtifactKind {
     /// Audio/video playback recorded by Chromium `Media History` (watch time,
     /// resume position, media title).
     MediaPlayback,
+    /// A string the user typed into the address bar and the page it resolved to
+    /// (Firefox `moz_inputhistory`). Direct evidence of typed intent; carries a
+    /// decayed `use_count`, not a per-keystroke timestamp.
+    TypedInput,
+    /// A page annotation recorded by Firefox (`moz_annos` +
+    /// `moz_anno_attributes`): a named key/value the browser attached to a page
+    /// (reading-list state, visit-count metadata, …). Stated as recorded.
+    Annotation,
+    /// A bookmark found in a Firefox `bookmarkbackups/*.jsonlz4` backup but
+    /// absent from the current `moz_bookmarks` — consistent with deletion after
+    /// that backup was written. The backup date bounds *when*, not who or why.
+    RecoveredBookmark,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -109,6 +121,9 @@ impl std::fmt::Display for ArtifactKind {
             Self::Shortcut => write!(f, "Shortcut"),
             Self::NetworkPrediction => write!(f, "NetworkPrediction"),
             Self::MediaPlayback => write!(f, "MediaPlayback"),
+            Self::TypedInput => write!(f, "TypedInput"),
+            Self::Annotation => write!(f, "Annotation"),
+            Self::RecoveredBookmark => write!(f, "RecoveredBookmark"),
         }
     }
 }
