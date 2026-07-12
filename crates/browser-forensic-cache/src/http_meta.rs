@@ -140,7 +140,10 @@ fn read_i64(data: &[u8], off: usize) -> Option<i64> {
 
 /// Convert a `base::Time` internal value (µs since 1601-01-01) to Unix ns.
 /// Returns `None` for a null time (0) or on overflow.
-fn win_micros_to_unix_ns(internal_micros: i64) -> Option<i64> {
+///
+/// Shared with the CacheStorage metadata parser, whose `response_time` /
+/// `entry_time` proto fields carry the same `base::Time` internal value.
+pub(crate) fn win_micros_to_unix_ns(internal_micros: i64) -> Option<i64> {
     if internal_micros == 0 {
         return None;
     }

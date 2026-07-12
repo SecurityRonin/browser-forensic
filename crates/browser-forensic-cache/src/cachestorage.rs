@@ -142,6 +142,83 @@ pub fn parse_cachestorage_index(bytes: &[u8]) -> CacheStorageIndex {
     }
 }
 
+/// Decoded `CacheMetadata` proto from a CacheStorage entry's **stream 0**
+/// (`content/browser/cache_storage/cache_storage.proto`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CacheStorageMeta {
+    /// The request method (`CacheRequest.method`), e.g. `GET`, `POST`.
+    pub request_method: Option<String>,
+    /// The request headers (`CacheRequest.headers`), in file order.
+    pub request_headers: Vec<(String, String)>,
+    /// The HTTP status code (`CacheResponse.status_code`).
+    pub http_status: Option<u16>,
+    /// The HTTP status text (`CacheResponse.status_text`), often empty for HTTP/2.
+    pub status_text: Option<String>,
+    /// The Fetch response type (`CacheResponse.response_type`) as its raw enum
+    /// value; see [`response_type_name`](CacheStorageMeta::response_type_name).
+    pub response_type: Option<i64>,
+    /// The response headers (`CacheResponse.headers`), in file order.
+    pub headers: Vec<(String, String)>,
+    /// The computed MIME type (`CacheResponse.mime_type`), if stored.
+    pub mime_type: Option<String>,
+    /// Response time (Unix nanoseconds), from `CacheResponse.response_time`.
+    pub response_time_ns: Option<i64>,
+    /// Cache entry time (Unix nanoseconds), from `CacheMetadata.entry_time`.
+    pub entry_time_ns: Option<i64>,
+}
+
+impl CacheStorageMeta {
+    /// Case-insensitive lookup of the first *response* header with this name.
+    #[must_use]
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// The response `Content-Type` header value, if present.
+    #[must_use]
+    pub fn content_type(&self) -> Option<&str> {
+        self.header("content-type")
+    }
+
+    /// The response `Content-Encoding` header value, if present. Note: in the
+    /// Cache API the stored body is already decoded, so this is metadata about
+    /// the *original wire* response, not the stored bytes.
+    #[must_use]
+    pub fn content_encoding(&self) -> Option<&str> {
+        self.header("content-encoding")
+    }
+
+    /// The Fetch `Response.type` name for the stored `response_type` enum
+    /// (`content.proto CacheResponse.ResponseType`). An `opaque` type flags a
+    /// cross-origin no-cors response whose body/headers the page could not read.
+    #[must_use]
+    pub fn response_type_name(&self) -> Option<&'static str> {
+        Some(match self.response_type? {
+            0 => "basic",
+            1 => "cors",
+            2 => "default",
+            3 => "error",
+            4 => "opaque",
+            5 => "opaqueredirect",
+            _ => "unknown",
+        })
+    }
+}
+
+/// Parse a CacheStorage entry's stream 0 (`CacheMetadata` proto) into
+/// [`CacheStorageMeta`].
+///
+/// Never fails: malformed/truncated proto input returns whatever could be
+/// recovered (possibly an empty [`CacheStorageMeta`]), never a panic.
+#[must_use]
+pub fn parse_cachestorage_metadata(_stream0: &[u8]) -> CacheStorageMeta {
+    // GREEN in the next commit.
+    CacheStorageMeta::default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +338,119 @@ mod tests {
             caches: vec![],
         };
         assert_eq!(idx2.origin_attribution(), Some("https://og/"));
+    }
+
+    // --- CacheMetadata (stream 0) fixtures ---
+
+    /// A `CacheHeaderMap`: name(1)=name, value(2)=value.
+    fn header_msg(name: &str, value: &str) -> Vec<u8> {
+        let mut m = Vec::new();
+        len_field(1, name.as_bytes(), &mut m);
+        len_field(2, value.as_bytes(), &mut m);
+        m
+    }
+
+    /// A `CacheRequest`: method(1), repeated headers(2).
+    fn request_msg(method: &str, headers: &[(&str, &str)]) -> Vec<u8> {
+        let mut m = Vec::new();
+        len_field(1, method.as_bytes(), &mut m);
+        for (k, v) in headers {
+            let h = header_msg(k, v);
+            len_field(2, &h, &mut m);
+        }
+        m
+    }
+
+    /// A `CacheResponse`: status_code(1), status_text(2), response_type(3),
+    /// repeated headers(4), response_time(6), mime_type(13).
+    #[allow(clippy::too_many_arguments)]
+    fn response_msg(
+        status: u64,
+        status_text: &str,
+        rtype: u64,
+        headers: &[(&str, &str)],
+        response_time_us: u64,
+        mime: &str,
+    ) -> Vec<u8> {
+        let mut m = Vec::new();
+        varint_field(1, status, &mut m);
+        len_field(2, status_text.as_bytes(), &mut m);
+        varint_field(3, rtype, &mut m);
+        for (k, v) in headers {
+            let h = header_msg(k, v);
+            len_field(4, &h, &mut m);
+        }
+        varint_field(6, response_time_us, &mut m);
+        len_field(13, mime.as_bytes(), &mut m);
+        m
+    }
+
+    /// A full `CacheMetadata`: request(1), response(2), entry_time(3).
+    fn metadata_msg(request: &[u8], response: &[u8], entry_time_us: u64) -> Vec<u8> {
+        let mut m = Vec::new();
+        len_field(1, request, &mut m);
+        len_field(2, response, &mut m);
+        varint_field(3, entry_time_us, &mut m);
+        m
+    }
+
+    // 2026-07-08T03:40:23.945607Z as base::Time internal µs (µs since 1601),
+    // matching the real Slack entry decoded by protoc --decode_raw (tier-1).
+    const RESP_WIN_US: u64 = 13_427_955_623_945_607;
+    // WIN_TO_UNIX_MICROS = 11_644_473_600_000_000; Unix ns = (win-offset)*1000.
+    const RESP_UNIX_NS: i64 = (RESP_WIN_US as i64 - 11_644_473_600_000_000) * 1_000;
+
+    #[test]
+    fn parses_request_response_and_times() {
+        let req = request_msg("GET", &[("accept", "*/*")]);
+        let resp = response_msg(
+            200,
+            "",
+            1, // CORS_TYPE
+            &[
+                ("content-type", "application/javascript; charset=UTF-8"),
+                ("content-encoding", "br"),
+            ],
+            RESP_WIN_US,
+            "application/javascript",
+        );
+        let meta_bytes = metadata_msg(&req, &resp, RESP_WIN_US);
+        let meta = parse_cachestorage_metadata(&meta_bytes);
+
+        assert_eq!(meta.request_method.as_deref(), Some("GET"));
+        assert_eq!(meta.request_headers, vec![("accept".into(), "*/*".into())]);
+        assert_eq!(meta.http_status, Some(200));
+        assert_eq!(meta.response_type, Some(1));
+        assert_eq!(meta.response_type_name(), Some("cors"));
+        assert_eq!(
+            meta.content_type(),
+            Some("application/javascript; charset=UTF-8")
+        );
+        assert_eq!(meta.content_encoding(), Some("br"));
+        assert_eq!(meta.mime_type.as_deref(), Some("application/javascript"));
+        assert_eq!(meta.response_time_ns, Some(RESP_UNIX_NS));
+        assert_eq!(meta.entry_time_ns, Some(RESP_UNIX_NS));
+    }
+
+    #[test]
+    fn header_lookup_is_case_insensitive() {
+        let req = request_msg("POST", &[]);
+        let resp = response_msg(204, "No Content", 2, &[("X-Custom", "v")], 0, "");
+        let meta = parse_cachestorage_metadata(&metadata_msg(&req, &resp, 0));
+        assert_eq!(meta.request_method.as_deref(), Some("POST"));
+        assert_eq!(meta.http_status, Some(204));
+        assert_eq!(meta.header("x-CUSTOM"), Some("v"));
+        // Zero times -> None.
+        assert_eq!(meta.response_time_ns, None);
+        assert_eq!(meta.entry_time_ns, None);
+    }
+
+    #[test]
+    fn garbage_metadata_yields_empty_no_panic() {
+        let meta = parse_cachestorage_metadata(&[0xff, 0x81, 0x80, 0x00, 0x2a]);
+        assert!(meta.request_method.is_none());
+        assert!(meta.headers.is_empty());
+        let meta2 = parse_cachestorage_metadata(&[]);
+        assert!(meta2.http_status.is_none());
     }
 }
