@@ -63,9 +63,36 @@ pub fn resource_from_entry_bytes(
     sparse_file: Option<PathBuf>,
     limits: &DecompressLimits,
 ) -> Result<CachedResource, CacheError> {
-    // RED stub — implementation added in the GREEN commit.
-    let _ = (data, &source_file, &sparse_file, limits);
-    Err(CacheError::TooSmall { found: 0, need: 0 })
+    let entry = parse_simple_entry(data)?;
+    let meta = parse_http_meta(&entry.stream0);
+    let content_type = meta.content_type().map(str::to_string);
+    let content_encoding = meta.content_encoding().map(str::to_string);
+    let raw_body = entry.stream1;
+
+    let (decoded_body, body_decoded, decode_note) =
+        match decode_body(content_encoding.as_deref(), &raw_body, limits) {
+            Ok(outcome) => (outcome.bytes, outcome.decoded, outcome.note),
+            // A decode failure never discards the resource: keep the raw body
+            // and surface the reason (fail-loud, no data loss).
+            Err(e) => (raw_body.clone(), false, Some(format!("decode failed: {e}"))),
+        };
+
+    Ok(CachedResource {
+        url: entry.url,
+        http_status: meta.http_status,
+        status_line: meta.status_line,
+        headers: meta.headers,
+        content_type,
+        content_encoding,
+        request_time_ns: meta.request_time_ns,
+        response_time_ns: meta.response_time_ns,
+        raw_body,
+        decoded_body,
+        body_decoded,
+        decode_note,
+        source_file,
+        sparse_file,
+    })
 }
 
 /// Parse a single `[hash]_0` file into a [`CachedResource`].
@@ -78,9 +105,20 @@ pub fn parse_simple_cache_file(
     path: &Path,
     limits: &DecompressLimits,
 ) -> Result<CachedResource, CacheError> {
-    // RED stub — implementation added in the GREEN commit.
-    let _ = (path, limits);
-    Err(CacheError::TooSmall { found: 0, need: 0 })
+    let data = std::fs::read(path).map_err(|e| CacheError::Io {
+        path: path.display().to_string(),
+        detail: e.to_string(),
+    })?;
+    let sparse_file = sparse_companion(path);
+    resource_from_entry_bytes(&data, path.to_path_buf(), sparse_file, limits)
+}
+
+/// Given a `[hash]_0` path, return its `[hash]_s` companion if that file exists.
+fn sparse_companion(entry_path: &Path) -> Option<PathBuf> {
+    let name = entry_path.file_name()?.to_str()?;
+    let stem = name.strip_suffix("_0")?;
+    let sparse = entry_path.with_file_name(format!("{stem}_s"));
+    sparse.is_file().then_some(sparse)
 }
 
 /// Enumerate every recoverable [`CachedResource`] in a `Cache/` (or
@@ -98,15 +136,31 @@ pub fn parse_simple_cache_dir_with(
     cache_dir: &Path,
     limits: &DecompressLimits,
 ) -> Vec<CachedResource> {
-    // RED stub — implementation added in the GREEN commit.
-    let _ = (cache_dir, limits);
-    Vec::new()
+    let mut out = Vec::new();
+    let entries = match std::fs::read_dir(cache_dir) {
+        Ok(e) => e,
+        Err(_) => return out,
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let is_entry_file = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with("_0"));
+        if !is_entry_file || !path.is_file() {
+            continue;
+        }
+        if let Ok(resource) = parse_simple_cache_file(&path, limits) {
+            out.push(resource);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simple::{EOF_MAGIC, EOF_SIZE, HEADER_MAGIC, HEADER_SIZE};
+    use crate::simple::{EOF_MAGIC, HEADER_MAGIC};
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Write;
@@ -140,7 +194,6 @@ mod tests {
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&stream_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]);
-        let _ = EOF_SIZE;
     }
 
     #[test]
