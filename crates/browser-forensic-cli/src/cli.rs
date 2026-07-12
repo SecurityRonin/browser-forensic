@@ -1274,11 +1274,11 @@ pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
 /// # Errors
 /// Returns an error if the directory cannot be opened or read as LevelDB.
 pub fn run_indexeddb(path: &Path, format: OutputFormat) -> Result<()> {
-    // RED stub — real handler lands in the GREEN commit.
-    anyhow::bail!(
-        "run_indexeddb not implemented ({}, {format:?})",
-        path.display()
-    );
+    let mut events = browser_forensic_storage::parse_indexeddb(path)
+        .with_context(|| format!("decoding IndexedDB from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    emit_events(&events, format);
+    Ok(())
 }
 
 /// `br4n6 permissions PATH` — surface per-site permission grants. `PATH` is a
