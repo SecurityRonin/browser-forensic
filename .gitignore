@@ -21,3 +21,6 @@ crates/snss-core/tests/fixtures/*
 
 # Agent worktrees / local session state
 .claude/
+
+# mkdocs build output
+/site/
