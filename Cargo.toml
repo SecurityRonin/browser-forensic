@@ -89,11 +89,3 @@ format_push_string = { level = "allow", priority = 1 }
 # `-> Result<()>` signature so the dispatcher calls them identically, even
 # where one handler currently never errors.
 unnecessary_wraps = { level = "allow", priority = 1 }
-
-# TODO(publish): drop this patch once forensicnomicon 1.5.0 is published to
-# crates.io. Container discovery needs forensicnomicon::browser_profiles, which
-# lands in 1.5.0 (1.4.0 is already published). Until then, build against the
-# sibling checkout on its release branch. CI stays red on this branch until
-# 1.5.0 publishes — that is the intended ordering gate.
-[patch.crates-io]
-forensicnomicon = { path = "../forensicnomicon" }
