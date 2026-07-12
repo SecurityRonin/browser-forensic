@@ -116,8 +116,39 @@ pub fn resource_from_cache2_bytes(
     source_file: PathBuf,
     limits: &DecompressLimits,
 ) -> Result<CachedResource, CacheError> {
-    let _ = (data, source_file, limits, decode_body);
-    unimplemented!("firefox cache2 body extraction — GREEN pending")
+    let meta = parse_cache2_metadata(data)?;
+
+    let raw_body = data
+        .get(..meta.body_len)
+        .ok_or(CacheError::OutOfBounds {
+            field: "bodyLen",
+            value: meta.body_len as u64,
+            file_len: data.len(),
+        })?
+        .to_vec();
+
+    let (decoded_body, body_decoded, decode_note) =
+        match decode_body(meta.content_encoding.as_deref(), &raw_body, limits) {
+            Ok(outcome) => (outcome.bytes, outcome.decoded, outcome.note),
+            Err(e) => (raw_body.clone(), false, Some(format!("decode failed: {e}"))),
+        };
+
+    Ok(CachedResource {
+        url: meta.url,
+        http_status: meta.http_status,
+        status_line: meta.status_line,
+        headers: meta.headers,
+        content_type: meta.content_type,
+        content_encoding: meta.content_encoding,
+        request_time_ns: None,
+        response_time_ns: meta.last_fetched_ns,
+        raw_body,
+        decoded_body,
+        body_decoded,
+        decode_note,
+        source_file,
+        sparse_file: None,
+    })
 }
 
 /// Everything recovered from the metadata section of a `cache2` entry.
@@ -492,5 +523,15 @@ mod tests {
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].url, "https://a/1");
         assert_eq!(res[1].url, "https://a/2");
+    }
+
+    #[test]
+    fn url_from_key_handles_context_tags() {
+        assert_eq!(url_from_key(":https://a/"), "https://a/");
+        assert_eq!(
+            url_from_key("O^partitionKey=%28https%2Cb.com%29,:https://b.com/x"),
+            "https://b.com/x"
+        );
+        assert_eq!(url_from_key("no-colon-key"), "no-colon-key");
     }
 }
