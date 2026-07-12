@@ -1991,7 +1991,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn run_storage_webappsstore_all_formats() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("webappsstore.sqlite");
