@@ -42,6 +42,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_decrypt_dpapi"
+path = "fuzz_targets/fuzz_decrypt_dpapi.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_carve_sqlite"
 path = "fuzz_targets/fuzz_carve_sqlite.rs"
 test = false
