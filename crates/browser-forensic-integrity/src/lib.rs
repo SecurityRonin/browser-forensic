@@ -5,6 +5,7 @@
 pub mod cookies;
 pub mod database;
 pub mod history;
+pub mod pages;
 
 pub use cookies::check_cookie_integrity;
 pub use database::{check_database_integrity, check_wal_state};

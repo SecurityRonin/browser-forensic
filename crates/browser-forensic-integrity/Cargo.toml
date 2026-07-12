@@ -13,6 +13,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
 rusqlite = { workspace = true }
+sqlite-core = { workspace = true }
+sqlite-forensic = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

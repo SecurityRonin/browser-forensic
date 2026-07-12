@@ -426,6 +426,8 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sqlite-core",
+ "sqlite-forensic",
  "tempfile",
  "thiserror 2.0.18",
 ]
