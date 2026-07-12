@@ -42,6 +42,7 @@ pub use chromium_macos::{
     decrypt_chromium_value_macos, derive_chromium_macos_key, fetch_macos_keychain_key,
 };
 pub use chromium_win::decrypt_chromium_value_win;
+pub use domain_hash::strip_domain_hash_prefix;
 pub use dpapi::{
     decrypt_chromium_key_dpapi, decrypt_dpapi_blob, decrypt_masterkey_file, DpapiSecret,
 };

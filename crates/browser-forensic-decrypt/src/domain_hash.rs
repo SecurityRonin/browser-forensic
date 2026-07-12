@@ -39,8 +39,13 @@ const DOMAIN_HASH_LEN: usize = 32;
 /// `SHA-256(host_key)`, so it passes through intact.
 #[must_use]
 pub fn strip_domain_hash_prefix(plaintext: &[u8], host_key: &str) -> (Vec<u8>, bool) {
-    let _ = (plaintext, host_key);
-    todo!("implemented in the GREEN step")
+    if plaintext.len() >= DOMAIN_HASH_LEN {
+        let expected = Sha256::digest(host_key.as_bytes());
+        if plaintext[..DOMAIN_HASH_LEN] == expected[..] {
+            return (plaintext[DOMAIN_HASH_LEN..].to_vec(), true);
+        }
+    }
+    (plaintext.to_vec(), false)
 }
 
 #[cfg(test)]
