@@ -66,9 +66,76 @@ impl HttpMeta {
 /// (possibly an empty [`HttpMeta`]), never a panic.
 #[must_use]
 pub fn parse_http_meta(stream0: &[u8]) -> HttpMeta {
-    // RED stub — implementation added in the GREEN commit.
-    let _ = stream0;
+    if let Some(meta) = parse_structured(stream0) {
+        return meta;
+    }
+    // Fallback: recover the header block by scanning, without the timestamps.
+    if let Some(block) = scan_http_block(stream0) {
+        let (status_line, headers) = split_header_block(&block);
+        let http_status = status_line.as_deref().and_then(status_code);
+        return HttpMeta {
+            status_line,
+            http_status,
+            headers,
+            request_time_ns: None,
+            response_time_ns: None,
+        };
+    }
     HttpMeta::default()
+}
+
+/// Try the structured `HttpResponseInfo` pickle prefix. Returns `None` if the
+/// prefix does not validate (so the caller can fall back to scanning).
+fn parse_structured(stream0: &[u8]) -> Option<HttpMeta> {
+    // [u32 payload_size][i32 flags][i64 req][i64 resp][i32 hdr_len][hdr bytes]
+    let payload_size = read_u32(stream0, 0)? as usize;
+    let payload = stream0.get(4..4usize.checked_add(payload_size)?)?;
+    let req_us = read_i64(payload, 4)?;
+    let resp_us = read_i64(payload, 12)?;
+    let hdr_len = read_u32(payload, 20)? as usize;
+    let hdr_bytes = payload.get(24..24usize.checked_add(hdr_len)?)?;
+    let block = std::str::from_utf8(hdr_bytes).ok()?;
+    if !block.starts_with("HTTP/") {
+        return None;
+    }
+    let (status_line, headers) = split_header_block(block);
+    let http_status = status_line.as_deref().and_then(status_code);
+    Some(HttpMeta {
+        status_line,
+        http_status,
+        headers,
+        request_time_ns: win_micros_to_unix_ns(req_us),
+        response_time_ns: win_micros_to_unix_ns(resp_us),
+    })
+}
+
+/// Scan for an embedded NUL-delimited `HTTP/` header block. Reads from the
+/// first `HTTP/` marker up to a double-NUL terminator (or end of data).
+fn scan_http_block(stream0: &[u8]) -> Option<String> {
+    let start = stream0.windows(5).position(|w| w == b"HTTP/")?;
+    let rest = &stream0[start..];
+    // Terminate at the first double-NUL, if any.
+    let end = rest
+        .windows(2)
+        .position(|w| w == [0u8, 0u8])
+        .map_or(rest.len(), |p| p + 1);
+    std::str::from_utf8(&rest[..end]).ok().map(str::to_string)
+}
+
+#[inline]
+fn read_u32(data: &[u8], off: usize) -> Option<u32> {
+    let end = off.checked_add(4)?;
+    let s = data.get(off..end)?;
+    Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+}
+
+#[inline]
+fn read_i64(data: &[u8], off: usize) -> Option<i64> {
+    let end = off.checked_add(8)?;
+    let s = data.get(off..end)?;
+    let mut b = [0u8; 8];
+    b.copy_from_slice(s);
+    Some(i64::from_le_bytes(b))
 }
 
 /// Convert a `base::Time` internal value (µs since 1601-01-01) to Unix ns.
