@@ -12,6 +12,7 @@ pub mod sqlite_header;
 pub use cookies::check_cookie_integrity;
 pub use database::{check_database_integrity, check_wal_state};
 pub use history::check_history_integrity;
+pub use manual_edit::check_header_anomalies;
 pub use pages::check_page_state;
 
 use std::path::PathBuf;
@@ -114,6 +115,32 @@ pub enum IntegrityIndicator {
         url_id: i64,
         recorded_last_visit_ns: i64,
         max_visit_ns: i64,
+    },
+    /// The header's file change counter (offset 24) differs from its
+    /// version-valid-for field (offset 92). A modern SQLite writer keeps them
+    /// equal; a difference is consistent with a write by a tool that does not
+    /// maintain the field, or by a SQLite older than 3.7.0.
+    ChangeCounterMismatch {
+        path: PathBuf,
+        change_counter: u32,
+        version_valid_for: u32,
+    },
+    /// A header format version field (write @18 or read @19) is outside the
+    /// documented range {1 = legacy, 2 = WAL}. Consistent with corruption or an
+    /// out-of-band header edit.
+    HeaderVersionAnomaly {
+        path: PathBuf,
+        field: String,
+        value: u8,
+    },
+    /// A table's `sqlite_sequence` high-water mark exceeds its maximum surviving
+    /// rowid. Consistent with deletion of the highest-rowid rows, or an insert
+    /// rolled back by a crash (AUTOINCREMENT never reuses a value).
+    SqliteSequenceGap {
+        path: PathBuf,
+        table: String,
+        seq: i64,
+        max_rowid: i64,
     },
 }
 
@@ -241,6 +268,29 @@ impl IntegrityIndicator {
                  latest surviving visit is {max_visit_ns} ns",
                 path.display()
             ),
+            Self::ChangeCounterMismatch {
+                path,
+                change_counter,
+                version_valid_for,
+            } => format!(
+                "{}: header change counter is {change_counter} but version-valid-for is \
+                 {version_valid_for}",
+                path.display()
+            ),
+            Self::HeaderVersionAnomaly { path, field, value } => format!(
+                "{}: header {field} is {value}, outside the documented range 1..=2",
+                path.display()
+            ),
+            Self::SqliteSequenceGap {
+                path,
+                table,
+                seq,
+                max_rowid,
+            } => format!(
+                "{}: sqlite_sequence for {table} is {seq} but the highest surviving \
+                 rowid is {max_rowid}",
+                path.display()
+            ),
         }
     }
 
@@ -314,6 +364,20 @@ impl IntegrityIndicator {
                 "The summary can lag its visits after ordinary visit expiry/pruning, an \
                  interrupted write, or sync reconciliation, so a mismatch need not mean \
                  manual removal."
+            }
+            Self::ChangeCounterMismatch { .. } => {
+                "The fields can also diverge when a database is written by a SQLite older \
+                 than 3.7.0 or by a library/tool that does not update version-valid-for, \
+                 independent of any deliberate edit."
+            }
+            Self::HeaderVersionAnomaly { .. } => {
+                "An out-of-range version byte can result from on-disk corruption (storage \
+                 fault, torn write) rather than an intentional header edit."
+            }
+            Self::SqliteSequenceGap { .. } => {
+                "AUTOINCREMENT never reuses values, so this can arise from ordinary \
+                 deletion of the highest-rowid rows or an insert rolled back by a crash, \
+                 with no external editing."
             }
         }
     }
@@ -515,6 +579,22 @@ mod tests {
                 url_id: 1,
                 recorded_last_visit_ns: 2_000_000_000,
                 max_visit_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::ChangeCounterMismatch {
+                path: PathBuf::from("/tmp/History"),
+                change_counter: 42,
+                version_valid_for: 35,
+            },
+            IntegrityIndicator::HeaderVersionAnomaly {
+                path: PathBuf::from("/tmp/History"),
+                field: "write_version".to_string(),
+                value: 9,
+            },
+            IntegrityIndicator::SqliteSequenceGap {
+                path: PathBuf::from("/tmp/History"),
+                table: "urls".to_string(),
+                seq: 3,
+                max_rowid: 2,
             },
         ]
     }
