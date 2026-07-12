@@ -84,6 +84,15 @@ pub enum IntegrityIndicator {
         header_pages: u32,
         file_pages: u32,
     },
+    /// A `urls` summary row records more visits than the number of surviving
+    /// `visits` rows referencing it. Consistent with individual visits having
+    /// been deleted while the summary row was retained.
+    VisitCountMismatch {
+        path: PathBuf,
+        url_id: i64,
+        recorded_visit_count: i64,
+        actual_visit_rows: i64,
+    },
 }
 
 impl IntegrityIndicator {
@@ -179,6 +188,16 @@ impl IntegrityIndicator {
                  {file_pages}",
                 path.display()
             ),
+            Self::VisitCountMismatch {
+                path,
+                url_id,
+                recorded_visit_count,
+                actual_visit_rows,
+            } => format!(
+                "{}: url {url_id} records visit_count {recorded_visit_count} but only \
+                 {actual_visit_rows} visits rows reference it",
+                path.display()
+            ),
         }
     }
 
@@ -237,6 +256,11 @@ impl IntegrityIndicator {
                 "A page-count mismatch can be produced by an interrupted write, a copy \
                  captured mid-checkpoint, or trailing bytes appended by a backup tool, \
                  not only by deliberate truncation."
+            }
+            Self::VisitCountMismatch { .. } => {
+                "Chromium prunes visits older than its retention window while keeping \
+                 the urls row, and cross-device sync can adjust visit_count, so a higher \
+                 recorded count than surviving rows can arise with no manual deletion."
             }
         }
     }
@@ -419,6 +443,12 @@ mod tests {
                 path: PathBuf::from("/tmp/History"),
                 header_pages: 40,
                 file_pages: 30,
+            },
+            IntegrityIndicator::VisitCountMismatch {
+                path: PathBuf::from("/tmp/History"),
+                url_id: 1,
+                recorded_visit_count: 5,
+                actual_visit_rows: 2,
             },
         ]
     }

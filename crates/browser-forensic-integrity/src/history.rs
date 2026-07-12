@@ -163,7 +163,45 @@ fn check_chromium_history(path: &Path) -> Result<Vec<IntegrityIndicator>> {
     check_chromium_autoinc_gap(conn, path, &mut indicators)?;
     check_chromium_visit_id_gaps(conn, path, &mut indicators)?;
     check_chromium_timestamp_monotonicity(conn, path, &mut indicators)?;
+    check_chromium_visit_count_consistency(conn, path, &mut indicators)?;
     Ok(indicators)
+}
+
+/// Flag `urls` rows whose recorded `visit_count` exceeds the number of surviving
+/// `visits` rows referencing them — consistent with individual visits deleted
+/// while the summary row was kept. Only `recorded > actual` fires; the reverse is
+/// normal because Chromium omits redirect/synthesized visits from `visit_count`.
+fn check_chromium_visit_count_consistency(
+    conn: &Connection,
+    path: &Path,
+    indicators: &mut Vec<IntegrityIndicator>,
+) -> Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT u.id, u.visit_count, COUNT(v.id) \
+         FROM urls u LEFT JOIN visits v ON v.url = u.id \
+         GROUP BY u.id, u.visit_count \
+         HAVING u.visit_count > COUNT(v.id)",
+    )?;
+    let rows: Vec<(i64, i64, i64)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?
+        .filter_map(std::result::Result::ok)
+        .collect();
+
+    for (url_id, recorded, actual) in rows {
+        indicators.push(IntegrityIndicator::VisitCountMismatch {
+            path: path.to_path_buf(),
+            url_id,
+            recorded_visit_count: recorded,
+            actual_visit_rows: actual,
+        });
+    }
+    Ok(())
 }
 
 fn check_chromium_autoinc_gap(
