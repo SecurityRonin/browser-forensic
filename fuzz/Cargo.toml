@@ -19,6 +19,7 @@ browser-forensic-carve = { path = "../crates/browser-forensic-carve" }
 browser-forensic-integrity = { path = "../crates/browser-forensic-integrity" }
 browser-forensic-triage = { path = "../crates/browser-forensic-triage" }
 browser-forensic-cache = { path = "../crates/browser-forensic-cache" }
+browser-forensic-reconstruct = { path = "../crates/browser-forensic-reconstruct" }
 browser-forensic-core = { path = "../crates/browser-forensic-core" }
 browser-forensic-storage = { path = "../crates/browser-forensic-storage" }
 
@@ -118,5 +119,17 @@ doc = false
 [[bin]]
 name = "fuzz_indexeddb_key"
 path = "fuzz_targets/fuzz_indexeddb_key.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_reconstruct_html"
+path = "fuzz_targets/fuzz_reconstruct_html.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_reconstruct_warc"
+path = "fuzz_targets/fuzz_reconstruct_warc.rs"
 test = false
 doc = false
