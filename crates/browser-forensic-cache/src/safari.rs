@@ -36,6 +36,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 
 use crate::decompress::{decode_body, DecompressLimits};
@@ -99,8 +100,10 @@ pub fn try_parse_safari_cache_db(
             Ok(RawRow {
                 url: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                 is_on_fs: row.get::<_, Option<i64>>(2)?.unwrap_or(0) != 0,
-                receiver_data: row.get::<_, Option<Vec<u8>>>(3)?,
-                response_object: row.get::<_, Option<Vec<u8>>>(4)?,
+                // receiver_data is declared BLOB but real caches store the on-FS
+                // UUID as TEXT; accept both storage classes as raw bytes.
+                receiver_data: value_ref_to_bytes(row.get_ref(3)?),
+                response_object: value_ref_to_bytes(row.get_ref(4)?),
             })
         })
         .map_err(sqlite_err)?;
@@ -112,6 +115,19 @@ pub fn try_parse_safari_cache_db(
         out.push(build_resource(row, db_path, &fs_dir, limits));
     }
     Ok(out)
+}
+
+/// Read a SQLite value as raw bytes regardless of storage class.
+///
+/// `receiver_data`/`response_object` are declared `BLOB`, but real `Cache.db`
+/// files store the on-FS UUID (and occasionally other fields) as `TEXT`. Both
+/// carry the bytes we want; anything else (NULL, numeric) yields `None`.
+fn value_ref_to_bytes(v: ValueRef<'_>) -> Option<Vec<u8>> {
+    match v {
+        ValueRef::Blob(b) => Some(b.to_vec()),
+        ValueRef::Text(t) => Some(t.to_vec()),
+        _ => None,
+    }
 }
 
 /// One row of the joined query, pre-decode.
