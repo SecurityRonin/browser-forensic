@@ -148,3 +148,30 @@ fn network_action_predictor_count_matches_sqlite3_oracle() {
     );
     eprintln!("Network Action Predictor oracle matched: {oracle} typed prefixes");
 }
+
+/// Tier-1 oracle for `Media History`. No sample was present on the development
+/// host, so this normally skips; it runs and matches whenever a real `Media
+/// History` database is supplied via `BR4N6_REAL_PROFILE`.
+#[test]
+fn media_history_count_matches_sqlite3_oracle() {
+    let Some((_profile, mh)) = setup("Media History") else {
+        return;
+    };
+    let parsed = browser_forensic_chrome::parse_media_history(&mh).expect("parse Media History");
+    let playback =
+        sqlite_count(&mh, "SELECT count(*) FROM playback WHERE url <> ''").unwrap_or_default();
+    let session = sqlite_count(&mh, "SELECT count(*) FROM playbackSession WHERE url <> ''")
+        .unwrap_or_default();
+    let origin =
+        sqlite_count(&mh, "SELECT count(*) FROM origin WHERE origin <> ''").unwrap_or_default();
+    assert_eq!(
+        parsed.len() as i64,
+        playback + session + origin,
+        "Media History count: parser {} vs sqlite3 {}",
+        parsed.len(),
+        playback + session + origin
+    );
+    eprintln!(
+        "Media History oracle matched: {playback} playback + {session} session + {origin} origin"
+    );
+}

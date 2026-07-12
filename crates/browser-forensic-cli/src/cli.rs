@@ -147,6 +147,8 @@ enum Command {
     Shortcuts(ArtifactArgs),
     /// Parse a Chromium `Network Action Predictor` (partial typed strings).
     Predictor(ArtifactArgs),
+    /// Parse a Chromium `Media History` database (audio/video playback).
+    MediaHistory(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -252,6 +254,7 @@ where
         Some(Command::TopSites(a)) => run_top_sites(&a.path, a.format),
         Some(Command::Shortcuts(a)) => run_shortcuts(&a.path, a.format),
         Some(Command::Predictor(a)) => run_predictor(&a.path, a.format),
+        Some(Command::MediaHistory(a)) => run_media_history(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -1327,6 +1330,20 @@ pub fn run_top_sites(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 media-history PATH` — parse a Chromium `Media History` database:
+/// audio/video playback, watch time, resume positions, and media titles.
+/// Chromium-only.
+///
+/// # Errors
+/// Returns an error if the `Media History` database cannot be opened.
+pub fn run_media_history(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_chrome::parse_media_history(path)
+        .with_context(|| format!("parsing Media History from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
 /// `br4n6 predictor PATH` — parse a Chromium `Network Action Predictor`: the
 /// (often partial) omnibox strings the user typed and the URLs Chromium learned
 /// to predict from them. Chromium-only.
@@ -1838,6 +1855,22 @@ mod tests {
         drop(conn);
         for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
             run_predictor(&p, fmt).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_media_history_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Media History");
+        let conn = Connection::open(&p).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE playback(id INTEGER PRIMARY KEY, origin_id INTEGER, url TEXT, watch_time_s INTEGER, has_video INTEGER, has_audio INTEGER, last_updated_time_s INTEGER);
+             INSERT INTO playback (url, watch_time_s, has_video, has_audio, last_updated_time_s) VALUES ('https://v.example/', 42, 1, 1, 13344473600);",
+        )
+        .unwrap();
+        drop(conn);
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_media_history(&p, fmt).unwrap();
         }
     }
 

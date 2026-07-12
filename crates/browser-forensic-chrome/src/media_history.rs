@@ -44,9 +44,145 @@ fn webkit_secs_to_unix_nanos(secs: i64) -> i64 {
 /// # Errors
 ///
 /// Returns an error only if the SQLite file cannot be opened.
-pub fn parse_media_history(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    // RED stub — replaced by the real queries in GREEN.
-    Ok(Vec::new())
+pub fn parse_media_history(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = open_evidence_db(path)?;
+    let conn = &db.conn;
+    let source = path.to_string_lossy().into_owned();
+    let mut events = Vec::new();
+    events.extend(playback_events(conn, &source));
+    events.extend(session_events(conn, &source));
+    events.extend(origin_events(conn, &source));
+    Ok(events)
+}
+
+/// Media timestamp for a `last_updated_time_s` value: converted when positive,
+/// else `0` (presence-only).
+fn media_ts(last_updated_time_s: i64) -> i64 {
+    if last_updated_time_s > 0 {
+        webkit_secs_to_unix_nanos(last_updated_time_s)
+    } else {
+        0
+    }
+}
+
+/// `playback` rows — per-URL watch time. Missing table degrades to empty.
+fn playback_events(conn: &rusqlite::Connection, source: &str) -> Vec<BrowserEvent> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT url, watch_time_s, has_video, has_audio, last_updated_time_s \
+         FROM playback WHERE url <> ''",
+    ) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let url: String = row.get(0)?;
+        let watch_time_s: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or_default();
+        let has_video: bool = row.get::<_, Option<i64>>(2)?.unwrap_or_default() != 0;
+        let has_audio: bool = row.get::<_, Option<i64>>(3)?.unwrap_or_default() != 0;
+        let lut: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or_default();
+        Ok((url, watch_time_s, has_video, has_audio, lut))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(std::result::Result::ok)
+        .map(|(url, watch_time_s, has_video, has_audio, lut)| {
+            BrowserEvent::new(
+                media_ts(lut),
+                BrowserFamily::Chromium,
+                ArtifactKind::MediaPlayback,
+                source,
+                format!("played {url} ({watch_time_s}s watched)"),
+            )
+            .with_attr("url", json!(url))
+            .with_attr("media_kind", json!("playback"))
+            .with_attr("watch_time_s", json!(watch_time_s))
+            .with_attr("has_video", json!(has_video))
+            .with_attr("has_audio", json!(has_audio))
+            .with_attr("last_updated_time_s", json!(lut))
+            .with_attr("note", json!(MEDIA_NOTE))
+        })
+        .collect()
+}
+
+/// `playbackSession` rows — richer per-session detail (title, resume position).
+fn session_events(conn: &rusqlite::Connection, source: &str) -> Vec<BrowserEvent> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT url, duration_ms, position_ms, title, source_title, last_updated_time_s \
+         FROM playbackSession WHERE url <> ''",
+    ) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let url: String = row.get(0)?;
+        let duration_ms: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or_default();
+        let position_ms: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or_default();
+        let title: String = row.get::<_, Option<String>>(3)?.unwrap_or_default();
+        let source_title: String = row.get::<_, Option<String>>(4)?.unwrap_or_default();
+        let lut: i64 = row.get::<_, Option<i64>>(5)?.unwrap_or_default();
+        Ok((url, duration_ms, position_ms, title, source_title, lut))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(std::result::Result::ok)
+        .map(
+            |(url, duration_ms, position_ms, title, source_title, lut)| {
+                let label = if title.is_empty() {
+                    url.clone()
+                } else {
+                    format!("{title} \u{2014} {url}")
+                };
+                BrowserEvent::new(
+                    media_ts(lut),
+                    BrowserFamily::Chromium,
+                    ArtifactKind::MediaPlayback,
+                    source,
+                    format!("{label} (position {position_ms}ms / {duration_ms}ms)"),
+                )
+                .with_attr("url", json!(url))
+                .with_attr("media_kind", json!("session"))
+                .with_attr("title", json!(title))
+                .with_attr("source_title", json!(source_title))
+                .with_attr("duration_ms", json!(duration_ms))
+                .with_attr("position_ms", json!(position_ms))
+                .with_attr("last_updated_time_s", json!(lut))
+                .with_attr("note", json!(MEDIA_NOTE))
+            },
+        )
+        .collect()
+}
+
+/// `origin` rows — per-origin aggregate watch time.
+fn origin_events(conn: &rusqlite::Connection, source: &str) -> Vec<BrowserEvent> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT origin, aggregate_watchtime_audio_video_s, last_updated_time_s \
+         FROM origin WHERE origin <> ''",
+    ) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let origin: String = row.get(0)?;
+        let aggregate_watchtime_s: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or_default();
+        let lut: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or_default();
+        Ok((origin, aggregate_watchtime_s, lut))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(std::result::Result::ok)
+        .map(|(origin, aggregate_watchtime_s, lut)| {
+            BrowserEvent::new(
+                media_ts(lut),
+                BrowserFamily::Chromium,
+                ArtifactKind::MediaPlayback,
+                source,
+                format!("{origin} \u{2014} media origin ({aggregate_watchtime_s}s aggregate)"),
+            )
+            .with_attr("origin", json!(origin))
+            .with_attr("url", json!(origin))
+            .with_attr("media_kind", json!("origin"))
+            .with_attr("aggregate_watchtime_s", json!(aggregate_watchtime_s))
+            .with_attr("last_updated_time_s", json!(lut))
+            .with_attr("note", json!(MEDIA_NOTE))
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -263,6 +263,13 @@ fn triage_chromium_profile(
         }
     }
 
+    let media_history_path = path.join("Media History");
+    if media_history_path.is_file() {
+        if let Ok(mut evts) = browser_forensic_chrome::parse_media_history(&media_history_path) {
+            events.append(&mut evts);
+        }
+    }
+
     // Credential / account metadata (secrets never decrypted). Per-artifact
     // failures are absorbed so triage stays best-effort.
     let login_data = path.join("Login Data");
@@ -562,6 +569,29 @@ mod tests {
                 .any(|e| e.artifact == ArtifactKind::NetworkPrediction
                     && e.attrs.get("user_text") == Some(&serde_json::json!("typed thing"))),
             "expected NetworkPrediction events surfacing user_text"
+        );
+    }
+
+    #[test]
+    fn triage_chromium_includes_media_history() {
+        use browser_forensic_core::ArtifactKind;
+        let dir = TempDir::new().expect("tempdir");
+        let mh = dir.path().join("Media History");
+        let conn = rusqlite::Connection::open(&mh).expect("open media history");
+        conn.execute_batch(
+            "CREATE TABLE playback(id INTEGER PRIMARY KEY, origin_id INTEGER, url TEXT, watch_time_s INTEGER, has_video INTEGER, has_audio INTEGER, last_updated_time_s INTEGER);
+             INSERT INTO playback (url, watch_time_s, has_video, has_audio, last_updated_time_s) VALUES ('https://played.example/v', 393, 1, 1, 13344473600);",
+        ).expect("setup media history");
+        drop(conn);
+
+        let report = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        assert!(
+            report
+                .events
+                .iter()
+                .any(|e| e.artifact == ArtifactKind::MediaPlayback
+                    && e.attrs.get("url") == Some(&serde_json::json!("https://played.example/v"))),
+            "expected MediaPlayback events"
         );
     }
 
