@@ -315,6 +315,7 @@ dependencies = [
  "ratatui",
  "rusqlite",
  "rust_xlsxwriter",
+ "rusty-leveldb",
  "serde",
  "serde_json",
  "snss-core",
