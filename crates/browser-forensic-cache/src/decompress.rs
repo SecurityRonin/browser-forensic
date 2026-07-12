@@ -60,13 +60,49 @@ pub fn decode_body(
     raw: &[u8],
     limits: &DecompressLimits,
 ) -> Result<DecodeOutcome, CacheError> {
-    // RED stub — implementation added in the GREEN commit.
-    let _ = (encoding, raw, limits);
-    Ok(DecodeOutcome {
-        bytes: Vec::new(),
-        decoded: false,
-        note: None,
-    })
+    let token = encoding.map(|e| e.trim().to_ascii_lowercase());
+    match token.as_deref() {
+        None | Some("" | "identity") => Ok(DecodeOutcome {
+            bytes: raw.to_vec(),
+            decoded: true,
+            note: None,
+        }),
+        Some("gzip" | "x-gzip") => Ok(DecodeOutcome {
+            bytes: read_capped(GzDecoder::new(raw), raw.len(), limits, "gzip")?,
+            decoded: true,
+            note: None,
+        }),
+        Some("deflate") => decode_deflate(raw, limits),
+        Some("br") => Ok(DecodeOutcome {
+            bytes: read_capped(
+                brotli::Decompressor::new(raw, 8192),
+                raw.len(),
+                limits,
+                "br",
+            )?,
+            decoded: true,
+            note: None,
+        }),
+        Some("zstd") => {
+            let decoder = StreamingDecoder::new(raw).map_err(|e| CacheError::Decompress {
+                encoding: "zstd".to_string(),
+                detail: e.to_string(),
+            })?;
+            Ok(DecodeOutcome {
+                bytes: read_capped(decoder, raw.len(), limits, "zstd")?,
+                decoded: true,
+                note: None,
+            })
+        }
+        Some(other) => Ok(DecodeOutcome {
+            bytes: raw.to_vec(),
+            decoded: false,
+            note: Some(format!(
+                "unsupported content-encoding: {other:?} ({} raw bytes retained)",
+                raw.len()
+            )),
+        }),
+    }
 }
 
 /// Read a decoder to EOF, enforcing the absolute-output and ratio caps as it
