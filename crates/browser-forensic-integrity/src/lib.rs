@@ -185,4 +185,119 @@ mod tests {
         let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>> = check_database_integrity;
         let _: fn(&Path) -> anyhow::Result<Vec<IntegrityIndicator>> = check_wal_state;
     }
+
+    /// One representative instance of every [`IntegrityIndicator`] variant, so the
+    /// framing tests below exercise the full enum. Extend this when a variant is
+    /// added — the framing rule (observation + innocent alternative, no
+    /// conclusion language) must hold for every finding the tool can emit.
+    fn sample_all_indicators() -> Vec<IntegrityIndicator> {
+        vec![
+            IntegrityIndicator::HistoryCleared {
+                browser: BrowserFamily::Chromium,
+                path: PathBuf::from("/tmp/History"),
+                detected_at_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::VisitIdGap {
+                path: PathBuf::from("/tmp/History"),
+                expected_id: 42,
+                found_id: 100,
+            },
+            IntegrityIndicator::TimestampNonMonotonic {
+                path: PathBuf::from("/tmp/History"),
+                row_id: 5,
+                prev_ts_ns: 2_000_000_000,
+                this_ts_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::CookieTimestampAnomaly {
+                path: PathBuf::from("/tmp/Cookies"),
+                host: "example.com".to_string(),
+                creation_ns: 2_000_000_000,
+                last_access_ns: 1_000_000_000,
+            },
+            IntegrityIndicator::WalPresent {
+                path: PathBuf::from("/tmp/History-wal"),
+            },
+            IntegrityIndicator::SqliteIntegrityFailure {
+                path: PathBuf::from("/tmp/History"),
+                message: "page 5: corrupt".to_string(),
+            },
+            IntegrityIndicator::HistoryTombstoneFound {
+                path: PathBuf::from("/tmp/History.db"),
+                url: "https://deleted.example.com".to_string(),
+                deleted_at_ns: 3_000_000_000,
+            },
+            IntegrityIndicator::DownloadFileMissing {
+                path: PathBuf::from("/tmp/History"),
+                target_path: "/tmp/gone.bin".to_string(),
+            },
+            IntegrityIndicator::AutoIncrementGap {
+                path: PathBuf::from("/tmp/History"),
+                table: "urls".to_string(),
+                max_rowid: 10,
+                auto_increment: 500,
+            },
+        ]
+    }
+
+    /// Words that assert a conclusion rather than an observation. The framing rule
+    /// forbids them in any finding text: a finding is *consistent with* clearing or
+    /// tampering, never proof of it (fleet expert-witness discipline, layer 2).
+    const CONCLUSION_WORDS: &[&str] = &[
+        "tamper",
+        "confirmed",
+        "proves",
+        "proof",
+        "user deleted",
+        "definitely",
+    ];
+
+    #[test]
+    fn every_indicator_has_observation_and_innocent_alternative() {
+        for ind in sample_all_indicators() {
+            let observation = ind.observation();
+            let innocent = ind.innocent_alternative();
+            assert!(
+                !observation.trim().is_empty(),
+                "{ind:?} has an empty observation"
+            );
+            assert!(
+                !innocent.trim().is_empty(),
+                "{ind:?} has no innocent alternative — the framing rule requires one"
+            );
+        }
+    }
+
+    #[test]
+    fn no_finding_text_asserts_a_conclusion() {
+        for ind in sample_all_indicators() {
+            let combined = format!(
+                "{} {}",
+                ind.observation().to_lowercase(),
+                ind.innocent_alternative().to_lowercase()
+            );
+            for banned in CONCLUSION_WORDS {
+                assert!(
+                    !combined.contains(banned),
+                    "{ind:?} finding text contains conclusion word {banned:?}: {combined:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn innocent_alternative_uses_hedged_language() {
+        // Every innocent alternative should read as a plausible benign cause,
+        // signalled by hedged phrasing rather than a verdict.
+        for ind in sample_all_indicators() {
+            let innocent = ind.innocent_alternative().to_lowercase();
+            assert!(
+                innocent.contains("consistent with")
+                    || innocent.contains("may")
+                    || innocent.contains("can")
+                    || innocent.contains("normal")
+                    || innocent.contains("produced by"),
+                "{ind:?} innocent alternative is not hedged: {innocent:?}"
+            );
+        }
+    }
 }
