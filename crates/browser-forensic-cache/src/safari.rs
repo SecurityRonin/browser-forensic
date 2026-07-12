@@ -68,8 +68,50 @@ pub fn try_parse_safari_cache_db(
     db_path: &Path,
     limits: &DecompressLimits,
 ) -> Result<Vec<CachedResource>, CacheError> {
-    let _ = (db_path, limits);
-    unimplemented!("safari Cache.db body extraction — GREEN pending")
+    let sqlite_err = |e: rusqlite::Error| CacheError::Sqlite {
+        path: db_path.display().to_string(),
+        detail: e.to_string(),
+    };
+
+    // Read-only + immutable: never mutate the evidence, never take a lock.
+    let uri = format!("file:{}?immutable=1", db_path.display());
+    let conn = Connection::open_with_flags(
+        &uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(sqlite_err)?;
+
+    let fs_dir = db_path
+        .parent()
+        .map_or_else(|| PathBuf::from("fsCachedData"), |p| p.join("fsCachedData"));
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.entry_ID, r.request_key, rd.isDataOnFS, rd.receiver_data, bd.response_object \
+             FROM cfurl_cache_response r \
+             LEFT JOIN cfurl_cache_receiver_data rd ON rd.entry_ID = r.entry_ID \
+             LEFT JOIN cfurl_cache_blob_data bd ON bd.entry_ID = r.entry_ID",
+        )
+        .map_err(sqlite_err)?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(RawRow {
+                url: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                is_on_fs: row.get::<_, Option<i64>>(2)?.unwrap_or(0) != 0,
+                receiver_data: row.get::<_, Option<Vec<u8>>>(3)?,
+                response_object: row.get::<_, Option<Vec<u8>>>(4)?,
+            })
+        })
+        .map_err(sqlite_err)?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        // A single corrupt row must not abort the whole cache walk.
+        let Ok(row) = row else { continue };
+        out.push(build_resource(row, db_path, &fs_dir, limits));
+    }
+    Ok(out)
 }
 
 /// One row of the joined query, pre-decode.
@@ -317,8 +359,11 @@ mod tests {
         buf
     }
 
+    /// One synthetic cache row: (entry_ID, URL, isDataOnFS, body, response_object).
+    type Row<'a> = (i64, &'a str, i64, &'a [u8], Vec<u8>);
+
     /// Build a minimal in-memory-backed Safari Cache.db on disk.
-    fn build_cache_db(dir: &Path, rows: &[(i64, &str, i64, &[u8], Vec<u8>)]) -> PathBuf {
+    fn build_cache_db(dir: &Path, rows: &[Row<'_>]) -> PathBuf {
         let db_path = dir.join("Cache.db");
         let conn = Connection::open(&db_path).unwrap();
         conn.execute_batch(
@@ -363,7 +408,7 @@ mod tests {
         );
         let body = br#"{"name":"rc"}"#;
         let db = build_cache_db(
-            &dir.path(),
+            dir.path(),
             &[(1, "https://api.test/manifest.json", 0, body, ro)],
         );
         let res = parse_safari_cache_db(&db);
@@ -389,7 +434,7 @@ mod tests {
             "text/plain",
         );
         let db = build_cache_db(
-            &dir.path(),
+            dir.path(),
             &[(1, "https://api.test/g", 0, &gzip(plain), ro)],
         );
         let res = parse_safari_cache_db(&db);
@@ -412,7 +457,7 @@ mod tests {
             "image/png",
         );
         let db = build_cache_db(
-            &dir.path(),
+            dir.path(),
             &[(1, "https://big.test/", 1, uuid.as_bytes(), ro)],
         );
         let res = parse_safari_cache_db(&db);
@@ -426,7 +471,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let ro = build_response_object("https://gone.test/", 200, &[], "application/octet-stream");
         let db = build_cache_db(
-            &dir.path(),
+            dir.path(),
             &[(
                 1,
                 "https://gone.test/",
@@ -483,7 +528,7 @@ mod tests {
     fn garbage_response_object_does_not_panic() {
         let dir = tempfile::TempDir::new().unwrap();
         let db = build_cache_db(
-            &dir.path(),
+            dir.path(),
             &[(
                 1,
                 "https://junk.test/",
