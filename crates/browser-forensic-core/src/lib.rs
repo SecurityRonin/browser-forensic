@@ -72,6 +72,9 @@ pub enum ArtifactKind {
     /// A most-visited page cached for the new-tab page (Chromium `Top Sites`).
     /// Frecency-ranked; no per-visit timestamp.
     TopSite,
+    /// A string the user typed into the omnibox and the URL they selected
+    /// (Chromium `Shortcuts`). Direct evidence of user intent.
+    Shortcut,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -97,6 +100,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::RecoveredDomain => write!(f, "RecoveredDomain"),
             Self::Favicon => write!(f, "Favicon"),
             Self::TopSite => write!(f, "TopSite"),
+            Self::Shortcut => write!(f, "Shortcut"),
         }
     }
 }
@@ -381,6 +385,12 @@ mod tests {
     fn artifact_kind_has_top_site_variant() {
         let _t = ArtifactKind::TopSite;
         assert_eq!(format!("{}", ArtifactKind::TopSite), "TopSite");
+    }
+
+    #[test]
+    fn artifact_kind_has_shortcut_variant() {
+        let _s = ArtifactKind::Shortcut;
+        assert_eq!(format!("{}", ArtifactKind::Shortcut), "Shortcut");
     }
 
     #[test]
