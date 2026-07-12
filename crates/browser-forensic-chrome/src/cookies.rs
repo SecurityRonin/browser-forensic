@@ -155,6 +155,64 @@ mod tests {
         );
     }
 
+    // Modern Chromium cookie schema carrying the CHIPS partition key column.
+    const SCHEMA_CHIPS: &str = "CREATE TABLE cookies (
+        creation_utc       INTEGER NOT NULL,
+        host_key           TEXT NOT NULL,
+        top_frame_site_key TEXT NOT NULL DEFAULT '',
+        name               TEXT NOT NULL,
+        value              TEXT DEFAULT '',
+        path               TEXT NOT NULL,
+        expires_utc        INTEGER DEFAULT 0,
+        is_secure          INTEGER DEFAULT 0,
+        is_httponly        INTEGER DEFAULT 0,
+        samesite           INTEGER DEFAULT -1,
+        encrypted_value    BLOB DEFAULT ''
+    );";
+
+    #[test]
+    fn partitioned_cookie_surfaces_top_frame_site_key() {
+        let db = TestDb::new(SCHEMA_CHIPS);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, top_frame_site_key, name, path) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![13_327_626_000_000_000_i64, ".ads.example", "https://news.example", "__Host-p", "/"],
+        );
+        let events = parse_cookies(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        let ev = &events[0];
+        assert_eq!(
+            ev.attrs["top_frame_site_key"],
+            json!("https://news.example")
+        );
+        assert_eq!(ev.attrs["partitioned"], json!(true));
+    }
+
+    #[test]
+    fn unpartitioned_cookie_in_chips_schema_marked_not_partitioned() {
+        let db = TestDb::new(SCHEMA_CHIPS);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, top_frame_site_key, name, path) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![13_327_626_000_000_000_i64, ".plain.example", "", "sess", "/"],
+        );
+        let events = parse_cookies(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].attrs["partitioned"], json!(false));
+        assert_eq!(events[0].attrs["top_frame_site_key"], json!(""));
+    }
+
+    #[test]
+    fn legacy_schema_without_partition_key_still_parses() {
+        // The pre-CHIPS schema (no top_frame_site_key) must not break.
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO cookies (creation_utc, host_key, name, path, expires_utc, is_secure, is_httponly) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![13_327_626_000_000_000_i64, ".legacy.example", "n", "/", 0_i64, 0_i64, 0_i64],
+        );
+        let events = parse_cookies(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(events[0].description.contains(".legacy.example"));
+    }
+
     #[test]
     fn zero_creation_utc_is_skipped() {
         let db = TestDb::new(SCHEMA);
