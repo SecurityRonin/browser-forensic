@@ -79,13 +79,17 @@ mod tests {
     use serde_json::json;
 
     const SCHEMA: &str = "CREATE TABLE logins (
-        id              INTEGER PRIMARY KEY,
-        origin_url      TEXT NOT NULL DEFAULT '',
-        action_url      TEXT NOT NULL DEFAULT '',
-        username_value  TEXT NOT NULL DEFAULT '',
-        password_value  BLOB DEFAULT '',
-        date_created    INTEGER NOT NULL DEFAULT 0,
-        date_last_used  INTEGER NOT NULL DEFAULT 0
+        id                     INTEGER PRIMARY KEY,
+        origin_url             TEXT NOT NULL DEFAULT '',
+        action_url             TEXT NOT NULL DEFAULT '',
+        username_value         TEXT NOT NULL DEFAULT '',
+        password_value         BLOB DEFAULT '',
+        signon_realm           TEXT NOT NULL DEFAULT '',
+        date_created           INTEGER NOT NULL DEFAULT 0,
+        date_last_used         INTEGER NOT NULL DEFAULT 0,
+        date_password_modified INTEGER NOT NULL DEFAULT 0,
+        times_used             INTEGER NOT NULL DEFAULT 0,
+        blacklisted_by_user    INTEGER NOT NULL DEFAULT 0
     );";
 
     #[test]
@@ -109,6 +113,57 @@ mod tests {
         for val in events[0].attrs.values() {
             assert_ne!(val, &json!("real_password_value"));
         }
+    }
+
+    #[test]
+    fn login_data_emits_credential_metadata() {
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO logins (origin_url, action_url, username_value, signon_realm, date_created, date_last_used, date_password_modified, times_used, blacklisted_by_user) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                "https://bank.example.com",
+                "https://bank.example.com/login",
+                "victim@example.com",
+                "https://bank.example.com/",
+                13_327_626_000_000_000_i64,
+                13_350_000_000_000_000_i64,
+                13_340_000_000_000_000_i64,
+                7_i32,
+                0_i32
+            ],
+        );
+        let events = parse_login_data(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        let ev = &events[0];
+        // The FACTS that prove the credential existed and was used — no secrets.
+        assert_eq!(ev.attrs["signon_realm"], json!("https://bank.example.com/"));
+        assert_eq!(ev.attrs["times_used"], json!(7));
+        assert_eq!(
+            ev.attrs["date_password_modified"],
+            json!(13_340_000_000_000_000_i64)
+        );
+        assert_eq!(ev.attrs["blacklisted_by_user"], json!(false));
+        assert_eq!(ev.attrs["password"], json!("ENCRYPTED"));
+    }
+
+    #[test]
+    fn login_data_blacklisted_never_save_site_surfaced() {
+        let db = TestDb::new(SCHEMA);
+        db.insert(
+            "INSERT INTO logins (origin_url, username_value, signon_realm, date_created, blacklisted_by_user) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                "https://neversave.example.com",
+                "",
+                "https://neversave.example.com/",
+                13_327_626_000_000_000_i64,
+                1_i32
+            ],
+        );
+        let events = parse_login_data(db.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].attrs["blacklisted_by_user"], json!(true));
     }
 
     #[test]
