@@ -22,6 +22,7 @@ browser-forensic-cache = { path = "../crates/browser-forensic-cache" }
 browser-forensic-core = { path = "../crates/browser-forensic-core" }
 browser-forensic-storage = { path = "../crates/browser-forensic-storage" }
 browser-forensic-search = { path = "../crates/browser-forensic-search" }
+browser-forensic-decrypt = { path = "../crates/browser-forensic-decrypt" }
 serde_json = "1"
 
 # One target per parsed structure. Each invariant is "must not panic".
@@ -30,6 +31,12 @@ serde_json = "1"
 [[bin]]
 name = "fuzz_firefox_session"
 path = "fuzz_targets/fuzz_firefox_session.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_decrypt_asn1"
+path = "fuzz_targets/fuzz_decrypt_asn1.rs"
 test = false
 doc = false
 
