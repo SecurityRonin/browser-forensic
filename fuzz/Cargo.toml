@@ -21,6 +21,8 @@ browser-forensic-triage = { path = "../crates/browser-forensic-triage" }
 browser-forensic-cache = { path = "../crates/browser-forensic-cache" }
 browser-forensic-core = { path = "../crates/browser-forensic-core" }
 browser-forensic-storage = { path = "../crates/browser-forensic-storage" }
+browser-forensic-search = { path = "../crates/browser-forensic-search" }
+serde_json = "1"
 
 # One target per parsed structure. Each invariant is "must not panic".
 # The SNSS targets (records, navigation) moved to the standalone snss-forensic repo.
@@ -112,5 +114,11 @@ doc = false
 [[bin]]
 name = "fuzz_indexeddb_key"
 path = "fuzz_targets/fuzz_indexeddb_key.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_search_ioc"
+path = "fuzz_targets/fuzz_search_ioc.rs"
 test = false
 doc = false
