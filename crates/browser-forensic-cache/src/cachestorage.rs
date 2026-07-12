@@ -33,7 +33,13 @@
 //!     Cache API does not persist POST request bodies. This module surfaces the
 //!     request *method* and *headers*; a request body is not recoverable here.
 
+use std::path::{Path, PathBuf};
+
 use protobuf_forensic_core::{decode, Field, FieldValue};
+
+use crate::decompress::{decode_body, DecompressLimits};
+use crate::error::CacheError;
+use crate::simple::parse_simple_entry;
 
 /// Decode protobuf bytes into a flat field list; malformed input yields an empty
 /// list (best-effort recovery, never a panic).
@@ -275,9 +281,119 @@ pub fn parse_cachestorage_metadata(stream0: &[u8]) -> CacheStorageMeta {
     }
 }
 
+/// A single cached HTTP response recovered from a Service Worker CacheStorage
+/// (Cache API) entry, with cache-name + origin attribution and the request
+/// method/headers that keyed it.
+///
+/// Forensic reading: "the response for `url`, cached by `storage_key`'s service
+/// worker under cache `cache_name`". This is a *cached* response — consistent
+/// with the app having fetched `url` — and cached is not the same as rendered.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CacheStorageResource {
+    /// The request URL — the SimpleCache entry key.
+    pub url: String,
+    /// The cache name (`caches.open(name)`), from the `index.txt`.
+    pub cache_name: String,
+    /// The on-disk cache directory (UUID) this entry lives in.
+    pub cache_dir: String,
+    /// The origin/storage-key attribution from the `index.txt`, if recovered.
+    pub storage_key: Option<String>,
+    /// The request method (`GET`/`POST`/…). Note: the Cache API metadata proto
+    /// stores the method and request headers but **not** the request entity
+    /// body, so a POST body is not recoverable from this artifact.
+    pub request_method: Option<String>,
+    /// The request headers stored with the entry, in file order.
+    pub request_headers: Vec<(String, String)>,
+    /// HTTP response status code.
+    pub http_status: Option<u16>,
+    /// HTTP response status text.
+    pub status_text: Option<String>,
+    /// The Fetch response type enum (`basic`/`cors`/`opaque`/…) as a raw value.
+    pub response_type: Option<i64>,
+    /// Response headers in file order.
+    pub headers: Vec<(String, String)>,
+    /// `Content-Type` response header value, if present.
+    pub content_type: Option<String>,
+    /// `Content-Encoding` response header value. Metadata about the original
+    /// wire response; the stored body is already decoded (see `body`).
+    pub content_encoding: Option<String>,
+    /// Computed MIME type from the metadata, if stored.
+    pub mime_type: Option<String>,
+    /// Response time (Unix nanoseconds), if recovered.
+    pub response_time_ns: Option<i64>,
+    /// Cache entry time (Unix nanoseconds), if recovered.
+    pub entry_time_ns: Option<i64>,
+    /// The body exactly as stored on disk (stream 1).
+    pub raw_body: Vec<u8>,
+    /// The usable response body. The Cache API stores the already-decoded
+    /// delivered body, so this normally equals `raw_body`; if an entry is
+    /// genuinely wire-compressed it is inflated here (see `body_note`).
+    pub body: Vec<u8>,
+    /// Any caveat about the body (declared-but-not-applied encoding, or a
+    /// successful re-inflation).
+    pub body_note: Option<String>,
+    /// The `[hash]_0` file this resource came from.
+    pub source_file: PathBuf,
+}
+
+/// Build a [`CacheStorageResource`] from the raw bytes of a CacheStorage
+/// `[hash]_0` entry plus its cache attribution.
+///
+/// # Errors
+/// Returns a [`CacheError`] only when the SimpleCache entry framing is invalid.
+pub fn resource_from_cachestorage_entry(
+    _data: &[u8],
+    _cache_name: &str,
+    _cache_dir: &str,
+    _storage_key: Option<&str>,
+    _source_file: PathBuf,
+    _limits: &DecompressLimits,
+) -> Result<CacheStorageResource, CacheError> {
+    // GREEN in the next commit.
+    Ok(CacheStorageResource::default())
+}
+
+/// Enumerate every recoverable [`CacheStorageResource`] in a single cache's
+/// disk_cache directory (`<origin-hash>/<uuid>/`). Best-effort: malformed
+/// entries are skipped, never panicked on.
+#[must_use]
+pub fn parse_cachestorage_cache_dir(
+    _uuid_dir: &Path,
+    _cache_name: &str,
+    _cache_dir: &str,
+    _storage_key: Option<&str>,
+    _limits: &DecompressLimits,
+) -> Vec<CacheStorageResource> {
+    // GREEN in the next commit.
+    Vec::new()
+}
+
+/// Enumerate every recoverable [`CacheStorageResource`] under a CacheStorage
+/// path, using default decompression limits.
+///
+/// `path` may be a single `<origin-hash>/` directory (containing `index.txt`)
+/// or the `CacheStorage/` root (whose immediate children are origin-hash dirs);
+/// both are handled. Best-effort and panic-free.
+#[must_use]
+pub fn parse_cachestorage_dir(path: &Path) -> Vec<CacheStorageResource> {
+    parse_cachestorage_dir_with(path, &DecompressLimits::default())
+}
+
+/// Enumerate every recoverable [`CacheStorageResource`], with explicit limits.
+#[must_use]
+pub fn parse_cachestorage_dir_with(
+    _path: &Path,
+    _limits: &DecompressLimits,
+) -> Vec<CacheStorageResource> {
+    // GREEN in the next commit.
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::simple::{EOF_MAGIC, HEADER_MAGIC};
+    use tempfile::TempDir;
 
     // --- minimal protobuf wire-format encoders for building fixtures ---
     fn varint(mut v: u64, out: &mut Vec<u8>) {
@@ -508,5 +624,183 @@ mod tests {
         assert!(meta.headers.is_empty());
         let meta2 = parse_cachestorage_metadata(&[]);
         assert!(meta2.http_status.is_none());
+    }
+
+    // --- full CacheStorage `_0` entry + directory fixtures ---
+
+    fn push_eof(out: &mut Vec<u8>, flags: u32, stream_size: u32) {
+        out.extend_from_slice(&EOF_MAGIC.to_le_bytes());
+        out.extend_from_slice(&flags.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes()); // data_crc32
+        out.extend_from_slice(&stream_size.to_le_bytes());
+        out.extend_from_slice(&[0u8; 4]); // pad to 24
+    }
+
+    /// Build a SimpleCache `_0` file: stream 1 = body, stream 0 = CacheMetadata
+    /// proto (mirrors the layout in `simple.rs`).
+    fn build_cs_entry(url: &str, body: &[u8], meta: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&HEADER_MAGIC.to_le_bytes());
+        out.extend_from_slice(&5u32.to_le_bytes()); // version 5 (as seen on disk)
+        out.extend_from_slice(&(url.len() as u32).to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes()); // key_hash
+        out.extend_from_slice(&[0u8; 4]); // pad to 24
+        out.extend_from_slice(url.as_bytes());
+        out.extend_from_slice(body);
+        push_eof(&mut out, 1, body.len() as u32); // stream 1 EOF (FLAG_HAS_CRC32)
+        out.extend_from_slice(meta);
+        push_eof(&mut out, 1, meta.len() as u32); // stream 0 EOF
+        out
+    }
+
+    fn simple_get_meta(status: u64, headers: &[(&str, &str)], body_mime: &str) -> Vec<u8> {
+        let req = request_msg("GET", &[]);
+        let resp = response_msg(status, "", 2, headers, RESP_WIN_US, body_mime);
+        metadata_msg(&req, &resp, RESP_WIN_US)
+    }
+
+    fn gzip(data: &[u8]) -> Vec<u8> {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+        let mut e = GzEncoder::new(Vec::new(), Compression::default());
+        e.write_all(data).unwrap();
+        e.finish().unwrap()
+    }
+
+    #[test]
+    fn resource_from_entry_captures_request_and_response() {
+        let body = b"[\"en-US\",\"en-GB\"]";
+        let meta = simple_get_meta(
+            200,
+            &[("content-type", "application/json")],
+            "application/json",
+        );
+        let data = build_cs_entry("https://slack.com/locales", body, &meta);
+        let res = resource_from_cachestorage_entry(
+            &data,
+            "config-cache",
+            "68f8-uuid",
+            Some("https://app.slack.com/"),
+            PathBuf::from("/tmp/abc_0"),
+            &DecompressLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(res.url, "https://slack.com/locales");
+        assert_eq!(res.cache_name, "config-cache");
+        assert_eq!(res.cache_dir, "68f8-uuid");
+        assert_eq!(res.storage_key.as_deref(), Some("https://app.slack.com/"));
+        assert_eq!(res.request_method.as_deref(), Some("GET"));
+        assert_eq!(res.http_status, Some(200));
+        assert_eq!(res.content_type.as_deref(), Some("application/json"));
+        assert_eq!(res.mime_type.as_deref(), Some("application/json"));
+        assert_eq!(res.response_time_ns, Some(RESP_UNIX_NS));
+        assert_eq!(res.raw_body, body);
+        assert_eq!(res.body, body);
+        assert!(res.body_note.is_none());
+    }
+
+    #[test]
+    fn body_stored_decoded_when_encoding_declared_but_plaintext() {
+        // Real Cache API behaviour: header says `br`, body is plaintext JS.
+        let body = b"\"use strict\";console.log(1)";
+        let meta = simple_get_meta(
+            200,
+            &[
+                ("content-type", "application/javascript"),
+                ("content-encoding", "br"),
+            ],
+            "application/javascript",
+        );
+        let data = build_cs_entry("https://a.slack-edge.com/app.js", body, &meta);
+        let res = resource_from_cachestorage_entry(
+            &data,
+            "gantry",
+            "uuid",
+            None,
+            PathBuf::from("/tmp/x_0"),
+            &DecompressLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(res.content_encoding.as_deref(), Some("br"));
+        // Body kept as the stored (already-delivered) bytes, not a failed decode.
+        assert_eq!(res.body, body);
+        let note = res.body_note.expect("note explaining stored-decoded body");
+        assert!(note.contains("stored decoded"), "{note}");
+    }
+
+    #[test]
+    fn wire_compressed_body_is_reinflated() {
+        let plain = b"genuinely gzip-compressed payload 0123456789";
+        let body = gzip(plain);
+        let meta = simple_get_meta(200, &[("content-encoding", "gzip")], "text/plain");
+        let data = build_cs_entry("https://x/y", &body, &meta);
+        let res = resource_from_cachestorage_entry(
+            &data,
+            "c",
+            "u",
+            None,
+            PathBuf::from("/tmp/z_0"),
+            &DecompressLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(res.raw_body, body);
+        assert_eq!(res.body, plain);
+        assert!(res.body_note.is_some());
+    }
+
+    #[test]
+    fn dir_walks_index_and_caches() {
+        let root = TempDir::new().unwrap();
+        let origin_hash = root.path().join("4c237d5e33167c88");
+        let uuid = "68f870d4-ed4e-4331-b7bd-7faed95e3d5e";
+        std::fs::create_dir_all(origin_hash.join(uuid)).unwrap();
+        // index.txt maps config-cache -> uuid, storage_key = app origin.
+        let index = build_index(&[("config-cache", uuid, None)], "https://app.slack.com/");
+        std::fs::write(origin_hash.join("index.txt"), index).unwrap();
+        // one entry in the cache dir
+        let meta = simple_get_meta(200, &[("content-type", "text/html")], "text/html");
+        let entry = build_cs_entry("https://slack.com/page", b"<html>hi</html>", &meta);
+        std::fs::write(origin_hash.join(uuid).join("aaaa1111_0"), entry).unwrap();
+        // non-entry files must be ignored
+        std::fs::write(origin_hash.join(uuid).join("index"), b"junk").unwrap();
+
+        let mut res = parse_cachestorage_dir(&origin_hash);
+        assert_eq!(res.len(), 1);
+        let r = res.pop().unwrap();
+        assert_eq!(r.url, "https://slack.com/page");
+        assert_eq!(r.cache_name, "config-cache");
+        assert_eq!(r.storage_key.as_deref(), Some("https://app.slack.com/"));
+        assert_eq!(r.body, b"<html>hi</html>");
+    }
+
+    #[test]
+    fn root_dir_with_origin_hash_children_walked() {
+        // Passing the CacheStorage root (children are origin-hash dirs) works.
+        let root = TempDir::new().unwrap();
+        let origin_hash = root.path().join("deadbeefcafef00d");
+        let uuid = "11111111-2222-3333-4444-555555555555";
+        std::fs::create_dir_all(origin_hash.join(uuid)).unwrap();
+        let index = build_index(&[("v1", uuid, None)], "https://ex.test/");
+        std::fs::write(origin_hash.join("index.txt"), index).unwrap();
+        let meta = simple_get_meta(200, &[], "text/plain");
+        let entry = build_cs_entry("https://ex.test/x", b"body", &meta);
+        std::fs::write(origin_hash.join(uuid).join("bbbb2222_0"), entry).unwrap();
+
+        let res = parse_cachestorage_dir(root.path());
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].cache_name, "v1");
+    }
+
+    #[test]
+    fn missing_index_yields_empty_no_panic() {
+        let root = TempDir::new().unwrap();
+        // A directory with no index.txt anywhere.
+        std::fs::create_dir_all(root.path().join("some-uuid")).unwrap();
+        let res = parse_cachestorage_dir(root.path());
+        assert!(res.is_empty());
+        // A path that doesn't exist at all.
+        let res2 = parse_cachestorage_dir(Path::new("/nonexistent/cachestorage"));
+        assert!(res2.is_empty());
     }
 }
