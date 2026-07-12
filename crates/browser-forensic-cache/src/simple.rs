@@ -130,6 +130,32 @@ pub fn parse_simple_entry(data: &[u8]) -> Result<SimpleEntry, CacheError> {
         })?
         .to_string();
 
+    let located = locate_streams(data, file_len, key_end)?;
+
+    Ok(SimpleEntry {
+        url,
+        stream0: data[located.stream0.clone()].to_vec(),
+        stream1: data[located.stream1.clone()].to_vec(),
+        stream0_has_crc32: located.stream0_has_crc32,
+        has_key_sha256: located.has_key_sha256,
+    })
+}
+
+/// Byte ranges of the two streams inside a `_0` file, plus stream-0 EOF flags.
+struct StreamLayout {
+    stream0: std::ops::Range<usize>,
+    stream1: std::ops::Range<usize>,
+    stream0_has_crc32: bool,
+    has_key_sha256: bool,
+}
+
+/// Locate stream 0 (headers) and stream 1 (body) by working back from the
+/// stream-0 EOF, validating both EOF magics. Every offset is bounds-checked.
+fn locate_streams(
+    data: &[u8],
+    file_len: usize,
+    key_end: usize,
+) -> Result<StreamLayout, CacheError> {
     // --- stream-0 EOF (the final 24 bytes) ---
     let eof0_off = file_len - EOF_SIZE;
     let eof0_magic = read_u64_le(data, eof0_off).ok_or(CacheError::OutOfBounds {
@@ -194,14 +220,10 @@ pub fn parse_simple_entry(data: &[u8]) -> Result<SimpleEntry, CacheError> {
         });
     }
 
-    // stream 1 (body) fills the gap between the key and the stream-1 EOF.
-    let stream1 = data[key_end..eof1_off].to_vec();
-    let stream0 = data[stream0_start..stream0_end].to_vec();
-
-    Ok(SimpleEntry {
-        url,
-        stream0,
-        stream1,
+    Ok(StreamLayout {
+        // stream 1 (body) fills the gap between the key and the stream-1 EOF.
+        stream1: key_end..eof1_off,
+        stream0: stream0_start..stream0_end,
         stream0_has_crc32,
         has_key_sha256,
     })
