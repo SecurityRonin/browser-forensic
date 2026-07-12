@@ -21,5 +21,6 @@
 
 pub mod graph;
 pub mod host;
+pub mod render;
 pub mod rollup;
 pub mod timeline;
