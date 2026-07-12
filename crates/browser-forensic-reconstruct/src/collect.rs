@@ -25,49 +25,140 @@ fn norm_ct(ct: Option<&str>) -> Option<String> {
         .map(str::to_ascii_lowercase)
 }
 
-/// Convert a [`CachedResource`] (RED stub — returns an empty placeholder).
+/// Convert a [`CachedResource`] (SimpleCache / cache2 / Safari) into the
+/// normalized index type, choosing the usable (decoded) body.
 #[must_use]
-pub fn indexed_from_cached(_res: &CachedResource, _source: CacheSource) -> IndexedResource {
+pub fn indexed_from_cached(res: &CachedResource, source: CacheSource) -> IndexedResource {
+    let body = if res.body_decoded {
+        res.decoded_body.clone()
+    } else {
+        res.raw_body.clone()
+    };
     IndexedResource {
-        url: String::new(),
-        source: CacheSource::ChromiumSimpleCache,
-        cached_time_ns: None,
-        content_type: None,
-        http_status: None,
-        status_line: None,
-        headers: Vec::new(),
-        body: Vec::new(),
-        source_file: std::path::PathBuf::new(),
+        url: res.url.clone(),
+        source,
+        cached_time_ns: res.response_time_ns.or(res.request_time_ns),
+        content_type: norm_ct(res.content_type.as_deref()),
+        http_status: res.http_status,
+        status_line: res.status_line.clone(),
+        headers: res.headers.clone(),
+        body,
+        source_file: res.source_file.clone(),
     }
 }
 
-/// Convert a [`CacheStorageResource`] (RED stub — returns an empty placeholder).
+/// Convert a [`CacheStorageResource`] (Cache API) into the normalized index
+/// type. The Cache API stores the already-delivered body.
 #[must_use]
-pub fn indexed_from_cachestorage(_res: &CacheStorageResource) -> IndexedResource {
+pub fn indexed_from_cachestorage(res: &CacheStorageResource) -> IndexedResource {
+    let status_line = res.http_status.map(|s| {
+        let text = res.status_text.clone().unwrap_or_default();
+        format!("HTTP/1.1 {s} {text}").trim_end().to_string()
+    });
     IndexedResource {
-        url: String::new(),
+        url: res.url.clone(),
         source: CacheSource::CacheStorage,
-        cached_time_ns: None,
-        content_type: None,
-        http_status: None,
-        status_line: None,
-        headers: Vec::new(),
-        body: Vec::new(),
-        source_file: std::path::PathBuf::new(),
+        cached_time_ns: res.response_time_ns.or(res.entry_time_ns),
+        content_type: norm_ct(res.content_type.as_deref()),
+        http_status: res.http_status,
+        status_line,
+        headers: res.headers.clone(),
+        body: res.body.clone(),
+        source_file: res.source_file.clone(),
     }
 }
 
 impl ResourceIndex {
-    /// Build an index from a cache path (RED stub — returns empty).
+    /// Build an index from a cache path — a single cache directory/file or a
+    /// whole profile. Every applicable backend is tried against the path and a
+    /// fixed set of well-known sub-paths, and results are merged (later inserts
+    /// win per URL). Best-effort and panic-free.
     #[must_use]
-    pub fn from_cache_dir(_path: &Path) -> Self {
-        let _ = (
-            parse_simple_cache_dir as fn(&Path) -> Vec<CachedResource>,
-            parse_firefox_cache2_dir as fn(&Path) -> Vec<CachedResource>,
-            parse_safari_cache_db as fn(&Path) -> Vec<CachedResource>,
-            parse_cachestorage_dir as fn(&Path) -> Vec<CacheStorageResource>,
-        );
-        ResourceIndex::new()
+    pub fn from_cache_dir(path: &Path) -> Self {
+        let mut idx = ResourceIndex::new();
+        collect_into(path, &mut idx);
+        idx
+    }
+}
+
+/// Add SimpleCache resources found directly under `dir`.
+fn add_simple(dir: &Path, idx: &mut ResourceIndex) {
+    for res in parse_simple_cache_dir(dir) {
+        idx.insert(indexed_from_cached(&res, CacheSource::ChromiumSimpleCache));
+    }
+}
+
+/// Add Firefox cache2 resources found directly under `dir`.
+fn add_firefox(dir: &Path, idx: &mut ResourceIndex) {
+    for res in parse_firefox_cache2_dir(dir) {
+        idx.insert(indexed_from_cached(&res, CacheSource::FirefoxCache2));
+    }
+}
+
+/// Add Safari resources from a `Cache.db` file.
+fn add_safari(db: &Path, idx: &mut ResourceIndex) {
+    if db.is_file() {
+        for res in parse_safari_cache_db(db) {
+            idx.insert(indexed_from_cached(&res, CacheSource::SafariCacheDb));
+        }
+    }
+}
+
+/// Add Service Worker CacheStorage resources found under `dir`.
+fn add_cachestorage(dir: &Path, idx: &mut ResourceIndex) {
+    if dir.is_dir() {
+        for res in parse_cachestorage_dir(dir) {
+            idx.insert(indexed_from_cachestorage(&res));
+        }
+    }
+}
+
+/// Try every backend against `path` and a fixed set of well-known sub-paths.
+/// The parsers are individually best-effort (they return empty on a
+/// non-matching directory), so calling all of them is safe.
+fn collect_into(path: &Path, idx: &mut ResourceIndex) {
+    // A single Safari Cache.db file.
+    if path.is_file() {
+        add_safari(path, idx);
+        return;
+    }
+    if !path.is_dir() {
+        return;
+    }
+
+    // Chromium SimpleCache: the path itself or the standard sub-layouts.
+    for sub in [
+        path.to_path_buf(),
+        path.join("Cache_Data"),
+        path.join("Cache").join("Cache_Data"),
+        path.join("Default").join("Cache").join("Cache_Data"),
+    ] {
+        add_simple(&sub, idx);
+    }
+
+    // Firefox cache2 entries.
+    for sub in [
+        path.to_path_buf(),
+        path.join("entries"),
+        path.join("cache2").join("entries"),
+    ] {
+        add_firefox(&sub, idx);
+    }
+
+    // Safari Cache.db files.
+    for sub in [path.join("Cache.db"), path.join("Cache").join("Cache.db")] {
+        add_safari(&sub, idx);
+    }
+
+    // Service Worker CacheStorage.
+    for sub in [
+        path.to_path_buf(),
+        path.join("Service Worker").join("CacheStorage"),
+        path.join("Default")
+            .join("Service Worker")
+            .join("CacheStorage"),
+    ] {
+        add_cachestorage(&sub, idx);
     }
 }
 
