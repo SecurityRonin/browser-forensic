@@ -17,8 +17,12 @@ use browser_forensic_core::BrowserEvent;
 use linkify::{LinkFinder, LinkKind};
 use regex::Regex;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::filter::{bound, text_fields};
+
+/// The Bitcoin base58 alphabet (no `0`, `O`, `I`, `l`).
+const BASE58: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 /// The class of a candidate entity match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -114,6 +118,10 @@ pub fn extract_from_text(text: &str) -> Vec<TextHit> {
     extract_emails(text, &mut out);
     extract_ipv4(text, &mut out);
     extract_ipv6(text, &mut out);
+    extract_credit_cards(text, &mut out);
+    extract_btc_base58(text, &mut out);
+    extract_btc_bech32(text, &mut out);
+    extract_eth(text, &mut out);
     out.sort_by_key(|(_, _, offset, _)| *offset);
     out
 }
@@ -166,5 +174,166 @@ fn extract_ipv6(text: &str, out: &mut Vec<TextHit>) {
         if m.as_str().parse::<Ipv6Addr>().is_ok() {
             out.push((IocKind::Ipv6, m.as_str().to_string(), m.start(), None));
         }
+    }
+}
+
+/// Credit-card candidates: contiguous 13–19 digit runs that pass the Luhn
+/// checksum. Grouped forms (spaces/dashes between digit groups) are not matched
+/// — a known, documented limitation. A Luhn-valid run is only a *candidate*; a
+/// non-card identifier can be Luhn-valid by chance.
+fn extract_credit_cards(text: &str, out: &mut Vec<TextHit>) {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(re) = cached_regex(&RE, r"\b\d{13,19}\b") else {
+        return;
+    };
+    for m in re.find_iter(text) {
+        if luhn_valid(m.as_str()) {
+            out.push((
+                IocKind::CreditCard,
+                m.as_str().to_string(),
+                m.start(),
+                Some("Luhn-valid".to_string()),
+            ));
+        }
+    }
+}
+
+/// The Luhn checksum over a string of ASCII digits.
+fn luhn_valid(digits: &str) -> bool {
+    let mut sum: u32 = 0;
+    let mut double = false;
+    for c in digits.bytes().rev() {
+        if !c.is_ascii_digit() {
+            return false;
+        }
+        let mut d = u32::from(c - b'0');
+        if double {
+            d *= 2;
+            if d > 9 {
+                d -= 9;
+            }
+        }
+        sum += d;
+        double = !double;
+    }
+    sum % 10 == 0
+}
+
+/// Bitcoin base58check address candidates (P2PKH `1…` / P2SH `3…`). The shape is
+/// matched, then base58-decoded and the 4-byte double-SHA256 checksum verified
+/// (an independent oracle) — only checksum-valid strings are reported.
+fn extract_btc_base58(text: &str, out: &mut Vec<TextHit>) {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(re) = cached_regex(&RE, r"\b[13][1-9A-HJ-NP-Za-km-z]{25,34}\b") else {
+        return;
+    };
+    for m in re.find_iter(text) {
+        if base58check_valid(m.as_str()) {
+            out.push((
+                IocKind::BitcoinBase58,
+                m.as_str().to_string(),
+                m.start(),
+                Some("checksum-valid".to_string()),
+            ));
+        }
+    }
+}
+
+/// Decode a base58 string and verify it is a well-formed 25-byte base58check
+/// payload (`version || 20-byte hash || 4-byte checksum`).
+fn base58check_valid(s: &str) -> bool {
+    let Some(bytes) = base58_decode(s) else {
+        return false;
+    };
+    if bytes.len() != 25 {
+        return false;
+    }
+    let (payload, checksum) = bytes.split_at(21);
+    let digest = double_sha256(payload);
+    digest[..4] == *checksum
+}
+
+/// Big-endian base58 decode. Returns `None` on any character outside the
+/// alphabet. Leading `1`s map to leading zero bytes.
+fn base58_decode(s: &str) -> Option<Vec<u8>> {
+    let mut bytes: Vec<u8> = vec![0];
+    for c in s.bytes() {
+        let val = BASE58.iter().position(|&b| b == c)?;
+        let mut carry = val;
+        for byte in &mut bytes {
+            carry += usize::from(*byte) * 58;
+            *byte = (carry & 0xff) as u8;
+            carry >>= 8;
+        }
+        while carry > 0 {
+            bytes.push((carry & 0xff) as u8);
+            carry >>= 8;
+        }
+    }
+    for c in s.bytes() {
+        if c == b'1' {
+            bytes.push(0);
+        } else {
+            break;
+        }
+    }
+    bytes.reverse();
+    Some(bytes)
+}
+
+/// Double SHA-256, using the audited `sha2` crate (never a hand-rolled hash).
+fn double_sha256(data: &[u8]) -> [u8; 32] {
+    let first = Sha256::digest(data);
+    Sha256::digest(first).into()
+}
+
+/// Bitcoin bech32/bech32m (segwit) address candidates (`bc1…` / `tb1…`). The
+/// `bech32` crate validates the HRP, witness version, and BCH checksum — only
+/// fully valid segwit addresses on the mainnet/testnet HRPs are reported.
+fn extract_btc_bech32(text: &str, out: &mut Vec<TextHit>) {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(re) = cached_regex(
+        &RE,
+        r"\b(?:bc|tb)1[023456789acdefghjklmnpqrstuvwxyz]{6,87}\b",
+    ) else {
+        return;
+    };
+    for m in re.find_iter(text) {
+        if let Ok((hrp, _version, _program)) = bech32::segwit::decode(m.as_str()) {
+            if hrp.to_string() == "bc" || hrp.to_string() == "tb" {
+                out.push((
+                    IocKind::BitcoinBech32,
+                    m.as_str().to_string(),
+                    m.start(),
+                    Some("checksum-valid".to_string()),
+                ));
+            }
+        }
+    }
+}
+
+/// Ethereum-address-shaped candidates (`0x` + 40 hex). The note records whether
+/// an EIP-55 mixed-case checksum is present; it is *not* verified here (that
+/// would require keccak256). All-one-case addresses carry no case checksum.
+fn extract_eth(text: &str, out: &mut Vec<TextHit>) {
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(re) = cached_regex(&RE, r"\b0x[0-9a-fA-F]{40}\b") else {
+        return;
+    };
+    for m in re.find_iter(text) {
+        let hex = &m.as_str()[2..];
+        let has_upper = hex.bytes().any(|b| b.is_ascii_uppercase());
+        let has_lower = hex.bytes().any(|b| b.is_ascii_lowercase());
+        let note = if has_upper && has_lower {
+            "EIP-55 mixed-case checksum present (unverified)"
+        } else {
+            "all one case, no case checksum"
+        };
+        out.push((
+            IocKind::Ethereum,
+            m.as_str().to_string(),
+            m.start(),
+            Some(note.to_string()),
+        ));
     }
 }

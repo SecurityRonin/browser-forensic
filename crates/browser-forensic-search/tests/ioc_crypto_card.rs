@@ -8,7 +8,7 @@
 //!
 //! Every reported entity is a *candidate*, never an assertion that the value is
 //! a real card or wallet.
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::option_option)]
 
 use browser_forensic_search::ioc::{extract_from_text, IocKind};
 
@@ -113,10 +113,11 @@ fn btc_bech32_bad_checksum_rejected() {
 
 #[test]
 fn eth_mixed_case_checksum_note() {
+    // EIP-55 spec vector with genuinely mixed-case hex letters.
     let note = value_note(
-        "send to 0x52908400098527886E0F7030069857D2E4169EE7",
+        "send to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
         IocKind::Ethereum,
-        "0x52908400098527886E0F7030069857D2E4169EE7",
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
     )
     .expect("eth candidate");
     let note = note.expect("eth should carry a checksum note");
