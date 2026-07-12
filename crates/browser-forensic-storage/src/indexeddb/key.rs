@@ -43,11 +43,29 @@ pub(crate) enum IdbKey {
 
 /// Decode the leading [`KeyPrefix`]. Returns `(prefix, bytes_consumed)`, or
 /// `None` if the buffer is too short. Never panics.
-#[allow(dead_code, unused_variables)]
 #[must_use]
 pub(crate) fn read_key_prefix(data: &[u8]) -> Option<(KeyPrefix, usize)> {
-    // RED stub — real decoder lands in the GREEN commit.
-    None
+    let lengths = *data.first()?;
+    let db_id_size = usize::from((lengths >> 5) & 0x07) + 1;
+    let os_size = usize::from((lengths >> 2) & 0x07) + 1;
+    let index_size = usize::from(lengths & 0x03) + 1;
+
+    let mut off = 1usize;
+    let db_id = read_fixed_le(data, off, db_id_size)?;
+    off += db_id_size;
+    let object_store_id = read_fixed_le(data, off, os_size)?;
+    off += os_size;
+    let index_id = read_fixed_le(data, off, index_size)?;
+    off += index_size;
+
+    Some((
+        KeyPrefix {
+            db_id,
+            object_store_id,
+            index_id,
+        },
+        off,
+    ))
 }
 
 /// Read a fixed-width (`len` bytes, `len <= 8`) little-endian integer at `off`.
@@ -63,14 +81,10 @@ fn read_fixed_le(data: &[u8], off: usize, len: usize) -> Option<u64> {
 /// Decode an [`IdbKey`] from the front of `data`. Returns `(key, bytes_consumed)`
 /// so a nested array element knows how far it advanced. `None` on any malformed
 /// or truncated encoding — never panics, never reads out of bounds.
-#[allow(dead_code, unused_variables)]
 #[must_use]
 pub(crate) fn decode_idb_key(data: &[u8]) -> Option<(IdbKey, usize)> {
-    // RED stub — real decoder lands in the GREEN commit.
-    None
+    decode_key_inner(data, 0)
 }
-
-#[allow(dead_code)]
 
 fn decode_key_inner(data: &[u8], depth: usize) -> Option<(IdbKey, usize)> {
     if depth > MAX_KEY_DEPTH {
@@ -133,19 +147,34 @@ fn decode_utf16_be(bytes: &[u8]) -> String {
         .collect()
 }
 
-#[allow(dead_code, unused_variables)]
 impl IdbKey {
     /// A one-line human rendering for an event description.
     pub(crate) fn to_display(&self) -> String {
-        // RED stub — real rendering lands in the GREEN commit.
-        String::new()
+        match self {
+            IdbKey::Null => "null".to_string(),
+            IdbKey::Number(n) => n.to_string(),
+            IdbKey::Date(ms) => format!("Date({ms})"),
+            IdbKey::String(s) => s.clone(),
+            IdbKey::Binary(b) => format!("<binary {} bytes>", b.len()),
+            IdbKey::Array(items) => {
+                let inner: Vec<String> = items.iter().map(IdbKey::to_display).collect();
+                format!("[{}]", inner.join(", "))
+            }
+            IdbKey::MinKey => "<minkey>".to_string(),
+        }
     }
 
     /// A machine-faithful JSON rendering. Dates are the raw epoch-ms number;
     /// binary keys are lowercase hex (a key value round-trips losslessly).
     pub(crate) fn to_json(&self) -> Value {
-        // RED stub — real rendering lands in the GREEN commit.
-        Value::Null
+        match self {
+            IdbKey::Null => Value::Null,
+            IdbKey::Number(n) | IdbKey::Date(n) => json!(n),
+            IdbKey::String(s) => json!(s),
+            IdbKey::Binary(b) => json!(crate::to_hex(b)),
+            IdbKey::Array(items) => Value::Array(items.iter().map(IdbKey::to_json).collect()),
+            IdbKey::MinKey => json!("<minkey>"),
+        }
     }
 }
 
