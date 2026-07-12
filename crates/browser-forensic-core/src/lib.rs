@@ -62,6 +62,10 @@ pub enum ArtifactKind {
     CreditCard,
     /// OAuth / sync auth-token metadata. The token itself is never decrypted.
     AuthToken,
+    /// A domain/origin the browser contacted, recovered from a network/state
+    /// artifact that survives a history wipe (HTTP server properties, NEL/
+    /// Reporting, DIPS/BTM bounce records, HSTS). Read-only, no secrets.
+    RecoveredDomain,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -84,6 +88,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::Permission => write!(f, "Permission"),
             Self::CreditCard => write!(f, "CreditCard"),
             Self::AuthToken => write!(f, "AuthToken"),
+            Self::RecoveredDomain => write!(f, "RecoveredDomain"),
         }
     }
 }
