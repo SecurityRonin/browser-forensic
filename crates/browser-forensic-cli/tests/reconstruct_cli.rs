@@ -1,5 +1,6 @@
 //! `br4n6 reconstruct PATH --out DIR [--url TARGET] [--format html|warc|gallery]`
 //! — end-to-end CLI test over a synthetic Chromium SimpleCache directory.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs;
 
