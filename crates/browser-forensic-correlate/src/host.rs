@@ -49,8 +49,53 @@ const SECOND_LEVEL_REGISTRY: &[&str] = &[
 /// Returns `None` for an empty value or one with no discernible host.
 #[must_use]
 pub fn host_of(value: &str) -> Option<String> {
-    let _ = value;
-    None
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.contains("://") {
+        return url::Url::parse(trimmed)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+            .filter(|h| !h.is_empty());
+    }
+    // Bare host: strip any fragment/query/path, then userinfo, then port.
+    let no_path = trimmed
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(trimmed)
+        .trim();
+    let after_userinfo = no_path.rsplit('@').next().unwrap_or(no_path);
+    // A bracketed IPv6 literal keeps its colons; only strip a trailing :port
+    // from a non-bracketed host.
+    let host = if after_userinfo.starts_with('[') {
+        after_userinfo
+    } else {
+        after_userinfo
+            .split_once(':')
+            .map_or(after_userinfo, |(h, _port)| h)
+    };
+    let host = host.trim().trim_matches('.');
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_ascii_lowercase())
+    }
+}
+
+/// True if `host` is an IPv4 dotted-quad or contains a `:` (IPv6 / bracketed).
+fn is_ip_literal(host: &str) -> bool {
+    if host.contains(':') {
+        return true;
+    }
+    let mut octets = 0;
+    for label in host.split('.') {
+        if label.is_empty() || !label.bytes().all(|b| b.is_ascii_digit()) {
+            return false;
+        }
+        octets += 1;
+    }
+    octets == 4
 }
 
 /// Reduce a host to its registrable domain (eTLD+1) via the documented
@@ -58,24 +103,69 @@ pub fn host_of(value: &str) -> Option<String> {
 /// host.
 #[must_use]
 pub fn registrable_domain(host: &str) -> Option<String> {
-    let _ = host;
-    None
+    let h = host.trim().trim_matches('.').to_ascii_lowercase();
+    if h.is_empty() {
+        return None;
+    }
+    if is_ip_literal(&h) {
+        return Some(h);
+    }
+    let labels: Vec<&str> = h.split('.').filter(|l| !l.is_empty()).collect();
+    match labels.as_slice() {
+        [] => None,
+        [_] | [_, _] => Some(h),
+        [.., third_last, second_last, last] => {
+            if last.len() == 2
+                && SECOND_LEVEL_REGISTRY.contains(second_last)
+                && !third_last.is_empty()
+            {
+                Some(format!("{third_last}.{second_last}.{last}"))
+            } else {
+                Some(format!("{second_last}.{last}"))
+            }
+        }
+    }
 }
 
 /// Every distinct registrable domain derivable from an event's URL/host fields,
 /// in first-seen order.
 #[must_use]
 pub fn event_registrable_domains(event: &BrowserEvent) -> Vec<String> {
-    let _ = event;
-    Vec::new()
+    let mut out: Vec<String> = Vec::new();
+    for (_field, value) in host_fields(event) {
+        if let Some(domain) = host_of(&value).and_then(|h| registrable_domain(&h)) {
+            if !out.contains(&domain) {
+                out.push(domain);
+            }
+        }
+    }
+    out
 }
 
 /// The single registrable domain that best identifies an event: the first
 /// present of its primary URL/host fields (`url`, `origin`, `page_url`, …).
 #[must_use]
 pub fn primary_registrable_domain(event: &BrowserEvent) -> Option<String> {
-    let _ = event;
+    for key in URL_FIELDS.iter().chain(BARE_HOST_FIELDS.iter()) {
+        if let Some(value) = event.attrs.get(*key).and_then(serde_json::Value::as_str) {
+            if let Some(domain) = host_of(value).and_then(|h| registrable_domain(&h)) {
+                return Some(domain);
+            }
+        }
+    }
     None
+}
+
+/// `(field, value)` pairs of every URL/host-bearing string attribute on an
+/// event, URL fields before bare-host fields.
+fn host_fields(event: &BrowserEvent) -> Vec<(&'static str, String)> {
+    let mut out: Vec<(&'static str, String)> = Vec::new();
+    for key in URL_FIELDS.iter().chain(BARE_HOST_FIELDS.iter()) {
+        if let Some(value) = event.attrs.get(*key).and_then(serde_json::Value::as_str) {
+            out.push((*key, value.to_string()));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
