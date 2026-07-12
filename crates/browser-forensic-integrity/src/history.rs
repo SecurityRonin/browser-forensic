@@ -381,6 +381,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn chromium_visit_count_exceeding_surviving_visits_detected() {
+        let db = TestDb::new(chrome_history_schema());
+        // url 1 claims 5 visits but only 2 visit rows survive → visits deleted
+        // while the summary row was kept.
+        db.insert("INSERT INTO urls(id, url, title, visit_count, last_visit_time) VALUES (1, 'https://a.com', 'A', 5, 13000000002000000)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (1, 1, 13000000000000000, 0, 0)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (2, 1, 13000000001000000, 0, 0)", rusqlite::params![]);
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
+        assert!(
+            result.iter().any(|i| matches!(
+                i,
+                IntegrityIndicator::VisitCountMismatch {
+                    url_id: 1,
+                    recorded_visit_count: 5,
+                    actual_visit_rows: 2,
+                    ..
+                }
+            )),
+            "should detect visit_count (5) exceeding surviving visits rows (2), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn chromium_visit_count_matching_or_below_does_not_fire() {
+        let db = TestDb::new(chrome_history_schema());
+        // Recorded count equals surviving rows; and a second url has MORE visit
+        // rows than its count (normal: redirects/synthesized aren't counted).
+        db.insert("INSERT INTO urls(id, url, title, visit_count, last_visit_time) VALUES (1, 'https://a.com', 'A', 2, 13000000001000000)", rusqlite::params![]);
+        db.insert("INSERT INTO urls(id, url, title, visit_count, last_visit_time) VALUES (2, 'https://b.com', 'B', 1, 13000000003000000)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (1, 1, 13000000000000000, 0, 0)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (2, 1, 13000000001000000, 0, 0)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (3, 2, 13000000002000000, 0, 0)", rusqlite::params![]);
+        db.insert("INSERT INTO visits(id, url, visit_time, from_visit, transition) VALUES (4, 2, 13000000003000000, 0, 0)", rusqlite::params![]);
+
+        let result = check_history_integrity(db.path(), BrowserFamily::Chromium).expect("check");
+        assert!(
+            !result
+                .iter()
+                .any(|i| matches!(i, IntegrityIndicator::VisitCountMismatch { .. })),
+            "recorded<=actual must not fire, got {result:?}"
+        );
+    }
+
     fn firefox_history_schema() -> &'static str {
         "CREATE TABLE moz_places (
             id INTEGER PRIMARY KEY,
