@@ -15,6 +15,7 @@ members = [
     "crates/browser-forensic-memory",
     "crates/browser-forensic-storage",
     "crates/browser-forensic-triage",
+    "crates/browser-forensic-correlate",
     "crates/browser-forensic-cli",
     "crates/browser-forensic-mcp",
 ]
