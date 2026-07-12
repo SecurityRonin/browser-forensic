@@ -252,6 +252,8 @@ version = "0.1.0"
 dependencies = [
  "brotli",
  "flate2",
+ "plist",
+ "rusqlite",
  "ruzstd",
  "tempfile",
  "thiserror 2.0.18",
