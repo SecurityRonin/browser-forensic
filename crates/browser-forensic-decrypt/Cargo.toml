@@ -1,7 +1,7 @@
 [package]
 name = "browser-forensic-decrypt"
 version = "0.2.0"
-description = "Opt-in decryption of Firefox NSS and macOS Chromium (v10) encrypted browser secrets — RustCrypto only, never fabricates plaintext"
+description = "Opt-in decryption of Firefox NSS, macOS Chromium (v10) and Windows Chromium (v10/v11 AES-256-GCM via DPAPI) encrypted browser secrets — RustCrypto only, never fabricates plaintext"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

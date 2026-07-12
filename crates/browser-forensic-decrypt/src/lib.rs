@@ -7,21 +7,23 @@
 //! (a Firefox master password, or an authorized macOS Keychain read, or a raw
 //! key). Decryption is NEVER silent and NEVER on by default.
 //!
-//! # Scope (Milestone 2a)
+//! # Scope
 //!
 //! * **Firefox NSS** — `key4.db` + `logins.json`, both the legacy 3DES-CBC PBE
 //!   and the modern PBES2 (PBKDF2-HMAC-SHA256 → AES-256-CBC) schemes.
 //! * **macOS Chromium `v10`** — AES-128-CBC keyed from the login-Keychain
 //!   "… Safe Storage" password.
-//!
-//! Windows DPAPI / AES-GCM (`v10`) and App-Bound (`v20`) are a deferred
-//! follow-up and are intentionally NOT implemented here.
+//! * **Windows Chromium `v10`/`v11`** — AES-256-GCM keyed from the profile key
+//!   recovered from `Local State` via DPAPI (`[MS-DPAPI]` master-key + blob).
+//!   App-Bound (`v20`, Chrome 127+) is detected and refused offline — never
+//!   fabricated — unless the SYSTEM key is supplied. See [`dpapi`] and
+//!   [`chromium_win`], and `docs/validation.md` for the validation tiering.
 //!
 //! # Guarantees
 //!
 //! * **RustCrypto only** — every primitive comes from an audited crate
-//!   (`aes`, `cbc`, `des`, `pbkdf2`, `hmac`, `sha1`, `sha2`); nothing is
-//!   hand-rolled.
+//!   (`aes`, `aes-gcm`, `cbc`, `des`, `pbkdf2`, `hmac`, `sha1`, `sha2`); nothing
+//!   is hand-rolled.
 //! * **Never fabricates** — a wrong or absent key produces a loud
 //!   [`DecryptError`], never plausible-but-wrong bytes.
 //! * **Passwords are gated twice** — decrypting a login *password* requires the
