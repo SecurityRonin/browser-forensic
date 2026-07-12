@@ -322,6 +322,13 @@ fn triage_firefox_profile(
         if let Ok(mut evts) = browser_forensic_firefox::parse_history(&places_path) {
             events.append(&mut evts);
         }
+        // Typed address-bar input and page annotations (places.sqlite).
+        if let Ok(mut evts) = browser_forensic_firefox::parse_typed_input(&places_path) {
+            events.append(&mut evts);
+        }
+        if let Ok(mut evts) = browser_forensic_firefox::parse_annotations(&places_path) {
+            events.append(&mut evts);
+        }
         if let Ok(mut ind) = browser_forensic_integrity::check_history_integrity(
             &places_path,
             BrowserFamily::Firefox,
@@ -368,6 +375,11 @@ fn triage_firefox_profile(
 
     // Recovered domains: Firefox HSTS (cleartext) survives a history clear.
     events.extend(collect_recovered_domains(path));
+
+    // Deleted bookmarks: diff bookmarkbackups/*.jsonlz4 against current bookmarks.
+    if let Ok(mut evts) = browser_forensic_firefox::recover_deleted_bookmarks(path) {
+        events.append(&mut evts);
+    }
 }
 
 fn triage_safari_profile(

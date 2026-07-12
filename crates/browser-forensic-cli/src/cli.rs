@@ -212,6 +212,19 @@ enum Command {
     MediaHistory(ArtifactArgs),
     /// Parse a Chromium `Extension Cookies` jar (tagged cookie_store=extension).
     ExtensionCookies(ArtifactArgs),
+    /// List strings the user typed into the Firefox address bar (`places.sqlite`
+    /// `moz_inputhistory`). `PATH` is a `places.sqlite` file or a profile
+    /// directory. Firefox-only; direct evidence of typed intent.
+    TypedInput(ArtifactArgs),
+    /// List Firefox page annotations (`places.sqlite` `moz_annos`). `PATH` is a
+    /// `places.sqlite` file or a profile directory. Firefox-only; stated as
+    /// recorded.
+    Annotations(ArtifactArgs),
+    /// Recover deleted bookmarks by diffing Firefox `bookmarkbackups/*.jsonlz4`
+    /// against the current `moz_bookmarks`: bookmarks present in a backup but
+    /// absent now, consistent with deletion after that backup. `PATH` is a
+    /// profile directory (or its `places.sqlite`). Firefox-only.
+    DeletedBookmarks(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -411,6 +424,9 @@ where
         Some(Command::Predictor(a)) => run_predictor(&a.path, a.format),
         Some(Command::MediaHistory(a)) => run_media_history(&a.path, a.format),
         Some(Command::ExtensionCookies(a)) => run_extension_cookies(&a.path, a.format),
+        Some(Command::TypedInput(a)) => run_typed_input(&a.path, a.format),
+        Some(Command::Annotations(a)) => run_annotations(&a.path, a.format),
+        Some(Command::DeletedBookmarks(a)) => run_deleted_bookmarks(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -2414,6 +2430,69 @@ pub fn run_extension_cookies(path: &Path, format: OutputFormat) -> Result<()> {
     let mut events = browser_forensic_chrome::parse_extension_cookies(path)
         .with_context(|| format!("parsing Extension Cookies from {}", path.display()))?;
     events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// Resolve a `places.sqlite` from `PATH`: the file itself, or a profile
+/// directory containing it.
+fn resolve_places(path: &Path) -> PathBuf {
+    if path.is_dir() {
+        path.join("places.sqlite")
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// `br4n6 typed-input PATH` — list strings the user typed into the Firefox
+/// address bar (`moz_inputhistory`). Firefox-only.
+///
+/// # Errors
+/// Returns an error if `places.sqlite` cannot be opened or queried.
+pub fn run_typed_input(path: &Path, format: OutputFormat) -> Result<()> {
+    let places = resolve_places(path);
+    let events = browser_forensic_firefox::parse_typed_input(&places)
+        .with_context(|| format!("parsing typed input from {}", places.display()))?;
+    print_events(&events, format);
+    Ok(())
+}
+
+/// `br4n6 annotations PATH` — list Firefox page annotations (`moz_annos`).
+/// Firefox-only; stated as recorded.
+///
+/// # Errors
+/// Returns an error if `places.sqlite` cannot be opened or queried.
+pub fn run_annotations(path: &Path, format: OutputFormat) -> Result<()> {
+    let places = resolve_places(path);
+    let mut events = browser_forensic_firefox::parse_annotations(&places)
+        .with_context(|| format!("parsing annotations from {}", places.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// `br4n6 deleted-bookmarks PATH` — recover bookmarks present in a Firefox
+/// `bookmarkbackups/*.jsonlz4` backup but absent from the current
+/// `moz_bookmarks` (consistent with deletion after that backup). `PATH` is a
+/// profile directory or its `places.sqlite`. Firefox-only.
+///
+/// # Errors
+/// Returns an error if `places.sqlite` (the diff baseline) is missing or
+/// unreadable.
+pub fn run_deleted_bookmarks(path: &Path, format: OutputFormat) -> Result<()> {
+    let profile_dir = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+    };
+    let events =
+        browser_forensic_firefox::recover_deleted_bookmarks(&profile_dir).with_context(|| {
+            format!(
+                "recovering deleted bookmarks from {}",
+                profile_dir.display()
+            )
+        })?;
     print_events(&events, format);
     Ok(())
 }
