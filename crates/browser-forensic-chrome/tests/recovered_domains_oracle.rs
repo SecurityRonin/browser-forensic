@@ -29,8 +29,7 @@ fn have_tool(tool: &str) -> bool {
     Command::new(tool)
         .arg("--version")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Independent oracle: count rows via the `sqlite3` CLI. Copies the DB plus its
@@ -140,10 +139,7 @@ fn nel_count_matches_sqlite3_oracle() {
         parsed.len(),
         policies + endpoints
     );
-    eprintln!(
-        "NEL oracle matched: {} policies + {endpoints} endpoints",
-        policies
-    );
+    eprintln!("NEL oracle matched: {policies} policies + {endpoints} endpoints");
 }
 
 #[test]
