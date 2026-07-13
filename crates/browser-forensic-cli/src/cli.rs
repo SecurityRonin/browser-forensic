@@ -440,6 +440,10 @@ enum Command {
         #[arg(long, value_name = "SECONDS", default_value_t = browser_forensic_correlate::graph::DEFAULT_COOCCURRENCE_WINDOW_SECS)]
         window: i64,
     },
+    /// Print the JSON Schema (draft 2020-12) for the `BrowserEvent` records this
+    /// tool emits, derived from the Rust types so it never drifts from the
+    /// serialized shape. Feed it to a validator or code generator.
+    Schema,
 }
 
 /// Parse the process arguments and dispatch. The no-subcommand and `tui` paths
@@ -616,7 +620,18 @@ where
             out,
             window,
         }) => run_graph(&path, format, out.as_deref(), window),
+        Some(Command::Schema) => run_schema(),
     }
+}
+
+/// Emit the `BrowserEvent` JSON Schema to stdout as pretty-printed JSON.
+///
+/// # Errors
+/// Propagates a serialization failure (never expected for a derived schema).
+pub fn run_schema() -> Result<()> {
+    let schema = browser_forensic_core::browser_event_schema();
+    println!("{}", serde_json::to_string_pretty(&schema)?);
+    Ok(())
 }
 
 /// Browser family a `history`/`sessions` source resolves to. Auto-detected from

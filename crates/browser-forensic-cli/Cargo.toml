@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 snss-core = "0.1.0"
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core", features = ["schema"] }
 browser-forensic-chrome = { version = "0.2.0", path = "../browser-forensic-chrome" }
 browser-forensic-firefox = { version = "0.2.0", path = "../browser-forensic-firefox" }
 browser-forensic-safari = { version = "0.2.0", path = "../browser-forensic-safari" }
