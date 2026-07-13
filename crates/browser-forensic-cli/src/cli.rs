@@ -202,9 +202,10 @@ enum Command {
         /// Inclusive upper time bound (RFC3339, `YYYY-MM-DD`, or Unix nanos).
         #[arg(long, value_name = "TS")]
         to: Option<String>,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
+        /// Output format. Auto-detected when omitted: a TTY gets the human
+        /// render, a pipe gets JSONL (announced once on stderr).
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
     },
     /// Extract candidate entities/IOCs from collected events: emails, IPs,
     /// crypto-address candidates, Luhn-valid card candidates, and search terms.
@@ -214,9 +215,10 @@ enum Command {
         /// A profile directory or home directory to collect events from.
         #[arg(value_name = "PATH")]
         path: PathBuf,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
+        /// Output format. Auto-detected when omitted: a TTY gets the human
+        /// render, a pipe gets JSONL (announced once on stderr).
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
     },
     /// Flag events whose host matches a user-supplied domain blocklist (no
     /// bundled threat intel — the list is an input). `PATH` is a profile or home
@@ -228,9 +230,10 @@ enum Command {
         /// Blocklist file: one host per line, `#` comments allowed.
         #[arg(long, value_name = "FILE")]
         list: PathBuf,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
+        /// Output format. Auto-detected when omitted: a TTY gets the human
+        /// render, a pipe gets JSONL (announced once on stderr).
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
     },
     /// Discover browser profiles on this system (bw-style output).
     Profiles {
@@ -573,11 +576,13 @@ where
             &fields,
             from.as_deref(),
             to.as_deref(),
-            format,
+            crate::output::resolve_stdout(format),
         ),
-        Some(Command::ExtractIocs { path, format }) => run_extract_iocs(&path, format),
+        Some(Command::ExtractIocs { path, format }) => {
+            run_extract_iocs(&path, crate::output::resolve_stdout(format))
+        }
         Some(Command::MatchDomains { path, list, format }) => {
-            run_match_domains(&path, &list, format)
+            run_match_domains(&path, &list, crate::output::resolve_stdout(format))
         }
         Some(Command::Profiles { format }) => run_profiles(format),
         Some(Command::Analyze { path, cap }) => run_analyze(&path, cap),
@@ -814,28 +819,27 @@ const ARTIFACT_CATALOG: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// Print the artifact catalog as a markdown-clean, space-aligned table (no
-/// box-drawing, survives paste). Columns: NAME, BROWSER, RECORDS.
+/// Print the artifact catalog as a markdown-clean table (pipe-delimited, no
+/// box-drawing, full values — survives paste into Jira/Word/Markdown) via the
+/// shared P2 output engine. Columns: NAME, BROWSER, RECORDS.
 ///
 /// # Errors
 /// Never fails; returns `Result` for a uniform handler signature.
 fn run_artifact_list() -> Result<()> {
-    let name_w = ARTIFACT_CATALOG
+    let rows: Vec<Vec<String>> = ARTIFACT_CATALOG
         .iter()
-        .map(|(n, _, _)| n.len())
-        .chain(std::iter::once("NAME".len()))
-        .max()
-        .unwrap_or(4);
-    let fam_w = ARTIFACT_CATALOG
-        .iter()
-        .map(|(_, f, _)| f.len())
-        .chain(std::iter::once("BROWSER".len()))
-        .max()
-        .unwrap_or(7);
-    println!("{:<name_w$}  {:<fam_w$}  RECORDS", "NAME", "BROWSER");
-    for (name, family, records) in ARTIFACT_CATALOG {
-        println!("{name:<name_w$}  {family:<fam_w$}  {records}");
-    }
+        .map(|(name, family, records)| {
+            vec![
+                (*name).to_string(),
+                (*family).to_string(),
+                (*records).to_string(),
+            ]
+        })
+        .collect();
+    print!(
+        "{}",
+        crate::output::markdown_table(&["NAME", "BROWSER", "RECORDS"], &rows)
+    );
     Ok(())
 }
 
@@ -997,21 +1001,27 @@ pub fn run_history(
     format: OutputFormat,
 ) -> Result<()> {
     let (family, history) = resolve_history(path)?;
-    let mut visits = match family {
-        Family::Chromium => {
-            let mut v = parse_visits(&history).with_context(|| {
-                format!("reading Chromium history visits from {}", history.display())
-            })?;
-            if !no_collapse {
-                v = collapse_redirects(v);
+    // Actionable errors (D10): a locked / dirty-WAL / corrupt open is mapped to a
+    // recovery suggestion instead of a bare SQLITE_* code, without swallowing the
+    // underlying error.
+    let mut visits = (|| -> Result<Vec<BrowserEvent>> {
+        Ok(match family {
+            Family::Chromium => {
+                let mut v = parse_visits(&history).with_context(|| {
+                    format!("reading Chromium history visits from {}", history.display())
+                })?;
+                if !no_collapse {
+                    v = collapse_redirects(v);
+                }
+                v
             }
-            v
-        }
-        Family::Firefox => browser_forensic_firefox::parse_history(&history)
-            .with_context(|| format!("reading Firefox history from {}", history.display()))?,
-        Family::Safari => browser_forensic_safari::parse_history(&history)
-            .with_context(|| format!("reading Safari history from {}", history.display()))?,
-    };
+            Family::Firefox => browser_forensic_firefox::parse_history(&history)
+                .with_context(|| format!("reading Firefox history from {}", history.display()))?,
+            Family::Safari => browser_forensic_safari::parse_history(&history)
+                .with_context(|| format!("reading Safari history from {}", history.display()))?,
+        })
+    })()
+    .map_err(|e| crate::output::actionable_db_error(e, &history))?;
     if let Some(needle) = search {
         filter_in_place(&mut visits, needle);
     }
@@ -2166,6 +2176,28 @@ pub fn run_search(
         .cloned()
         .collect();
     emit_events(&matched, format);
+    // Negative-result discipline (D10): an empty result must prove it looked —
+    // name the live sources searched and the recovery/decryption paths skipped.
+    if matched.is_empty() {
+        eprintln!(
+            "{}",
+            crate::output::negative_result(
+                &[
+                    "live history",
+                    "downloads",
+                    "bookmarks",
+                    "cookies",
+                    "sessions"
+                ],
+                &[
+                    "encrypted values",
+                    "deleted/carved records",
+                    "cache",
+                    "memory"
+                ],
+            )
+        );
+    }
     Ok(())
 }
 
