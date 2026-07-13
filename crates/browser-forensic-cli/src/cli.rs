@@ -83,6 +83,14 @@ enum Command {
         /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
+        /// Write/read a resumable checkpoint at this path so a killed or crashed
+        /// run resumes from the last completed profile (RFC 0001 P3b). Off by
+        /// default — a read-only tool never writes into evidence unasked.
+        #[arg(long, value_name = "PATH")]
+        checkpoint: Option<PathBuf>,
+        /// Ignore any existing checkpoint and start a clean run (alias: --no-resume).
+        #[arg(long, visible_alias = "no-resume")]
+        restart: bool,
     },
     /// Parse a single browser artifact by name — the power / discovery layer.
     /// `br4n6 artifact --list` tabulates every primitive; `br4n6 artifact <NAME>
@@ -541,7 +549,15 @@ where
             standard,
             deep,
             format,
-        }) => run_investigate(&path, tier_from_flags(quick, standard, deep), format),
+            checkpoint,
+            restart,
+        }) => run_investigate(
+            &path,
+            tier_from_flags(quick, standard, deep),
+            format,
+            checkpoint.as_deref(),
+            restart,
+        ),
         Some(Command::Artifact { list, kind }) => run_artifact_command(list, kind),
         Some(Command::Chains {
             path,
@@ -754,9 +770,11 @@ fn run_profile_loop(
     tier: crate::investigate::Tier,
     progress: &dyn crate::progress::InvestigationProgress,
     cancel: &std::sync::atomic::AtomicBool,
+    checkpoint: &mut Option<crate::checkpoint::CheckpointSession>,
 ) -> Result<(browser_forensic_triage::TriageReport, Option<Interrupted>)> {
     use std::sync::atomic::Ordering;
 
+    let _ = &checkpoint; // RED stub: checkpoint skip/record not yet wired.
     let total = profiles.len();
     let mut report = empty_report_now();
     let mut interrupted = None;
@@ -782,6 +800,74 @@ fn run_profile_loop(
     Ok((report, interrupted))
 }
 
+/// Stable per-profile checkpoint key: browser family + profile path.
+fn unit_key(profile: &browser_forensic_discovery::DiscoveredProfile) -> String {
+    format!("{}|{}", profile.browser, profile.path.display())
+}
+
+/// Open a resumable checkpoint session when `--checkpoint <PATH>` is given,
+/// announcing on stderr whether the run is fresh, resumed, or restarted (a
+/// mismatch / corruption never silently resumes). Returns `None` when
+/// checkpointing is off. Notices go to stderr so stdout stays byte-clean.
+///
+/// # Errors
+/// Propagates a checkpoint I/O error (e.g. an unreadable checkpoint directory).
+fn open_checkpoint(
+    evidence: &Path,
+    tier: crate::investigate::Tier,
+    checkpoint_path: Option<&Path>,
+    restart: bool,
+) -> Result<Option<crate::checkpoint::CheckpointSession>> {
+    let Some(cp_path) = checkpoint_path else {
+        return Ok(None);
+    };
+    let fingerprint = crate::checkpoint::fingerprint(evidence);
+    let tier_name = tier_name(tier);
+    let (session, resumed) = crate::checkpoint::CheckpointSession::resume_or_new(
+        cp_path,
+        fingerprint,
+        tier_name,
+        restart,
+    )
+    .with_context(|| format!("opening checkpoint {}", cp_path.display()))?;
+
+    match resumed {
+        crate::checkpoint::Resumed::Fresh => {}
+        crate::checkpoint::Resumed::Resumed {
+            completed,
+            created_ns,
+        } => {
+            eprintln!(
+                "Resuming: {completed} artifact(s) already complete (checkpoint from {})",
+                format_checkpoint_time(created_ns)
+            );
+        }
+        crate::checkpoint::Resumed::Restarted(reason) => {
+            eprintln!("[notice] checkpoint not resumed ({reason}); starting a clean run");
+        }
+    }
+    Ok(Some(session))
+}
+
+/// The tier's checkpoint tag (checkpoints are tier-specific).
+fn tier_name(tier: crate::investigate::Tier) -> &'static str {
+    match tier {
+        crate::investigate::Tier::Quick => "quick",
+        crate::investigate::Tier::Standard => "standard",
+        crate::investigate::Tier::Deep => "deep",
+    }
+}
+
+/// Render a checkpoint creation time (Unix ns) as an RFC 3339 UTC string, or the
+/// raw value if it is out of range.
+fn format_checkpoint_time(created_ns: i64) -> String {
+    chrono::DateTime::from_timestamp(
+        created_ns.div_euclid(1_000_000_000),
+        (created_ns.rem_euclid(1_000_000_000)) as u32,
+    )
+    .map_or_else(|| created_ns.to_string(), |dt| dt.to_rfc3339())
+}
+
 /// Drive the triage pipeline over each discovered profile at `tier`, reporting
 /// per-artifact progress to `progress`, returning the profiles, the merged
 /// consolidated report, and (if Ctrl-C was observed) how far the run got. The
@@ -792,13 +878,14 @@ fn collect_investigation(
     tier: crate::investigate::Tier,
     progress: &dyn crate::progress::InvestigationProgress,
     cancel: &std::sync::atomic::AtomicBool,
+    checkpoint: &mut Option<crate::checkpoint::CheckpointSession>,
 ) -> Result<(
     Vec<browser_forensic_discovery::DiscoveredProfile>,
     browser_forensic_triage::TriageReport,
     Option<Interrupted>,
 )> {
     let profiles = investigation_profiles(path);
-    let (report, interrupted) = run_profile_loop(&profiles, tier, progress, cancel)?;
+    let (report, interrupted) = run_profile_loop(&profiles, tier, progress, cancel, checkpoint)?;
     Ok((profiles, report, interrupted))
 }
 
@@ -814,6 +901,8 @@ pub fn run_investigate(
     path: &Path,
     tier: crate::investigate::Tier,
     format: Option<OutputFormat>,
+    checkpoint_path: Option<&Path>,
+    restart: bool,
 ) -> Result<()> {
     use std::io::IsTerminal as _;
 
@@ -838,7 +927,13 @@ pub fn run_investigate(
     let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     install_interrupt_handler(&cancel);
 
-    let (profiles, report, interrupted) = collect_investigation(path, tier, &progress, &cancel)?;
+    // Optional resumable checkpoint (RFC 0001 P3b concern 3). Off unless
+    // `--checkpoint <PATH>` is given — a read-only tool never writes into evidence
+    // by default. The resume decision is announced on stderr so stdout stays clean.
+    let mut checkpoint = open_checkpoint(path, tier, checkpoint_path, restart)?;
+
+    let (profiles, report, interrupted) =
+        collect_investigation(path, tier, &progress, &cancel, &mut checkpoint)?;
     let findings =
         crate::investigate::rank_findings(crate::investigate::findings_from_report(&report));
 
@@ -5442,11 +5537,13 @@ mod tests {
             cancel: std::sync::Arc::clone(&cancel),
         };
 
+        let mut no_cp = None;
         let (report, interrupted) = run_profile_loop(
             &profiles,
             crate::investigate::Tier::Standard,
             &progress,
             &cancel,
+            &mut no_cp,
         )
         .expect("loop");
 
@@ -5463,6 +5560,147 @@ mod tests {
         assert!(
             !json.contains("evil2.exe"),
             "no work from the un-started second profile leaks in"
+        );
+    }
+
+    // ---- RFC 0001 P3b concern 3: checkpoint / resumability -----------------
+
+    fn findings_json(report: &browser_forensic_triage::TriageReport) -> String {
+        let f = crate::investigate::rank_findings(crate::investigate::findings_from_report(report));
+        serde_json::to_string(&f).unwrap()
+    }
+
+    #[test]
+    fn checkpoint_records_completed_unit_on_interrupt() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let a = dir.path().join("A");
+        let b = dir.path().join("B");
+        chrome_profile_with_download(&a, "evil1.exe");
+        chrome_profile_with_download(&b, "evil2.exe");
+        let profiles = vec![discovered_chrome(&a, "A"), discovered_chrome(&b, "B")];
+
+        let cp_path = dir.path().join(".br4n6-checkpoint.json");
+        let (session, _) = crate::checkpoint::CheckpointSession::resume_or_new(
+            &cp_path,
+            crate::checkpoint::fingerprint(dir.path()),
+            "standard",
+            false,
+        )
+        .unwrap();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let progress = CancelOnFirstUnit {
+            cancel: std::sync::Arc::clone(&cancel),
+        };
+        let mut checkpoint = Some(session);
+        let (_report, interrupted) = run_profile_loop(
+            &profiles,
+            crate::investigate::Tier::Standard,
+            &progress,
+            &cancel,
+            &mut checkpoint,
+        )
+        .unwrap();
+        assert_eq!(interrupted, Some(Interrupted { done: 1, total: 2 }));
+
+        match crate::checkpoint::load(&cp_path) {
+            crate::checkpoint::Load::Ok(cp) => {
+                assert_eq!(cp.completed.len(), 1, "only the completed unit A recorded");
+                assert!(
+                    cp.completed[0].key.contains('A'),
+                    "the recorded unit is profile A: {}",
+                    cp.completed[0].key
+                );
+            }
+            other => panic!("checkpoint should have persisted unit A, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resume_equals_uninterrupted() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let a = dir.path().join("A");
+        let b = dir.path().join("B");
+        chrome_profile_with_download(&a, "evil1.exe");
+        chrome_profile_with_download(&b, "evil2.exe");
+        let profiles = vec![discovered_chrome(&a, "A"), discovered_chrome(&b, "B")];
+        let inert = crate::progress::Progress::disabled();
+
+        // Uninterrupted baseline (no checkpoint).
+        let no_cancel = std::sync::atomic::AtomicBool::new(false);
+        let mut no_cp = None;
+        let (full, none) = run_profile_loop(
+            &profiles,
+            crate::investigate::Tier::Standard,
+            &inert,
+            &no_cancel,
+            &mut no_cp,
+        )
+        .unwrap();
+        assert!(none.is_none());
+        let uninterrupted = findings_json(&full);
+        assert!(
+            uninterrupted.contains("evil1.exe") && uninterrupted.contains("evil2.exe"),
+            "baseline sees both downloads"
+        );
+
+        // Run 1: interrupt after profile A → checkpoint records unit A.
+        let cp_path = dir.path().join(".cp.json");
+        let (s1, _) = crate::checkpoint::CheckpointSession::resume_or_new(
+            &cp_path,
+            crate::checkpoint::fingerprint(dir.path()),
+            "standard",
+            false,
+        )
+        .unwrap();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut cp1 = Some(s1);
+        let (_r1, i1) = run_profile_loop(
+            &profiles,
+            crate::investigate::Tier::Standard,
+            &CancelOnFirstUnit {
+                cancel: std::sync::Arc::clone(&cancel),
+            },
+            &cancel,
+            &mut cp1,
+        )
+        .unwrap();
+        assert_eq!(i1, Some(Interrupted { done: 1, total: 2 }));
+
+        // Corrupt profile A's History so a *re-parse* of A would yield nothing:
+        // a correct resume must reuse the checkpointed fragment, not re-read disk.
+        std::fs::write(a.join("History"), b"not a database").unwrap();
+
+        // Run 2: resume → A from checkpoint, B parsed fresh.
+        let (s2, resumed) = crate::checkpoint::CheckpointSession::resume_or_new(
+            &cp_path,
+            crate::checkpoint::fingerprint(dir.path()),
+            "standard",
+            false,
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                resumed,
+                crate::checkpoint::Resumed::Resumed { completed: 1, .. }
+            ),
+            "the matching checkpoint resumes its one completed unit: {resumed:?}"
+        );
+        let no_cancel2 = std::sync::atomic::AtomicBool::new(false);
+        let mut cp2 = Some(s2);
+        let (r2, i2) = run_profile_loop(
+            &profiles,
+            crate::investigate::Tier::Standard,
+            &inert,
+            &no_cancel2,
+            &mut cp2,
+        )
+        .unwrap();
+        assert!(i2.is_none(), "the resumed run completes");
+        let resumed_findings = findings_json(&r2);
+
+        assert_eq!(
+            resumed_findings, uninterrupted,
+            "resumed findings are identical to the uninterrupted run"
         );
     }
 }

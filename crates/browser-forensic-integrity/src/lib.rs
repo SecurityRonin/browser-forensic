@@ -20,12 +20,15 @@ pub use pages::check_page_state;
 use std::path::PathBuf;
 
 use browser_forensic_core::BrowserFamily;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// An anomaly detected in a browser artifact indicating tampering, clearing, or corruption.
 ///
 /// Mirrors `winevt_integrity::IntegrityIndicator` from winevt-forensic.
-#[derive(Debug, Clone, Serialize)]
+///
+/// `Deserialize` is derived so `investigate` can persist an integrity fragment
+/// into a resumable checkpoint and read it back byte-faithfully (RFC 0001 P3b).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum IntegrityIndicator {
     /// Browser history was cleared (empty tables with non-zero auto-increment counters).
