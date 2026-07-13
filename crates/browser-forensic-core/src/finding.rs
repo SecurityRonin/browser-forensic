@@ -74,6 +74,8 @@ pub enum EvidenceSource {
     Download,
     Carved,
     Memory,
+    /// An installed browser extension (manifest / `Extensions` directory).
+    Extension,
 }
 
 impl std::fmt::Display for EvidenceSource {
@@ -85,6 +87,7 @@ impl std::fmt::Display for EvidenceSource {
             Self::Download => write!(f, "download"),
             Self::Carved => write!(f, "carved"),
             Self::Memory => write!(f, "memory"),
+            Self::Extension => write!(f, "extension"),
         }
     }
 }

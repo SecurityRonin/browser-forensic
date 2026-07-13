@@ -104,14 +104,23 @@
     },
     "EvidenceSource": {
       "description": "Where the datum was read from — a coarse provenance axis (RFC 0001 D4).\nA live history hit, a carved string, and a cached resource have different\ncourtroom value; this axis records which.",
-      "type": "string",
-      "enum": [
-        "History",
-        "Cache",
-        "Cookie",
-        "Download",
-        "Carved",
-        "Memory"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "History",
+            "Cache",
+            "Cookie",
+            "Download",
+            "Carved",
+            "Memory"
+          ]
+        },
+        {
+          "description": "An installed browser extension (manifest / `Extensions` directory).",
+          "type": "string",
+          "const": "Extension"
+        }
       ]
     },
     "EvidenceState": {

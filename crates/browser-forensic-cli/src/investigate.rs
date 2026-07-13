@@ -66,21 +66,238 @@ pub const PRIORITY_CUE_NOTE: &str =
 /// basic P3a form — full confidence-scored auto-detect is P7).
 #[must_use]
 pub fn detection_header(profiles: &[DiscoveredProfile]) -> String {
-    let _ = profiles;
-    String::new()
+    if profiles.is_empty() {
+        return "Detected: no browser profiles found".to_string();
+    }
+    let families: BTreeSet<String> = profiles
+        .iter()
+        .map(|p| p.browser.to_string().to_lowercase())
+        .collect();
+    format!(
+        "Detected: {} profile(s) across {} browser(s): {}",
+        profiles.len(),
+        families.len(),
+        families.into_iter().collect::<Vec<_>>().join(", "),
+    )
+}
+
+/// File-name extensions treated as executable/scriptable payloads.
+const EXECUTABLE_EXTS: &[&str] = &[
+    "exe", "dll", "scr", "msi", "msp", "com", "bat", "cmd", "ps1", "vbs", "vbe", "js", "jse",
+    "jar", "apk", "app", "dmg", "pkg", "deb", "rpm", "sh", "run", "wsf", "hta", "cpl", "msc",
+    "gadget", "lnk", "reg", "sys", "iso",
+];
+
+/// Read a string attribute from an event, if present and a JSON string.
+fn attr_str<'a>(event: &'a BrowserEvent, key: &str) -> Option<&'a str> {
+    event.attrs.get(key).and_then(serde_json::Value::as_str)
+}
+
+/// The final path component of a `/`- or `\`-separated path.
+fn base_name(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// Whether a file name carries a known executable/scriptable extension.
+fn is_executable_name(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, ext)| {
+        let ext = ext.to_ascii_lowercase();
+        EXECUTABLE_EXTS.contains(&ext.as_str())
+    })
+}
+
+/// The serde variant tag of an integrity indicator (e.g. `"HistoryCleared"`).
+fn indicator_tag(indicator: &IntegrityIndicator) -> String {
+    match serde_json::to_value(indicator) {
+        Ok(serde_json::Value::Object(map)) => map
+            .keys()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| "Unknown".into()),
+        Ok(serde_json::Value::String(s)) => s,
+        _ => "Unknown".to_string(),
+    }
+}
+
+/// Integrity variants that indicate history *clearing* or mass deletion — the
+/// top attention cues (High), as opposed to lower-priority anomalies (Medium).
+fn is_clearing_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "HistoryCleared" | "AutoIncrementGap" | "HistoryTombstoneFound" | "SqliteSequenceGap"
+    )
+}
+
+/// History-clearing + integrity-anomaly findings (one per indicator). Uses the
+/// integrity crate's own `observation()` / `innocent_alternative()` so the
+/// court-safe hedge is preserved verbatim.
+fn integrity_findings(indicators: &[IntegrityIndicator]) -> Vec<Finding> {
+    indicators
+        .iter()
+        .map(|ind| {
+            let tag = indicator_tag(ind);
+            let clearing = is_clearing_tag(&tag);
+            let priority = if clearing {
+                Priority::High
+            } else {
+                Priority::Medium
+            };
+            let state = if clearing {
+                EvidenceState::Deleted
+            } else {
+                EvidenceState::Inferred
+            };
+            let provenance = Provenance::new(
+                EvidenceSource::History,
+                state,
+                TimestampBasis::None,
+                UserActionClaim::Unknown,
+            );
+            Finding::new(
+                priority,
+                Confidence::Medium,
+                format!("investigate.integrity.{tag}.v1"),
+                format!(
+                    "consistent with clearing/tampering; innocent alternative: {}",
+                    ind.innocent_alternative()
+                ),
+                provenance,
+                ind.observation(),
+            )
+            .with_next("br4n6 artifact integrity <PATH>")
+        })
+        .collect()
+}
+
+/// Executable-download findings: a download whose target file name is executable
+/// or that the browser itself flagged dangerous (`danger_type != 0`).
+fn executable_download_findings(events: &[BrowserEvent]) -> Vec<Finding> {
+    events
+        .iter()
+        .filter(|e| e.artifact == ArtifactKind::Downloads)
+        .filter_map(|e| {
+            let target = attr_str(e, "target_path").unwrap_or(&e.description);
+            let danger = e
+                .attrs
+                .get("danger_type")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            if !is_executable_name(base_name(target)) && danger == 0 {
+                return None;
+            }
+            let provenance = Provenance::new(
+                EvidenceSource::Download,
+                EvidenceState::Live,
+                TimestampBasis::Explicit,
+                UserActionClaim::Downloaded,
+            );
+            Some(
+                Finding::new(
+                    Priority::High,
+                    Confidence::Medium,
+                    "investigate.exec_download.v1",
+                    "consistent with an executable file downloaded via the browser; a download \
+                     does not by itself establish execution",
+                    provenance,
+                    target.to_string(),
+                )
+                .with_browser(e.browser.clone())
+                .with_next("br4n6 artifact downloads <PATH>"),
+            )
+        })
+        .collect()
+}
+
+/// One aggregate finding counting cookies stored encrypted (values require the
+/// profile's key to recover — reported, never silently dropped, RFC 0001 D7).
+fn encrypted_cookie_findings(events: &[BrowserEvent]) -> Vec<Finding> {
+    let count = events
+        .iter()
+        .filter(|e| {
+            e.artifact == ArtifactKind::Cookies
+                && attr_str(e, "encrypted_value") == Some("ENCRYPTED")
+        })
+        .count();
+    if count == 0 {
+        return Vec::new();
+    }
+    let provenance = Provenance::new(
+        EvidenceSource::Cookie,
+        EvidenceState::Live,
+        TimestampBasis::Explicit,
+        UserActionClaim::Unknown,
+    );
+    vec![Finding::new(
+        Priority::Info,
+        Confidence::High,
+        "investigate.encrypted_cookies.v1",
+        "consistent with normal OS-bound cookie encryption; plaintext values require the \
+         profile's key (add --keys)",
+        provenance,
+        format!("{count} cookie value(s) stored encrypted (not recoverable without keys)"),
+    )
+    .with_next("br4n6 artifact cookies <PATH>")]
+}
+
+/// One aggregate finding listing installed extensions. Permission scope is not
+/// assessed at this tier (the extensions parser does not surface it yet); the
+/// finding is a review cue, honestly hedged.
+fn extension_findings(events: &[BrowserEvent]) -> Vec<Finding> {
+    let names: Vec<String> = events
+        .iter()
+        .filter(|e| e.artifact == ArtifactKind::Extensions)
+        .map(|e| attr_str(e, "name").map_or_else(|| e.description.clone(), str::to_string))
+        .collect();
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let provenance = Provenance::new(
+        EvidenceSource::Extension,
+        EvidenceState::Live,
+        TimestampBasis::Explicit,
+        UserActionClaim::Unknown,
+    );
+    vec![Finding::new(
+        Priority::Info,
+        Confidence::Low,
+        "investigate.extension_present.v1",
+        "consistent with legitimately-installed or sideloaded extensions; permission scope is \
+         not assessed at this tier",
+        provenance,
+        format!(
+            "{} extension(s) installed: {}",
+            names.len(),
+            names.join(", ")
+        ),
+    )
+    .with_next("br4n6 artifact extensions <PATH>")]
 }
 
 /// Produce the full set of court-safe [`Finding`]s from a triage report by
 /// running every finding-generator and concatenating their output.
 #[must_use]
 pub fn findings_from_report(report: &TriageReport) -> Vec<Finding> {
-    let _ = report;
-    Vec::new()
+    let mut findings = Vec::new();
+    findings.extend(executable_download_findings(&report.events));
+    findings.extend(integrity_findings(&report.integrity));
+    findings.extend(encrypted_cookie_findings(&report.events));
+    findings.extend(extension_findings(&report.events));
+    findings
+}
+
+/// Priority ordering weight — higher sorts first.
+fn priority_weight(priority: Priority) -> u8 {
+    match priority {
+        Priority::High => 2,
+        Priority::Medium => 1,
+        Priority::Info => 0,
+    }
 }
 
 /// Rank findings by [`Priority`] (High → Medium → Info), stable within a tier.
 #[must_use]
-pub fn rank_findings(findings: Vec<Finding>) -> Vec<Finding> {
+pub fn rank_findings(mut findings: Vec<Finding>) -> Vec<Finding> {
+    findings.sort_by(|a, b| priority_weight(b.priority).cmp(&priority_weight(a.priority)));
     findings
 }
 
@@ -89,8 +306,45 @@ pub fn rank_findings(findings: Vec<Finding>) -> Vec<Finding> {
 /// strictly more than `--standard`.
 #[must_use]
 pub fn skipped_footer(tier: Tier, path_display: &str) -> String {
-    let _ = (tier, path_display);
-    String::new()
+    match tier {
+        Tier::Quick => format!(
+            "Deep recovery not run: whole-image carving, cache reconstruction, memory scanning \
+             skipped. Bounded deleted-record recovery (SQLite freelist/WAL) is ALSO skipped in \
+             --quick — deleted evidence may be missed → br4n6 investigate --standard {path_display} \
+             (or --deep {path_display})"
+        ),
+        Tier::Standard => format!(
+            "Deep recovery not run: whole-image carving, cache reconstruction, memory scanning \
+             skipped — deleted evidence may be missed → br4n6 investigate --deep {path_display}"
+        ),
+        Tier::Deep => format!(
+            "Deep recovery is NOT YET implemented (TODO P3b/P5): whole-image carving, cache \
+             reconstruction, and memory scanning would additionally run here. This run performed \
+             --standard-tier recovery (live artifacts + bounded SQLite freelist/WAL) over \
+             {path_display}"
+        ),
+    }
+}
+
+/// Colorize a rendered finding's `Priority:` value line as a TTY cue. The
+/// severity word is always printed by [`Finding::render`]; color is additive.
+fn colorize_priority_line(block: &str, priority: Priority) -> String {
+    let ansi = match priority {
+        Priority::High => crate::output::ANSI_RED,
+        Priority::Medium => crate::output::ANSI_YELLOW,
+        Priority::Info => crate::output::ANSI_CYAN,
+    };
+    block
+        .lines()
+        .map(|line| {
+            if let Some(rest) = line.strip_prefix("Priority:") {
+                format!("Priority:{}", crate::output::paint(rest, ansi, true))
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The full human (TTY) render: detection header, ranked findings (capped, with
@@ -104,8 +358,37 @@ pub fn render_summary(
     path_display: &str,
     color: bool,
 ) -> String {
-    let _ = (profiles, findings, tier, path_display, color);
-    String::new()
+    let mut out = String::new();
+    out.push_str(&detection_header(profiles));
+    out.push_str("\n\n");
+    out.push_str(PRIORITY_CUE_NOTE);
+    out.push_str("\n\n");
+
+    if findings.is_empty() {
+        out.push_str("No ranked findings from the parsed artifacts at this tier.\n\n");
+    } else {
+        let visible = findings.len().min(MAX_VISIBLE_FINDINGS);
+        for finding in &findings[..visible] {
+            let block = finding.render();
+            if color {
+                out.push_str(&colorize_priority_line(&block, finding.priority));
+                out.push('\n');
+            } else {
+                out.push_str(&block);
+            }
+            out.push('\n');
+        }
+        if findings.len() > visible {
+            out.push_str(&format!(
+                "… {} more finding(s) not shown, ranked by Priority.\n\n",
+                findings.len() - visible
+            ));
+        }
+    }
+
+    out.push_str(&skipped_footer(tier, path_display));
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]
