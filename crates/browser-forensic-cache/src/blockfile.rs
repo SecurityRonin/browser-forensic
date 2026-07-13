@@ -45,7 +45,13 @@ pub const BLOCK_MAGIC: u32 = 0xC104_CAC3;
 /// 0x10000 entries → 368 + 65536*4 = 262512 bytes).
 const INDEX_HEADER_SIZE: usize = 368;
 /// Fixed block-file header size (`kBlockHeaderSize`, `disk_format_base.h`).
-const BLOCK_HEADER_SIZE: usize = 8192;
+pub(crate) const BLOCK_HEADER_SIZE: usize = 8192;
+/// Byte offset of `BlockFileHeader.allocation_map` (`disk_format_base.h`).
+pub(crate) const ALLOC_MAP_OFFSET: usize = 80;
+/// `kMaxBlocks = (kBlockHeaderSize - 80) * 8` — bits the allocation map covers.
+pub(crate) const MAX_BLOCKS_IN_BITMAP: usize = (BLOCK_HEADER_SIZE - ALLOC_MAP_OFFSET) * 8;
+/// `EntryStore` block size (`BLOCK_256`); only these blocks hold entries.
+pub(crate) const ENTRY_BLOCK_SIZE: usize = 256;
 /// Bytes of `EntryStore` before the inline `key[]` (fields hash..self_hash).
 const ENTRY_META_SIZE: usize = 96;
 /// Default hash-table length when the header's `table_len` is 0.
@@ -210,8 +216,22 @@ pub fn parse_blockfile_index(index: &[u8]) -> Result<BlockfileIndex, CacheError>
     Ok(BlockfileIndex { num_entries, table })
 }
 
+/// Is Blockfile allocation-map bit `block` set (i.e. the block is allocated /
+/// live)? A clear bit is a FREE block — a carve candidate. Bounds-checked
+/// against both the header bytes and the map's bit coverage.
+pub(crate) fn block_allocated(header: &[u8], block: usize) -> bool {
+    if block >= MAX_BLOCKS_IN_BITMAP {
+        return true; // beyond the map: treat as non-free so it is never carved
+    }
+    let word_off = ALLOC_MAP_OFFSET + (block / 32) * 4;
+    let Some(word) = rd_u32(header, word_off) else {
+        return true;
+    };
+    word & (1u32 << (block % 32)) != 0
+}
+
 /// The `EntryStore` fields we need (`disk_format.h`).
-struct EntryStore {
+pub(crate) struct EntryStore {
     next: Addr,
     creation_us: u64,
     key_len: i32,
@@ -220,7 +240,7 @@ struct EntryStore {
     data_addrs: [Addr; 4],
 }
 
-fn parse_entry_store(b: &[u8]) -> Option<EntryStore> {
+pub(crate) fn parse_entry_store(b: &[u8]) -> Option<EntryStore> {
     if b.len() < ENTRY_META_SIZE {
         return None;
     }
@@ -245,19 +265,19 @@ fn parse_entry_store(b: &[u8]) -> Option<EntryStore> {
 }
 
 /// A loaded `data_N` block file: its per-block size plus raw bytes.
-struct BlockData {
+pub(crate) struct BlockData {
     entry_size: usize,
     bytes: Vec<u8>,
 }
 
 /// Lazily-loaded set of `data_N` block files, keyed by file selector.
-struct BlockFiles<'a> {
+pub(crate) struct BlockFiles<'a> {
     dir: &'a Path,
     files: std::collections::HashMap<u32, Option<BlockData>>,
 }
 
 impl<'a> BlockFiles<'a> {
-    fn new(dir: &'a Path) -> Self {
+    pub(crate) fn new(dir: &'a Path) -> Self {
         Self {
             dir,
             files: std::collections::HashMap::new(),
@@ -313,7 +333,7 @@ impl<'a> BlockFiles<'a> {
     }
 }
 
-fn load_block_file(dir: &Path, selector: u32) -> Option<BlockData> {
+pub(crate) fn load_block_file(dir: &Path, selector: u32) -> Option<BlockData> {
     let bytes = read_capped_file(&dir.join(format!("data_{selector}")))?;
     if bytes.len() < BLOCK_HEADER_SIZE || rd_u32(&bytes, 0)? != BLOCK_MAGIC {
         return None;
@@ -339,7 +359,7 @@ fn read_capped_file(path: &Path) -> Option<Vec<u8>> {
 
 /// Recover an entry's key (the request URL): inline in the `EntryStore`, or via
 /// the long-key address for keys too long to store inline.
-fn resolve_key(es: &EntryStore, entry_block: &[u8], cache: &mut BlockFiles) -> Option<String> {
+pub(crate) fn resolve_key(es: &EntryStore, entry_block: &[u8], cache: &mut BlockFiles) -> Option<String> {
     let key_len = usize::try_from(es.key_len).ok()?;
     if es.long_key.is_initialized() {
         let data = cache.read_addr(es.long_key)?;
@@ -415,7 +435,7 @@ pub fn parse_blockfile_cache_dir_with(
 /// Build a [`CachedResource`] from an entry: stream 0 → [`parse_http_meta`],
 /// stream 1 → raw body → [`decode_body`]. A decode failure keeps the raw body
 /// and records the reason (fail-loud, no data loss).
-fn build_resource(
+pub(crate) fn build_resource(
     es: &EntryStore,
     url: String,
     index_path: &Path,

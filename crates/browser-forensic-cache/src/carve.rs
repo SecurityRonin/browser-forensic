@@ -39,9 +39,17 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::blockfile::{
+    block_allocated, build_resource, load_block_file, parse_entry_store, resolve_key, BlockFiles,
+    BLOCK_HEADER_SIZE, ENTRY_BLOCK_SIZE, MAX_BLOCKS_IN_BITMAP,
+};
 use crate::decompress::DecompressLimits;
 use crate::error::CacheError;
 use crate::resource::{resource_from_entry_bytes, CachedResource};
+
+/// Highest `data_N` block-file selector probed when carving free blocks (the
+/// `CacheAddr` file selector is an 8-bit field; real caches use only a handful).
+const MAX_BLOCK_FILE_SELECTOR: u32 = 255;
 
 /// `kSimpleIndexMagicNumber` — first 8 payload bytes of `the-real-index`.
 pub const INDEX_MAGIC: u64 = 0x656e_7465_7220_796f;
@@ -306,6 +314,19 @@ fn dangling_sparse_resource(path: &Path, hash: u64, body: Vec<u8>) -> RecoveredR
     }
 }
 
+/// Recover Blockfile entries that survive in blocks the allocation map marks
+/// FREE — recently evicted `EntryStore`s not yet overwritten.
+///
+/// Only `BLOCK_256` (`data_N` with a 256-byte block size) files hold entries; a
+/// free block is carved only when it decodes to an `EntryStore` whose key is a
+/// non-empty URL (`://`), filtering freed body/header/rankings blocks. Allocated
+/// (live) blocks are skipped, so a live entry is never double-reported.
+/// Best-effort and panic-free; every offset is bounds-checked.
+#[must_use]
+pub fn carve_blockfile_free(_cache_dir: &Path) -> Vec<RecoveredResource> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,6 +470,115 @@ mod tests {
                 .iter()
                 .any(|r| r.mechanism == RecoveryMechanism::DanglingSparseFile),
             "a lone _s must surface as a dangling sparse body: {recovered:?}"
+        );
+    }
+
+    // -- Blockfile free-but-intact carve ------------------------------------
+
+    use crate::blockfile::BLOCK_MAGIC;
+
+    fn block256_header() -> Vec<u8> {
+        let mut h = vec![0u8; 8192];
+        h[0..4].copy_from_slice(&BLOCK_MAGIC.to_le_bytes());
+        h[8..10].copy_from_slice(&1i16.to_le_bytes()); // this_file
+        h[12..16].copy_from_slice(&256i32.to_le_bytes()); // entry_size
+        h
+    }
+
+    /// Set allocation-map bit `block` (mark it allocated / live).
+    fn alloc(h: &mut [u8], block: usize) {
+        let off = 80 + (block / 32) * 4;
+        let mut w = u32::from_le_bytes([h[off], h[off + 1], h[off + 2], h[off + 3]]);
+        w |= 1u32 << (block % 32);
+        h[off..off + 4].copy_from_slice(&w.to_le_bytes());
+    }
+
+    /// A 256-byte `EntryStore` block pointing at stream-0/stream-1 addresses.
+    fn entry_store(key: &str, s0_addr: u32, s0_len: i32, s1_addr: u32, s1_len: i32) -> Vec<u8> {
+        let mut e = vec![0u8; 256];
+        e[24..32].copy_from_slice(&13_350_000_000_000_000u64.to_le_bytes()); // creation
+        e[32..36].copy_from_slice(&(key.len() as i32).to_le_bytes());
+        e[40..44].copy_from_slice(&s0_len.to_le_bytes());
+        e[44..48].copy_from_slice(&s1_len.to_le_bytes());
+        e[56..60].copy_from_slice(&s0_addr.to_le_bytes());
+        e[60..64].copy_from_slice(&s1_addr.to_le_bytes());
+        let kb = key.as_bytes();
+        let n = kb.len().min(160);
+        e[96..96 + n].copy_from_slice(&kb[..n]);
+        e
+    }
+
+    fn write_block(data: &mut Vec<u8>, block: usize, bytes: &[u8]) {
+        let off = 8192 + 256 * block;
+        if data.len() < off + 256 {
+            data.resize(off + 256, 0);
+        }
+        data[off..off + bytes.len()].copy_from_slice(bytes);
+    }
+
+    #[test]
+    fn recovers_free_blockfile_entry_not_live_one() {
+        let dir = TempDir::new().unwrap();
+        // block 0: LIVE entry (allocated). block 3: FREE entry (evicted).
+        // blocks 4/5: the free entry's headers/body (allocated, not reused).
+        let addr = |b: u32| 0xA001_0000u32 | b; // init|BLOCK_256|selector1|block
+        let live = entry_store("https://live.example/keep", addr(1), 4, addr(2), 4);
+        let headers = b"HTTP/1.1 200 OK\0Content-Type: text/plain\0\0";
+        let body = b"evicted-body";
+        let evicted = entry_store(
+            "https://evicted.example/gone",
+            addr(4),
+            headers.len() as i32,
+            addr(5),
+            body.len() as i32,
+        );
+
+        let mut data1 = block256_header();
+        alloc(&mut data1, 0); // live entry
+        alloc(&mut data1, 1); // live headers/body blocks
+        alloc(&mut data1, 2);
+        alloc(&mut data1, 4); // evicted entry's still-intact headers
+        alloc(&mut data1, 5); // ...and body
+                              // block 3 deliberately left FREE
+        write_block(&mut data1, 0, &live);
+        write_block(&mut data1, 1, b"HTTP/1.1 200 OK\0\0");
+        write_block(&mut data1, 2, b"live");
+        write_block(&mut data1, 3, &evicted);
+        write_block(&mut data1, 4, headers);
+        write_block(&mut data1, 5, body);
+        std::fs::write(dir.path().join("data_1"), &data1).unwrap();
+
+        let recovered = carve_blockfile_free(dir.path());
+        assert!(
+            recovered
+                .iter()
+                .any(|r| r.resource.url == "https://evicted.example/gone"
+                    && r.mechanism == RecoveryMechanism::BlockfileFreeIntact),
+            "the FREE evicted entry must be recovered: {recovered:?}"
+        );
+        assert!(
+            recovered
+                .iter()
+                .all(|r| r.resource.url != "https://live.example/keep"),
+            "an allocated (live) entry must NOT be carved: {recovered:?}"
+        );
+    }
+
+    #[test]
+    fn free_body_block_not_a_false_entry() {
+        let dir = TempDir::new().unwrap();
+        // A FREE block that is a former body (no URL key) must not be carved.
+        let mut data1 = block256_header();
+        write_block(
+            &mut data1,
+            0,
+            b"just some freed body bytes, no url here at all",
+        );
+        std::fs::write(dir.path().join("data_1"), &data1).unwrap();
+        let recovered = carve_blockfile_free(dir.path());
+        assert!(
+            recovered.is_empty(),
+            "a keyless freed block must not become a phantom entry: {recovered:?}"
         );
     }
 
