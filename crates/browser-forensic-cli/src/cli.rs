@@ -62,6 +62,28 @@ enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Investigate a profile / evidence path: drive the bounded triage pipeline
+    /// and emit a ranked, court-safe summary (RFC 0001 P3a). On a TTY the summary
+    /// is the human render; piped, it is JSONL of the findings. Tiering controls
+    /// how much recovery runs, and the summary always ends with what the chosen
+    /// tier did NOT do (so "false reassurance" is impossible).
+    Investigate {
+        /// A browser profile directory, or a home/evidence directory to scan.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Live artifacts + cheap integrity only (skips deleted-record recovery).
+        #[arg(long, group = "tier")]
+        quick: bool,
+        /// Quick + bounded deleted-SQLite/WAL recovery. The default tier.
+        #[arg(long, group = "tier")]
+        standard: bool,
+        /// Standard + whole-image carving, cache, memory — NOT yet wired (TODO P3b/P5).
+        #[arg(long, group = "tier")]
+        deep: bool,
+        /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
+    },
     /// Parse a single browser artifact by name — the power / discovery layer.
     /// `br4n6 artifact --list` tabulates every primitive; `br4n6 artifact <NAME>
     /// <PATH>` runs one, each keeping its own flags (e.g. cookie decryption).
@@ -513,6 +535,13 @@ where
             Some(root) => run_browsers_sweep(&root, format),
             None => run_browsers(home.as_deref(), format),
         },
+        Some(Command::Investigate {
+            path,
+            quick,
+            standard,
+            deep,
+            format,
+        }) => run_investigate(&path, tier_from_flags(quick, standard, deep), format),
         Some(Command::Artifact { list, kind }) => run_artifact_command(list, kind),
         Some(Command::Chains {
             path,
@@ -609,6 +638,140 @@ where
         }) => run_graph(&path, format, out.as_deref(), window),
         Some(Command::Schema) => run_schema(),
     }
+}
+
+/// Resolve the three mutually-exclusive tier flags to a [`Tier`], defaulting to
+/// `Standard` (RFC 0001 D2). Clap's arg-group guarantees at most one is set.
+fn tier_from_flags(quick: bool, _standard: bool, deep: bool) -> crate::investigate::Tier {
+    use crate::investigate::Tier;
+    if quick {
+        Tier::Quick
+    } else if deep {
+        Tier::Deep
+    } else {
+        Tier::Standard
+    }
+}
+
+/// Drive the triage pipeline at `tier`, returning the discovered profiles and the
+/// consolidated report. Falls back from a home scan to a single-profile parse
+/// (the same shape as `export`/`report`), and augments the event stream with
+/// downloads + installed extensions — artifacts the triage stream omits — by
+/// reusing the existing parsers, without changing what `triage`/`report` emit.
+fn collect_investigation(
+    path: &Path,
+    tier: crate::investigate::Tier,
+) -> Result<(
+    Vec<browser_forensic_discovery::DiscoveredProfile>,
+    browser_forensic_triage::TriageReport,
+)> {
+    let opts = tier.triage_options();
+    let mut report = browser_forensic_triage::triage_with_options(path, opts)
+        .with_context(|| format!("investigating {}", path.display()))?;
+    let mut profiles = std::mem::take(&mut report.profiles);
+
+    if profiles.is_empty() && report.events.is_empty() {
+        if let Some(family) = profile_family(path) {
+            report =
+                browser_forensic_triage::triage_profile_with_options(path, family.clone(), opts)
+                    .with_context(|| format!("investigating profile {}", path.display()))?;
+            profiles = vec![browser_forensic_discovery::DiscoveredProfile {
+                browser: family,
+                name: path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                path: path.to_path_buf(),
+                container: None,
+            }];
+        }
+    }
+
+    for profile in &profiles {
+        if profile.browser == BrowserFamily::Chromium {
+            let history = profile.path.join("History");
+            if history.is_file() {
+                if let Ok(mut downloads) = browser_forensic_chrome::parse_downloads(&history) {
+                    report.events.append(&mut downloads);
+                }
+            }
+            let ext_dir = profile.path.join("Extensions");
+            if ext_dir.is_dir() {
+                if let Ok(mut exts) = browser_forensic_chrome::parse_extensions(&ext_dir) {
+                    report.events.append(&mut exts);
+                }
+            }
+        }
+    }
+
+    Ok((profiles, report))
+}
+
+/// `br4n6 investigate PATH [--quick|--standard|--deep]` — the RFC 0001 P3a golden
+/// path. Runs the bounded triage pipeline at the chosen tier and renders a ranked,
+/// court-safe summary (human on a TTY, JSONL of the findings when piped). The
+/// human render always ends with the tier's skipped-work footer.
+///
+/// # Errors
+/// Returns a loud error if the path does not exist (a bootstrap failure is never
+/// absorbed into an empty result) or the triage pipeline fails.
+pub fn run_investigate(
+    path: &Path,
+    tier: crate::investigate::Tier,
+    format: Option<OutputFormat>,
+) -> Result<()> {
+    use std::io::IsTerminal as _;
+
+    // Bootstrap check: a nonexistent path is a loud error, never a silent empty
+    // "clean" summary (which would be indistinguishable from a genuinely empty
+    // profile — the worst false-reassurance failure).
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
+
+    let (profiles, report) = collect_investigation(path, tier)?;
+    let findings =
+        crate::investigate::rank_findings(crate::investigate::findings_from_report(&report));
+
+    match crate::output::resolve_stdout(format) {
+        OutputFormat::Text => {
+            let color = crate::output::color_enabled(std::io::stdout().is_terminal());
+            print!(
+                "{}",
+                crate::investigate::render_summary(
+                    &profiles,
+                    &findings,
+                    tier,
+                    &path.display().to_string(),
+                    color,
+                )
+            );
+        }
+        OutputFormat::Jsonl => {
+            for finding in &findings {
+                if let Ok(line) = serde_json::to_string(finding) {
+                    println!("{line}");
+                }
+            }
+        }
+        OutputFormat::Csv => {
+            println!("priority,confidence,rule_id,interpretation,source,state,evidence,next");
+            for f in &findings {
+                println!(
+                    "{},{},{},{},{},{},{},{}",
+                    csv_field(&f.priority.to_string()),
+                    csv_field(&f.confidence.to_string()),
+                    csv_field(&f.rule_id),
+                    csv_field(&f.interpretation),
+                    csv_field(&f.provenance.source.to_string()),
+                    csv_field(&f.provenance.state.to_string()),
+                    csv_field(&f.evidence),
+                    csv_field(f.next.as_deref().unwrap_or("")),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Handle `br4n6 artifact …`: `--list` tabulates the primitives; otherwise the
