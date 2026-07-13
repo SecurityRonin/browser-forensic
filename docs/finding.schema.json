@@ -120,6 +120,11 @@
           "description": "An installed browser extension (manifest / `Extensions` directory).",
           "type": "string",
           "const": "Extension"
+        },
+        {
+          "description": "A domain/origin recovered from a network/state artifact that survives a\nhistory wipe (HTTP server properties, NEL/Reporting, DIPS/BTM, HSTS). Its\ncourtroom value differs from a live history visit: contact is *inferred*\nfrom a persistence side effect, not a recorded user navigation.",
+          "type": "string",
+          "const": "Recovered"
         }
       ]
     },

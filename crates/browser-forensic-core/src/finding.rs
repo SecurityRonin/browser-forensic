@@ -76,6 +76,11 @@ pub enum EvidenceSource {
     Memory,
     /// An installed browser extension (manifest / `Extensions` directory).
     Extension,
+    /// A domain/origin recovered from a network/state artifact that survives a
+    /// history wipe (HTTP server properties, NEL/Reporting, DIPS/BTM, HSTS). Its
+    /// courtroom value differs from a live history visit: contact is *inferred*
+    /// from a persistence side effect, not a recorded user navigation.
+    Recovered,
 }
 
 impl std::fmt::Display for EvidenceSource {
@@ -88,6 +93,7 @@ impl std::fmt::Display for EvidenceSource {
             Self::Carved => write!(f, "carved"),
             Self::Memory => write!(f, "memory"),
             Self::Extension => write!(f, "extension"),
+            Self::Recovered => write!(f, "recovered"),
         }
     }
 }

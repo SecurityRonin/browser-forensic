@@ -14,6 +14,7 @@ pub use render::draw;
 pub mod checkpoint;
 pub mod cli;
 pub mod export;
+pub mod find;
 pub mod investigate;
 pub mod output;
 pub mod progress;
