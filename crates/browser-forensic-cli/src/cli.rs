@@ -134,6 +134,36 @@ enum Command {
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
     },
+    /// Recover deleted / carved / evicted evidence — ONE orchestrator runs ALL
+    /// applicable recovery over PATH and ranks the results; the examiner chooses
+    /// no submode (RFC 0001 resolved-decision #2). What runs is auto-selected
+    /// from the shape of PATH:
+    ///
+    /// * a profile / home DIRECTORY → deleted SQLite/WAL records, orphaned/
+    ///   evicted cache, recovered domains (Network Persistent State / Reporting
+    ///   and NEL / DIPS / HSTS), deleted bookmarks, and tamper / anti-forensic
+    ///   indicators;
+    /// * a single SQLite DATABASE → deleted-record carving + tamper indicators;
+    /// * a MEMORY image → process-attributed RAM carve.
+    ///
+    /// Every recovered item is a *consistent-with* eviction/clearing artifact
+    /// (state deleted/carved/recovered), never asserted as a deliberate user
+    /// deletion. For a single TARGETED run an expert can still go narrow via the
+    /// specialist commands (`br4n6 integrity`, `br4n6 image`) and the `br4n6
+    /// artifact <NAME>` primitives (e.g. `artifact deleted-bookmarks`).
+    Recover {
+        /// A profile / home directory, a single SQLite database, or a memory
+        /// image. What recovery runs is auto-selected from this path's shape.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Volatility-3 ISF symbol file for a memory image (offline symbols);
+        /// otherwise the image is auto-profiled. Ignored for on-disk evidence.
+        #[arg(long, value_name = "ISF")]
+        symbols: Option<PathBuf>,
+        /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
+    },
     /// Parse a single browser artifact by name — the power / discovery layer.
     /// `br4n6 artifact --list` tabulates every primitive; `br4n6 artifact <NAME>
     /// <PATH>` runs one, each keeping its own flags (e.g. cookie decryption).
@@ -567,6 +597,11 @@ where
             &sources,
             format,
         ),
+        Some(Command::Recover {
+            path,
+            symbols,
+            format,
+        }) => run_recover(&path, symbols.as_deref(), format),
         Some(Command::Artifact { list, kind }) => run_artifact_command(list, kind),
         Some(Command::Timeline {
             path,
@@ -1016,6 +1051,246 @@ pub fn run_investigate(
             i.total,
             path.display()
         );
+    }
+    Ok(())
+}
+
+/// Classify an evidence path into a [`recover::RecoverScope`] (RFC 0001 P5b,
+/// resolved-decision #2): a directory is a profile/home; a file is a single
+/// SQLite database when it carries the SQLite magic, otherwise a memory image.
+/// The examiner makes no submode choice — the scope is read from the path shape.
+fn recover_scope_of(path: &Path) -> crate::recover::RecoverScope {
+    if path.is_dir() {
+        crate::recover::RecoverScope::Profile
+    } else if looks_like_sqlite(path) {
+        crate::recover::RecoverScope::Database
+    } else {
+        crate::recover::RecoverScope::MemoryImage
+    }
+}
+
+/// Whether the first bytes of a file are the SQLite format-3 header magic. A
+/// read failure returns `false` (treated as a non-database), never a panic.
+fn looks_like_sqlite(path: &Path) -> bool {
+    use std::io::Read as _;
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut magic = [0_u8; 16];
+    f.read_exact(&mut magic).is_ok() && &magic == b"SQLite format 3\0"
+}
+
+/// Recover deleted SQLite/WAL records from a single database via both carve
+/// substrates (free pages + WAL), absorbing per-substrate errors so one failing
+/// path never suppresses the other. Shared by the profile and single-database
+/// recover scopes.
+fn carve_db_records(db: &Path) -> Vec<browser_forensic_carve::CarvedRecord> {
+    let empty = || browser_forensic_carve::CarveResult {
+        records: Vec::new(),
+        integrity: Vec::new(),
+        stats: browser_forensic_carve::CarveStats::default(),
+    };
+    let mut records = browser_forensic_carve::carve_sqlite_free_pages(db)
+        .unwrap_or_else(|_| empty())
+        .records;
+    records.extend(
+        browser_forensic_carve::recover_from_wal(db)
+            .unwrap_or_else(|_| empty())
+            .records,
+    );
+    records
+}
+
+/// Candidate Chromium cache directories under a profile (both the modern
+/// `Cache/Cache_Data` layout and the flat legacy ones), for orphaned-cache
+/// recovery. Only existing directories are returned.
+fn candidate_cache_dirs(profile: &Path) -> Vec<PathBuf> {
+    ["Cache/Cache_Data", "Cache", "Cache_Data"]
+        .iter()
+        .map(|rel| profile.join(rel))
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+/// Gather every recovery [`Finding`](browser_forensic_core::finding::Finding)
+/// applicable to a single profile directory: deleted SQLite/WAL records, orphaned
+/// cache, recovered domains, deleted bookmarks, and tamper indicators. Each
+/// engine is best-effort — a per-engine miss degrades to empty AFTER the path is
+/// known-good, never suppressing the others (RFC 0001 fail-loud-on-bootstrap,
+/// degrade-to-empty per artifact).
+fn recover_profile_findings(profile: &Path) -> Vec<browser_forensic_core::finding::Finding> {
+    let mut findings = Vec::new();
+
+    // Deleted SQLite/WAL records from each known history database.
+    let mut carved = Vec::new();
+    for (name, _family) in PROFILE_HISTORY_DBS {
+        let db = profile.join(name);
+        if db.is_file() {
+            carved.extend(carve_db_records(&db));
+        }
+    }
+    findings.extend(crate::recover::carved_record_findings(&carved));
+
+    // Orphaned / evicted cache entries.
+    for cache_dir in candidate_cache_dirs(profile) {
+        let events: Vec<BrowserEvent> = browser_forensic_cache::carve_cache_dir(&cache_dir)
+            .iter()
+            .map(cache_carve_event)
+            .collect();
+        findings.extend(crate::recover::cache_carve_findings(&events));
+    }
+
+    // Domains recovered from network/state artifacts (survive a history clear).
+    let domain_events = browser_forensic_triage::collect_recovered_domains(profile);
+    findings.extend(crate::recover::recovered_domain_findings(&domain_events));
+
+    // Deleted Firefox bookmarks (backup vs current diff); a missing places.sqlite
+    // is not an error here — it just means no bookmark recovery for this profile.
+    if let Ok(bookmark_events) = browser_forensic_firefox::recover_deleted_bookmarks(profile) {
+        findings.extend(crate::recover::deleted_bookmark_findings(&bookmark_events));
+    }
+
+    // Tamper / anti-forensic indicators across the profile's databases.
+    let mut indicators = Vec::new();
+    gather_profile_tamper_indicators(profile, &mut indicators);
+    findings.extend(crate::recover::tamper_findings(&indicators));
+
+    findings
+}
+
+/// Gather recovery findings from a single SQLite database: deleted-record carving
+/// plus tamper indicators over that one file (no cache/domain/bookmark scope).
+fn recover_database_findings(db: &Path) -> Vec<browser_forensic_core::finding::Finding> {
+    let mut findings = Vec::new();
+    findings.extend(crate::recover::carved_record_findings(&carve_db_records(
+        db,
+    )));
+
+    let family = browser_forensic_core::detect_browser(db)
+        .or_else(|| infer_browser_from_filename(db))
+        .unwrap_or(BrowserFamily::Chromium);
+    let mut indicators = Vec::new();
+    gather_db_tamper_indicators(db, family, &mut indicators);
+    findings.extend(crate::recover::tamper_findings(&indicators));
+    findings
+}
+
+/// Carve browser artifacts from a memory image into recovery findings. Mirrors
+/// the structured-carve-then-byte-scan degrade of the former `memory` command: a
+/// hard bootstrap failure (unreadable image / no usable profile) is loud, a
+/// degradable one falls back to a raw byte-scan (announced on stderr).
+///
+/// # Errors
+/// Propagates a non-degradable memory-carve error or a fallback read error.
+fn recover_memory_findings(
+    image: &Path,
+    symbols: Option<&Path>,
+) -> Result<Vec<browser_forensic_core::finding::Finding>> {
+    let events = match browser_forensic_memory::carve_memory_image_with_symbols(image, symbols) {
+        Ok(events) => {
+            let procs = browser_forensic_memory::browser_processes(&events);
+            eprintln!(
+                "br4n6 recover: structured memory carve — {} event(s) across {} browser \
+                 process(es)",
+                events.len(),
+                procs.len()
+            );
+            events
+        }
+        Err(e) if e.is_degradable() => {
+            eprintln!(
+                "br4n6 recover: {e}; falling back to a raw byte-scan (no process attribution)"
+            );
+            let bytes = std::fs::read(image)
+                .with_context(|| format!("cannot read memory buffer {}", image.display()))?;
+            let mut events = browser_forensic_memory::scan_bytes_for_urls(&bytes);
+            events.extend(browser_forensic_memory::scan_bytes_for_cookies(&bytes));
+            events
+        }
+        Err(e) => return Err(anyhow::Error::new(e)),
+    };
+    Ok(crate::recover::memory_findings(&events))
+}
+
+/// `br4n6 recover PATH [--symbols ISF] [--format ...]` — the RFC 0001 P5b
+/// orchestrator. ONE verb runs ALL applicable recovery over `PATH` and renders a
+/// ranked, court-safe summary; the recovery kinds are auto-selected from the
+/// path shape (profile dir / single database / memory image), so the examiner
+/// makes no submode choice. The human render always ends with the scope's
+/// skipped-work footer so absence of a result is never false reassurance.
+///
+/// # Errors
+/// Returns a loud error if the path does not exist (a bootstrap failure is never
+/// absorbed into an empty result), or if a memory image cannot be read at all.
+pub fn run_recover(
+    path: &Path,
+    symbols: Option<&Path>,
+    format: Option<OutputFormat>,
+) -> Result<()> {
+    use std::io::IsTerminal as _;
+
+    // Bootstrap check: a nonexistent path is a loud error, never a silent empty
+    // "nothing recovered" summary (indistinguishable from a genuinely clean run).
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
+
+    let scope = recover_scope_of(path);
+    let findings = match scope {
+        crate::recover::RecoverScope::Profile => {
+            // Every profile beneath a home dir, or the path itself when it is a
+            // bare profile directory the discovery layer does not classify.
+            let mut dirs: Vec<PathBuf> = investigation_profiles(path)
+                .into_iter()
+                .map(|p| p.path)
+                .collect();
+            if dirs.is_empty() {
+                dirs.push(path.to_path_buf());
+            }
+            let mut findings = Vec::new();
+            for dir in dirs {
+                findings.extend(recover_profile_findings(&dir));
+            }
+            findings
+        }
+        crate::recover::RecoverScope::Database => recover_database_findings(path),
+        crate::recover::RecoverScope::MemoryImage => recover_memory_findings(path, symbols)?,
+    };
+    let findings = crate::recover::rank_findings(findings);
+
+    let resolved = crate::output::resolve_stdout(format);
+    let path_display = path.display().to_string();
+    match resolved {
+        OutputFormat::Text => {
+            let color = crate::output::color_enabled(std::io::stdout().is_terminal());
+            print!(
+                "{}",
+                crate::recover::render_summary(&findings, scope, &path_display, color)
+            );
+        }
+        OutputFormat::Jsonl => {
+            for finding in &findings {
+                if let Ok(line) = serde_json::to_string(finding) {
+                    println!("{line}");
+                }
+            }
+        }
+        OutputFormat::Csv => {
+            println!("priority,confidence,rule_id,interpretation,source,state,evidence,next");
+            for f in &findings {
+                println!(
+                    "{},{},{},{},{},{},{},{}",
+                    csv_field(&f.priority.to_string()),
+                    csv_field(&f.confidence.to_string()),
+                    csv_field(&f.rule_id),
+                    csv_field(&f.interpretation),
+                    csv_field(&f.provenance.source.to_string()),
+                    csv_field(&f.provenance.state.to_string()),
+                    csv_field(&f.evidence),
+                    csv_field(f.next.as_deref().unwrap_or("")),
+                );
+            }
+        }
     }
     Ok(())
 }
