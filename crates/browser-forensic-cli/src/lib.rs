@@ -16,6 +16,7 @@ pub mod cli;
 pub mod export;
 pub mod find;
 pub mod investigate;
+pub mod keys;
 pub mod output;
 pub mod progress;
 pub mod recover;
