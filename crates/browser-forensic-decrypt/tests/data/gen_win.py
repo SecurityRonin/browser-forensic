@@ -18,6 +18,11 @@ SID = "S-1-5-21-1111111111-2222222222-3333333333-1001"
 CHROMIUM_KEY = bytes(range(32))
 CALG_SHA_512 = 0x800E
 CALG_AES_256 = 0x6610
+# The DPAPI provider GUID df9d8cd0-1501-11d1-8c7a-00c04fc297eb, mixed-endian, as
+# real Windows/Chromium writes it into a blob's GuidCredential field. It sits at
+# offset 4..20 — before the signed range raw[20:] — so it is crypto-neutral
+# (impacket ignores it); a correct offline reader validates it per [MS-DPAPI].
+DPAPI_PROVIDER_GUID = bytes.fromhex("d08c9ddf0115d1118c7a00c04fc297eb")
 
 def prekey_sha1(pw, sid):
     ph = hashlib.sha1(pw.encode("utf-16le")).digest()
@@ -60,7 +65,7 @@ def build_blob(mk64, guid_mk, plaintext):
     data = AES.new(session[:32], AES.MODE_CBC, b"\x00" * 16).encrypt(pkcs7(plaintext))
     ssalt = os.urandom(16)
     def asm(sign):
-        o = struct.pack("<L", 1) + b"\x00" * 16 + struct.pack("<L", 0) + guid_mk
+        o = struct.pack("<L", 1) + DPAPI_PROVIDER_GUID + struct.pack("<L", 0) + guid_mk
         o += struct.pack("<L", 0) + struct.pack("<L", 0)
         o += struct.pack("<L", CALG_AES_256) + struct.pack("<L", 256)
         o += struct.pack("<L", len(salt)) + salt + struct.pack("<L", 0)

@@ -60,7 +60,12 @@ Synthetic vectors for `chromium_win` / `dpapi`, carrying **known** ground truth
 * **DPAPI masterkey + blob — tier-2:** generated to the `[MS-DPAPI]` layout and
   **confirmed by impacket's `dpapi.py` decrypt path** (an unrelated third-party
   tool): impacket independently recovers the same masterkey and 32-byte key, and
-  rejects a wrong password. The *same bytes* are the Rust vectors.
+  rejects a wrong password. The *same bytes* are the Rust vectors. The blob's
+  `GuidCredential` field carries the real DPAPI provider GUID
+  `df9d8cd0-1501-11d1-8c7a-00c04fc297eb` (as real Windows/Chromium writes it);
+  it sits at offset 4..20, before the signed range `raw[20:]`, so it is
+  crypto-neutral (impacket ignores it) while a correct offline reader — the
+  fleet `dpapi-core` this crate now delegates to — validates it per `[MS-DPAPI]`.
 * **NOT tier-1 end-to-end:** these are **not** validated against a real Windows
   profile in this environment (no Windows host). See `docs/validation.md`.
 * **License / redistribution:** wholly synthetic, no real personal data; freely
