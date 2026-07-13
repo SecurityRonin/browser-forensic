@@ -114,6 +114,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_blockfile"
+path = "fuzz_targets/fuzz_blockfile.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_cache_decompress"
 path = "fuzz_targets/fuzz_cache_decompress.rs"
 test = false
