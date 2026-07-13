@@ -24,7 +24,6 @@ use browser_forensic_core::reconstruct::{
 };
 use browser_forensic_core::BrowserEvent;
 use browser_forensic_discovery::discover_profiles;
-use browser_forensic_triage::TriageProgress as _;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
@@ -696,7 +695,7 @@ fn empty_report_now() -> browser_forensic_triage::TriageReport {
 fn collect_one_profile(
     profile: &browser_forensic_discovery::DiscoveredProfile,
     tier: crate::investigate::Tier,
-    progress: &crate::progress::Progress,
+    progress: &dyn browser_forensic_triage::TriageProgress,
 ) -> Result<browser_forensic_triage::TriageReport> {
     let opts = tier.triage_options();
     let mut frag = browser_forensic_triage::triage_profile_with_options_progress(
@@ -726,21 +725,38 @@ fn collect_one_profile(
     Ok(frag)
 }
 
-/// Drive the triage pipeline over each discovered profile at `tier`, reporting
-/// per-artifact progress to `progress`, returning the profiles and the merged
-/// consolidated report. The per-profile loop is the unit boundary the interrupt
-/// (P3b concern 2) and checkpoint (concern 3) engines hook into.
-fn collect_investigation(
-    path: &Path,
+/// How many profile units completed before an investigation was interrupted by
+/// Ctrl-C (RFC 0001 D2 / P3b concern 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Interrupted {
+    /// Profile units fully parsed before the cancellation flag was observed.
+    pub done: usize,
+    /// Total profile units the run would have parsed.
+    pub total: usize,
+}
+
+/// The always-present footer for an interrupted run (RFC 0001 D2 / P3b concern
+/// 2). Names what was and was not done and how to resume, so partial results are
+/// never mistaken for a complete run.
+#[must_use]
+pub fn interrupted_footer(done: usize, total: usize, path_display: &str) -> String {
+    let _ = (done, total, path_display);
+    String::new() // RED stub — GREEN fills it in.
+}
+
+/// Drive the triage pipeline over each profile at `tier`, reporting per-artifact
+/// progress and checking `cancel` at each profile boundary (never mid-parse).
+/// Returns the merged report and, if the run was interrupted, how far it got.
+fn run_profile_loop(
+    profiles: &[browser_forensic_discovery::DiscoveredProfile],
     tier: crate::investigate::Tier,
-    progress: &crate::progress::Progress,
-) -> Result<(
-    Vec<browser_forensic_discovery::DiscoveredProfile>,
-    browser_forensic_triage::TriageReport,
-)> {
-    let profiles = investigation_profiles(path);
+    progress: &dyn crate::progress::InvestigationProgress,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<(browser_forensic_triage::TriageReport, Option<Interrupted>)> {
+    let _ = cancel; // RED stub: cancellation is not yet observed. GREEN wires it.
     let total = profiles.len();
     let mut report = empty_report_now();
+    let interrupted = None;
 
     for (index, profile) in profiles.iter().enumerate() {
         progress.set_profile(index, total);
@@ -752,7 +768,27 @@ fn collect_investigation(
     progress.set_profile(total, total);
     progress.finish();
 
-    Ok((profiles, report))
+    Ok((report, interrupted))
+}
+
+/// Drive the triage pipeline over each discovered profile at `tier`, reporting
+/// per-artifact progress to `progress`, returning the profiles, the merged
+/// consolidated report, and (if Ctrl-C was observed) how far the run got. The
+/// per-profile loop is the unit boundary the interrupt (P3b concern 2) and
+/// checkpoint (concern 3) engines hook into.
+fn collect_investigation(
+    path: &Path,
+    tier: crate::investigate::Tier,
+    progress: &dyn crate::progress::InvestigationProgress,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<(
+    Vec<browser_forensic_discovery::DiscoveredProfile>,
+    browser_forensic_triage::TriageReport,
+    Option<Interrupted>,
+)> {
+    let profiles = investigation_profiles(path);
+    let (report, interrupted) = run_profile_loop(&profiles, tier, progress, cancel)?;
+    Ok((profiles, report, interrupted))
 }
 
 /// `br4n6 investigate PATH [--quick|--standard|--deep]` — the RFC 0001 P3a golden
@@ -784,11 +820,19 @@ pub fn run_investigate(
         stderr_is_tty,
         crate::output::color_enabled(stderr_is_tty),
     );
-    let (profiles, report) = collect_investigation(path, tier, &progress)?;
+
+    // First Ctrl-C sets this flag; the collect loop stops at the next profile
+    // boundary and flushes the partial ranked summary (RFC 0001 D2 / P3b concern
+    // 2). A second Ctrl-C hard-aborts (see [`install_interrupt_handler`]).
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    install_interrupt_handler(&cancel);
+
+    let (profiles, report, interrupted) = collect_investigation(path, tier, &progress, &cancel)?;
     let findings =
         crate::investigate::rank_findings(crate::investigate::findings_from_report(&report));
 
-    match crate::output::resolve_stdout(format) {
+    let resolved = crate::output::resolve_stdout(format);
+    match resolved {
         OutputFormat::Text => {
             let color = crate::output::color_enabled(std::io::stdout().is_terminal());
             print!(
@@ -801,6 +845,14 @@ pub fn run_investigate(
                     color,
                 )
             );
+            // On a human render the interrupted footer belongs on stdout, with the
+            // (partial) summary it qualifies.
+            if let Some(i) = interrupted {
+                println!(
+                    "{}",
+                    interrupted_footer(i.done, i.total, &path.display().to_string())
+                );
+            }
         }
         OutputFormat::Jsonl => {
             for finding in &findings {
@@ -826,7 +878,44 @@ pub fn run_investigate(
             }
         }
     }
+
+    // A machine render keeps stdout byte-faithful; the interrupt note goes to
+    // stderr so the JSONL/CSV stream stays valid.
+    if let Some(i) = interrupted {
+        if resolved != OutputFormat::Text {
+            eprintln!(
+                "{}",
+                interrupted_footer(i.done, i.total, &path.display().to_string())
+            );
+        }
+        // Exit non-zero-but-clean: partial results already flushed, handles closed.
+        anyhow::bail!(
+            "interrupted by Ctrl-C after {}/{} profile(s) — partial results flushed; \
+             resume with: br4n6 investigate {}",
+            i.done,
+            i.total,
+            path.display()
+        );
+    }
     Ok(())
+}
+
+/// Install the Ctrl-C (SIGINT) handler: the first interrupt sets `cancel` so the
+/// investigation loop stops at the next profile boundary and flushes partial
+/// results; a second interrupt hard-aborts (exit 130). Best-effort — if a handler
+/// is already installed (e.g. a second call in one process), the existing one
+/// stands. Signal registration is the one thin, untestable shell; the flag it
+/// sets is what the loop and its tests exercise.
+fn install_interrupt_handler(cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    use std::sync::atomic::Ordering;
+    let cancel = std::sync::Arc::clone(cancel);
+    let _ = ctrlc::set_handler(move || {
+        if cancel.swap(true, Ordering::SeqCst) {
+            // Second Ctrl-C: the operator wants out now.
+            std::process::exit(130);
+        }
+        // First Ctrl-C: flag set; the loop will stop at the next boundary.
+    });
 }
 
 /// Handle `br4n6 artifact …`: `--list` tabulates the primitives; otherwise the
@@ -5258,6 +5347,111 @@ mod tests {
         assert!(
             err.contains("forensic-vfs engine"),
             "explains the disk seam: {err}"
+        );
+    }
+
+    // ---- RFC 0001 P3b concern 2: SIGINT partial flush ----------------------
+
+    /// Build a Chrome profile directory whose `History` carries one executable
+    /// download named `exe_name`, so the parsed events are attributable to it.
+    fn chrome_profile_with_download(dir: &Path, exe_name: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        let history = dir.join("History");
+        let conn = rusqlite::Connection::open(&history).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1,'https://example.com','Example',1,13327626000000000);
+             INSERT INTO visits VALUES (1,1,13327626000000000,0,0);
+             CREATE TABLE downloads (id INTEGER PRIMARY KEY, target_path TEXT NOT NULL DEFAULT '', start_time INTEGER NOT NULL DEFAULT 0, total_bytes INTEGER NOT NULL DEFAULT 0, state INTEGER NOT NULL DEFAULT 0, danger_type INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE downloads_url_chains (id INTEGER NOT NULL, chain_index INTEGER NOT NULL, url TEXT NOT NULL);
+             INSERT INTO downloads (id,target_path,start_time,total_bytes,state,danger_type) VALUES (1,'/Users/x/Downloads/{exe_name}',13327626000000000,1024,1,0);
+             INSERT INTO downloads_url_chains (id,chain_index,url) VALUES (1,0,'https://evil.example/{exe_name}');"
+        ))
+        .unwrap();
+        drop(conn);
+    }
+
+    fn discovered_chrome(path: &Path, name: &str) -> browser_forensic_discovery::DiscoveredProfile {
+        browser_forensic_discovery::DiscoveredProfile {
+            browser: BrowserFamily::Chromium,
+            name: name.to_string(),
+            path: path.to_path_buf(),
+            container: None,
+        }
+    }
+
+    /// An [`InvestigationProgress`] that trips the cancellation flag the first
+    /// time any parse unit is reported, simulating a Ctrl-C landing during the
+    /// first profile's work.
+    struct CancelOnFirstUnit {
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl browser_forensic_triage::TriageProgress for CancelOnFirstUnit {
+        fn on_unit(&self, _profile: &str, _artifact: &str) {
+            self.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl crate::progress::InvestigationProgress for CancelOnFirstUnit {
+        fn set_profile(&self, _done: usize, _total: usize) {}
+        fn finish(&self) {}
+    }
+
+    #[test]
+    fn interrupted_footer_names_partial_and_resume() {
+        let f = interrupted_footer(3, 5, "/ev/case");
+        assert!(f.contains("interrupted"), "marks the run interrupted: {f}");
+        assert!(
+            f.contains('3') && f.contains('5'),
+            "names how far it got (3/5): {f}"
+        );
+        assert!(
+            f.to_lowercase().contains("resume") && f.contains("br4n6 investigate /ev/case"),
+            "tells the operator how to resume: {f}"
+        );
+        assert!(
+            f.to_lowercase().contains("not complete") || f.to_lowercase().contains("partial"),
+            "makes incompleteness explicit: {f}"
+        );
+    }
+
+    #[test]
+    fn run_profile_loop_stops_at_next_boundary_and_flushes_partial() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let a = dir.path().join("A");
+        let b = dir.path().join("B");
+        chrome_profile_with_download(&a, "evil1.exe");
+        chrome_profile_with_download(&b, "evil2.exe");
+        let profiles = vec![discovered_chrome(&a, "A"), discovered_chrome(&b, "B")];
+
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let progress = CancelOnFirstUnit {
+            cancel: std::sync::Arc::clone(&cancel),
+        };
+
+        let (report, interrupted) = run_profile_loop(
+            &profiles,
+            crate::investigate::Tier::Standard,
+            &progress,
+            &cancel,
+        )
+        .expect("loop");
+
+        assert_eq!(
+            interrupted,
+            Some(Interrupted { done: 1, total: 2 }),
+            "stopped at the boundary after the first profile completed"
+        );
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(
+            json.contains("evil1.exe"),
+            "the completed first profile's evidence is flushed"
+        );
+        assert!(
+            !json.contains("evil2.exe"),
+            "no work from the un-started second profile leaks in"
         );
     }
 }

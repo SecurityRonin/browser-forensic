@@ -39,6 +39,10 @@ ratatui = "0.30"
 crossterm = "0.29"
 arboard = "3.6"
 open = "5"
+# SIGINT handling for `investigate` partial-flush (RFC 0001 P3b). std has no
+# portable signal API; ctrlc is the minimal safe wrapper (MIT/Apache-2.0) and
+# only sets an AtomicBool the collect loop checks at profile boundaries.
+ctrlc = "3"
 anyhow = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }

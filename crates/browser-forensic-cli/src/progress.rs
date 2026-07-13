@@ -189,6 +189,27 @@ impl TriageProgress for Progress {
     }
 }
 
+/// The progress surface the investigation loop drives: the per-artifact
+/// [`TriageProgress::on_unit`] reporting plus the profile-level count/finish the
+/// loop advances. A supertrait so the loop can take a `&dyn InvestigationProgress`
+/// (and upcast it to `&dyn TriageProgress` for the triage pipeline), which lets a
+/// test inject a recording/cancelling stand-in without a real terminal.
+pub trait InvestigationProgress: TriageProgress {
+    /// Advance the profile-level completed/total count.
+    fn set_profile(&self, done: usize, total: usize);
+    /// Called once the loop finishes (or stops).
+    fn finish(&self);
+}
+
+impl InvestigationProgress for Progress {
+    fn set_profile(&self, done: usize, total: usize) {
+        Progress::set_profile(self, done, total);
+    }
+    fn finish(&self) {
+        Progress::finish(self);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
