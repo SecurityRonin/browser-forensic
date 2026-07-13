@@ -79,6 +79,59 @@ fn reconstruct_help_exits_0() {
     br4n6().args(["reconstruct", "--help"]).assert().success();
 }
 
+/// RFC 0001 D6 — the verb is `reconstruct` and its help frames output as
+/// "cached representations consistent with access", never "what the user
+/// saw/viewed".
+#[test]
+fn reconstruct_help_uses_consistent_with_access_framing() {
+    let out = br4n6().args(["reconstruct", "--help"]).output().unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout).to_ascii_lowercase();
+    assert!(
+        stdout.contains("consistent with access"),
+        "reconstruct --help must use the consistent-with-access framing (D6):\n{stdout}"
+    );
+    for banned in [" saw ", "viewed", "what the user saw"] {
+        assert!(
+            !stdout.contains(banned),
+            "reconstruct --help must not claim what the user {banned:?} (D6):\n{stdout}"
+        );
+    }
+}
+
+/// RFC 0001 D6 — the reconstruct stdout banner states the output is a set of
+/// cached representations consistent with access to the target, not a rendering.
+#[test]
+fn reconstruct_stdout_banner_states_consistent_with_access() {
+    let cache = build_cache();
+    let out = TempDir::new().unwrap();
+    let output = br4n6()
+        .args([
+            "reconstruct",
+            cache.path().to_str().unwrap(),
+            "--out",
+            out.path().to_str().unwrap(),
+            "--format",
+            "html",
+            "--url",
+            "https://ex.com/",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+    assert!(
+        stdout.contains("consistent with access"),
+        "reconstruct stdout banner must state consistent-with-access (D6):\n{stdout}"
+    );
+    for banned in [" saw ", "viewed"] {
+        assert!(
+            !stdout.contains(banned),
+            "reconstruct stdout must not claim what the user {banned:?} (D6):\n{stdout}"
+        );
+    }
+}
+
 #[test]
 fn reconstruct_html_writes_page_with_banner_and_inlines_image() {
     let cache = build_cache();
