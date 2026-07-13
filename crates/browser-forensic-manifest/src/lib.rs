@@ -324,6 +324,9 @@ fn artifact_names(family: &BrowserFamily) -> &'static [&'static str] {
             "prefs.js",
         ],
         BrowserFamily::Safari => &["History.db"],
+        // IE / Edge-Legacy consolidate history/cookies/cache/DOM storage into
+        // one ESE database.
+        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => &["WebCacheV01.dat"],
     }
 }
 

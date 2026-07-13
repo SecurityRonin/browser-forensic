@@ -120,11 +120,25 @@
     },
     "BrowserFamily": {
       "description": "Browser engine family.",
-      "type": "string",
-      "enum": [
-        "Chromium",
-        "Firefox",
-        "Safari"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Chromium",
+            "Firefox",
+            "Safari"
+          ]
+        },
+        {
+          "description": "Internet Explorer (Trident) — history/cookies/cache live in the ESE\n`WebCacheV01.dat`, not SQLite.",
+          "type": "string",
+          "const": "InternetExplorer"
+        },
+        {
+          "description": "Legacy (EdgeHTML/Spartan) Microsoft Edge — shares the ESE\n`WebCacheV01.dat` store with Internet Explorer.",
+          "type": "string",
+          "const": "EdgeLegacy"
+        }
       ]
     }
   }

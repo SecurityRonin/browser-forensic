@@ -226,6 +226,9 @@ enum Command {
     RecoveredDomains(ArtifactArgs),
     /// Parse web storage (Local/Session Storage, IndexedDB).
     Storage(ArtifactArgs),
+    /// Parse an IE / Edge-Legacy `WebCacheV01.dat` (ESE): history, cookies,
+    /// cached content, and DOM storage. `PATH` is the WebCacheV01.dat file.
+    Webcache(ArtifactArgs),
     /// Decode a Chromium IndexedDB LevelDB directory directly: database and
     /// object-store names, keys, and Blink/V8-serialized values. `PATH` is a
     /// single `*.indexeddb.leveldb` directory.
@@ -550,6 +553,7 @@ where
         Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
         Some(Command::RecoveredDomains(a)) => run_recovered_domains(&a.path, a.format),
         Some(Command::Storage(a)) => run_storage(&a.path, a.format),
+        Some(Command::Webcache(a)) => run_webcache(&a.path, a.format),
         Some(Command::Indexeddb(a)) => run_indexeddb(&a.path, a.format),
         Some(Command::Favicons(a)) => run_favicons(&a.path, a.format),
         Some(Command::TopSites(a)) => run_top_sites(&a.path, a.format),
@@ -1310,6 +1314,13 @@ pub fn run_artifact(path: &Path, artifact: ArtifactType, format: OutputFormat) -
         .with_context(|| format!("cannot determine browser from path: {}", path.display()))?;
 
     let mut events = match (family, artifact) {
+        // IE / Edge-Legacy consolidate every artifact into WebCacheV01.dat (ESE),
+        // not the per-artifact SQLite files this dispatch parses.
+        (BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy, _) => {
+            anyhow::bail!(
+                "IE / Edge-Legacy artifacts live in WebCacheV01.dat (ESE); use `br4n6 webcache PATH`"
+            );
+        }
         (BrowserFamily::Chromium, ArtifactType::History) => {
             browser_forensic_chrome::parse_history(path)?
         }
@@ -1848,6 +1859,7 @@ fn history_file_for(profile: &Path, family: BrowserFamily) -> Option<PathBuf> {
         BrowserFamily::Chromium => "History",
         BrowserFamily::Firefox => "places.sqlite",
         BrowserFamily::Safari => "History.db",
+        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => "WebCacheV01.dat",
     };
     let candidate = profile.join(name);
     candidate.is_file().then_some(candidate)
@@ -1881,7 +1893,10 @@ fn collect_visit_history(path: &Path) -> (Vec<BrowserEvent>, Vec<BrowserFamily>)
         let parsed = match family {
             BrowserFamily::Chromium => browser_forensic_chrome::parse_visits(&hf),
             BrowserFamily::Firefox => browser_forensic_firefox::parse_visits(&hf),
-            BrowserFamily::Safari => continue,
+            // No per-visit redirect graph for Safari or the WebCache families.
+            BrowserFamily::Safari | BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
+                continue
+            }
         };
         if let Ok(mut evts) = parsed {
             if !evts.is_empty() {
@@ -2408,6 +2423,9 @@ pub fn run_analyze(path: &Path, cap: usize) -> Result<()> {
         BrowserFamily::Chromium => browser_forensic_chrome::parse_history(path)?,
         BrowserFamily::Firefox => browser_forensic_firefox::parse_history(path)?,
         BrowserFamily::Safari => browser_forensic_safari::parse_history(path)?,
+        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
+            browser_forensic_webcache::parse_webcache(path)?
+        }
     };
 
     let domains = browser_forensic_core::analyze::rare_domains(&events, cap);
@@ -2700,6 +2718,21 @@ pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
         .with_context(|| format!("parsing web storage from {}", path.display()))?;
     events.sort_by_key(|e| e.timestamp_ns);
     emit_events(&events, format);
+    Ok(())
+}
+
+/// `br4n6 webcache PATH` — parse an IE / Edge-Legacy `WebCacheV01.dat` (ESE) into
+/// a chronological event stream: history visits, cookies, cached content, and
+/// DOM storage, each tagged with its browser family and artifact kind. Read-only.
+///
+/// # Errors
+/// Returns an error if the file cannot be opened as an ESE database or its
+/// `Containers` table cannot be read (a bootstrap failure, surfaced loud).
+pub fn run_webcache(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = browser_forensic_webcache::parse_webcache(path)
+        .with_context(|| format!("parsing WebCache from {}", path.display()))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
     Ok(())
 }
 

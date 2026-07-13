@@ -273,6 +273,7 @@ pub fn discover_profiles(home: &Path) -> Vec<DiscoveredProfile> {
     discover_chromium_profiles(home, &mut profiles);
     discover_firefox_profiles(home, &mut profiles);
     discover_safari_profiles(home, &mut profiles);
+    discover_webcache_profiles(home, &mut profiles);
     profiles
 }
 
@@ -343,6 +344,24 @@ fn discover_safari_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
     }
 }
 
+/// Check the Windows WebCache directory: if
+/// `AppData/Local/Microsoft/Windows/WebCache/WebCacheV01.dat` exists (the ESE
+/// store shared by Internet Explorer and legacy EdgeHTML/Spartan Edge), emit a
+/// single profile. Tagged [`BrowserFamily::InternetExplorer`] at the profile
+/// level; the WebCache parser refines IE-vs-Edge per container.
+fn discover_webcache_profiles(home: &Path, out: &mut Vec<DiscoveredProfile>) {
+    let webcache = home.join("AppData/Local/Microsoft/Windows/WebCache");
+    if webcache.join("WebCacheV01.dat").is_file() {
+        let container = attribution_for(&webcache);
+        out.push(DiscoveredProfile {
+            browser: BrowserFamily::InternetExplorer,
+            name: "WebCache".to_string(),
+            path: webcache,
+            container,
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,6 +407,19 @@ mod tests {
 
         let profiles = discover_profiles(home.path());
         assert!(profiles.iter().any(|p| p.browser == BrowserFamily::Safari));
+    }
+
+    #[test]
+    fn discover_webcache_profile() {
+        let home = TempDir::new().unwrap();
+        let webcache = home.path().join("AppData/Local/Microsoft/Windows/WebCache");
+        fs::create_dir_all(&webcache).unwrap();
+        fs::write(webcache.join("WebCacheV01.dat"), b"").unwrap();
+
+        let profiles = discover_profiles(home.path());
+        assert!(profiles
+            .iter()
+            .any(|p| p.browser == BrowserFamily::InternetExplorer && p.name == "WebCache"));
     }
 
     #[test]

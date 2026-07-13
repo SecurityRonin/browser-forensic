@@ -46,6 +46,9 @@ pub fn triage_profile(profile_path: &Path, browser: BrowserFamily) -> Result<Tri
         BrowserFamily::Safari => {
             triage_safari_profile(profile_path, &mut events, &mut integrity, &mut carved);
         }
+        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
+            triage_webcache_profile(profile_path, &mut events);
+        }
     }
 
     events.sort_by_key(|e| e.timestamp_ns);
@@ -117,6 +120,9 @@ fn triage_profiles(profiles: Vec<DiscoveredProfile>) -> TriageReport {
                     &mut integrity_vec,
                     &mut carved_vec,
                 );
+            }
+            BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
+                triage_webcache_profile(&profile.path, &mut events);
             }
         }
 
@@ -404,6 +410,27 @@ fn triage_safari_profile(
         }
         if let Ok(result) = browser_forensic_carve::carve_sqlite_free_pages(&history_path) {
             carved.extend(result.records);
+        }
+    }
+}
+
+/// Triage an IE / Edge-Legacy profile: parse the ESE `WebCacheV01.dat` (the
+/// consolidated history/cookies/cache/DOM store) if present. `path` may be the
+/// WebCache directory itself or a parent containing it. WebCache is ESE, not
+/// SQLite, so the SQLite integrity/carve steps do not apply. A parse failure is
+/// absorbed so one unreadable store never aborts a multi-profile triage.
+fn triage_webcache_profile(path: &Path, events: &mut Vec<BrowserEvent>) {
+    let candidates = [
+        path.join("WebCacheV01.dat"),
+        path.join("WebCache").join("WebCacheV01.dat"),
+        path.to_path_buf(),
+    ];
+    for candidate in candidates {
+        if candidate.is_file() {
+            if let Ok(mut evts) = browser_forensic_webcache::parse_webcache(&candidate) {
+                events.append(&mut evts);
+            }
+            return;
         }
     }
 }

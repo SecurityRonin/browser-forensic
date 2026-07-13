@@ -44,6 +44,9 @@ pub fn check_history_integrity(
         BrowserFamily::Chromium => check_chromium_history(path),
         BrowserFamily::Firefox => check_firefox_history(path),
         BrowserFamily::Safari => check_safari_history(path),
+        // IE / Edge-Legacy history lives in the ESE WebCacheV01.dat, not SQLite;
+        // no dedicated integrity checks yet.
+        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => Ok(Vec::new()),
     }
 }
 
