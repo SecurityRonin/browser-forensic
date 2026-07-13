@@ -22,6 +22,7 @@ pub mod output;
 pub mod progress;
 pub mod recover;
 pub mod report;
+pub mod selectors;
 
 /// The outcome of feeding one key to a single-line text prompt (the search and
 /// glob input loops). The loop owns the actual `event::read`/`draw`; this maps a

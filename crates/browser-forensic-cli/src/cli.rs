@@ -153,6 +153,16 @@ enum Command {
         /// basis + confidence for every input (RFC 0001 D8/D11).
         #[arg(long, value_name = "PATH")]
         manifest: Option<PathBuf>,
+        /// Scope to one user (SID or name); a non-match errors, naming what was
+        /// found. Every finding is stamped with its origin (RFC 0001 D9).
+        #[arg(long, value_name = "SID|NAME")]
+        user: Option<String>,
+        /// Scope to one profile, e.g. `Chrome/Default` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER/NAME")]
+        profile: Option<String>,
+        /// Scope to one browser family, e.g. `chrome` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER")]
+        browser: Option<String>,
     },
     /// Find a term across ALL sources — "did they visit / download / search X?"
     /// (RFC 0001 P4). TERM is auto-classified by shape (domain / url / ipv4 /
@@ -198,6 +208,16 @@ enum Command {
         /// table, a pipe gets JSONL (announced once on stderr).
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
+        /// Scope to one user (SID or name) — RFC 0001 D9. A non-match errors,
+        /// naming what was found.
+        #[arg(long, value_name = "SID|NAME")]
+        user: Option<String>,
+        /// Scope to one profile, e.g. `Chrome/Default` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER/NAME")]
+        profile: Option<String>,
+        /// Scope to one browser family, e.g. `chrome` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER")]
+        browser: Option<String>,
     },
     /// Recover deleted / carved / evicted evidence — ONE orchestrator runs ALL
     /// applicable recovery over PATH and ranks the results; the examiner chooses
@@ -228,6 +248,15 @@ enum Command {
         /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
+        /// Scope a directory recovery to one user (SID or name) — RFC 0001 D9.
+        #[arg(long, value_name = "SID|NAME")]
+        user: Option<String>,
+        /// Scope a directory recovery to one profile, e.g. `Chrome/Default` (D9).
+        #[arg(long, value_name = "BROWSER/NAME")]
+        profile: Option<String>,
+        /// Scope a directory recovery to one browser family, e.g. `chrome` (D9).
+        #[arg(long, value_name = "BROWSER")]
+        browser: Option<String>,
     },
     /// Parse a single browser artifact by name — the power / discovery layer.
     /// `br4n6 artifact --list` tabulates every primitive; `br4n6 artifact <NAME>
@@ -288,6 +317,15 @@ enum Command {
         /// Output format. Defaults to a human render on a TTY, JSONL when piped.
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
+        /// Scope to one user (SID or name) — RFC 0001 D9. A non-match errors.
+        #[arg(long, value_name = "SID|NAME")]
+        user: Option<String>,
+        /// Scope to one profile, e.g. `Chrome/Default` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER/NAME")]
+        profile: Option<String>,
+        /// Scope to one browser family, e.g. `chrome` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER")]
+        browser: Option<String>,
     },
     /// Reconstruct cached representations consistent with access to a URL, from
     /// browser cache. `PATH` is a cache directory or a whole profile. Writes a
@@ -350,6 +388,15 @@ enum Command {
         /// Also write a chain-of-custody manifest (SHA-256/MD5 of every input) here.
         #[arg(long, value_name = "FILE")]
         manifest: Option<PathBuf>,
+        /// Scope to one user (SID or name) — RFC 0001 D9. A non-match errors.
+        #[arg(long, value_name = "SID|NAME")]
+        user: Option<String>,
+        /// Scope to one profile, e.g. `Chrome/Default` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER/NAME")]
+        profile: Option<String>,
+        /// Scope to one browser family, e.g. `chrome` (RFC 0001 D9).
+        #[arg(long, value_name = "BROWSER")]
+        browser: Option<String>,
     },
     /// Write a case-level chain-of-custody manifest (JSON): for every evidence
     /// file read, its absolute path, size, SHA-256, MD5, and mtime, plus run
@@ -608,6 +655,7 @@ where
                 false,
                 None,
                 None,
+                &crate::selectors::Selectors::default(),
             );
         }
         BarePath::Fallthrough => {}
@@ -635,6 +683,9 @@ where
             restart,
             forced_type,
             manifest,
+            user,
+            profile,
+            browser,
         }) => run_investigate(
             &path,
             tier_from_flags(quick, standard, deep),
@@ -643,6 +694,7 @@ where
             restart,
             forced_type,
             manifest.as_deref(),
+            &crate::selectors::Selectors::new(user, profile, browser),
         ),
         Some(Command::Find {
             term,
@@ -655,6 +707,9 @@ where
             to,
             sources,
             format,
+            user,
+            profile,
+            browser,
         }) => run_find(
             term.as_deref(),
             path.as_deref(),
@@ -666,12 +721,21 @@ where
             to.as_deref(),
             &sources,
             format,
+            &crate::selectors::Selectors::new(user, profile, browser),
         ),
         Some(Command::Recover {
             path,
             symbols,
             format,
-        }) => run_recover(&path, symbols.as_deref(), format),
+            user,
+            profile,
+            browser,
+        }) => run_recover(
+            &path,
+            symbols.as_deref(),
+            format,
+            &crate::selectors::Selectors::new(user, profile, browser),
+        ),
         Some(Command::Artifact { list, kind }) => run_artifact_command(list, kind),
         Some(Command::Timeline {
             path,
@@ -683,6 +747,9 @@ where
             graph,
             graph_window,
             format,
+            user,
+            profile,
+            browser,
         }) => run_timeline(
             &path,
             around.as_deref(),
@@ -693,6 +760,7 @@ where
             graph,
             graph_window,
             format,
+            &crate::selectors::Selectors::new(user, profile, browser),
         ),
         Some(Command::Reconstruct {
             path,
@@ -721,12 +789,16 @@ where
             output,
             timezone,
             manifest,
+            user,
+            profile,
+            browser,
         }) => run_report(
             &path,
             format,
             output.as_deref(),
             timezone.as_deref(),
             manifest.as_deref(),
+            &crate::selectors::Selectors::new(user, profile, browser),
         ),
         Some(Command::Manifest {
             path,
@@ -779,6 +851,22 @@ fn investigation_profiles(path: &Path) -> Vec<browser_forensic_discovery::Discov
     }
     profiles
 }
+
+/// The merged report, origin-stamped findings, and interrupt state produced by
+/// the per-profile investigation loop.
+type ProfileLoopResult = (
+    browser_forensic_triage::TriageReport,
+    Vec<browser_forensic_core::finding::Finding>,
+    Option<Interrupted>,
+);
+
+/// A [`ProfileLoopResult`] plus the (selector-scoped) profiles it ran over.
+type InvestigationCollection = (
+    Vec<browser_forensic_discovery::DiscoveredProfile>,
+    browser_forensic_triage::TriageReport,
+    Vec<browser_forensic_core::finding::Finding>,
+    Option<Interrupted>,
+);
 
 /// An empty [`TriageReport`] stamped with the current wall-clock time.
 fn empty_report_now() -> browser_forensic_triage::TriageReport {
@@ -861,11 +949,14 @@ fn run_profile_loop(
     progress: &dyn crate::progress::InvestigationProgress,
     cancel: &std::sync::atomic::AtomicBool,
     checkpoint: &mut Option<crate::checkpoint::CheckpointSession>,
-) -> Result<(browser_forensic_triage::TriageReport, Option<Interrupted>)> {
+) -> Result<ProfileLoopResult> {
     use std::sync::atomic::Ordering;
 
     let total = profiles.len();
     let mut report = empty_report_now();
+    // Findings are computed per profile so each carries its origin stamp (D9);
+    // concatenated, they equal `findings_from_report` over the merged report.
+    let mut findings: Vec<browser_forensic_core::finding::Finding> = Vec::new();
     let mut interrupted = None;
 
     for (index, profile) in profiles.iter().enumerate() {
@@ -885,6 +976,11 @@ fn run_profile_loop(
         {
             report.events.extend(unit.events.iter().cloned());
             report.integrity.extend(unit.integrity.iter().cloned());
+            findings.extend(stamped_profile_findings(
+                profile,
+                &unit.events,
+                &unit.integrity,
+            ));
             progress.set_profile(index + 1, total);
             continue;
         }
@@ -897,6 +993,11 @@ fn run_profile_loop(
         if let Some(session) = checkpoint.as_mut() {
             session.record(&key, frag.events.clone(), frag.integrity.clone())?;
         }
+        // Origin-stamped findings for this profile, from its own fragment.
+        findings.extend(crate::selectors::stamp(
+            crate::investigate::findings_from_report(&frag),
+            profile,
+        ));
         let mut frag = frag;
         report.events.append(&mut frag.events);
         report.integrity.append(&mut frag.integrity);
@@ -907,7 +1008,25 @@ fn run_profile_loop(
     progress.set_profile(done, total);
     progress.finish();
 
-    Ok((report, interrupted))
+    Ok((report, findings, interrupted))
+}
+
+/// Compute the origin-stamped findings for one profile from its events +
+/// integrity indicators (RFC 0001 D9). Used on the checkpoint-resume path, where
+/// only the persisted fragment (not a full `TriageReport`) is available.
+fn stamped_profile_findings(
+    profile: &browser_forensic_discovery::DiscoveredProfile,
+    events: &[BrowserEvent],
+    integrity: &[browser_forensic_integrity::IntegrityIndicator],
+) -> Vec<browser_forensic_core::finding::Finding> {
+    let report = browser_forensic_triage::TriageReport {
+        events: events.to_vec(),
+        carved: Vec::new(),
+        integrity: integrity.to_vec(),
+        profiles: Vec::new(),
+        generated_at_ns: 0,
+    };
+    crate::selectors::stamp(crate::investigate::findings_from_report(&report), profile)
 }
 
 /// Stable per-profile checkpoint key: browser family + profile path.
@@ -989,14 +1108,14 @@ fn collect_investigation(
     progress: &dyn crate::progress::InvestigationProgress,
     cancel: &std::sync::atomic::AtomicBool,
     checkpoint: &mut Option<crate::checkpoint::CheckpointSession>,
-) -> Result<(
-    Vec<browser_forensic_discovery::DiscoveredProfile>,
-    browser_forensic_triage::TriageReport,
-    Option<Interrupted>,
-)> {
-    let profiles = investigation_profiles(path);
-    let (report, interrupted) = run_profile_loop(&profiles, tier, progress, cancel, checkpoint)?;
-    Ok((profiles, report, interrupted))
+    selectors: &crate::selectors::Selectors,
+) -> Result<InvestigationCollection> {
+    // Scope to the selected user/profile/browser (RFC 0001 D9); a non-match is a
+    // loud error naming what WAS present, never a silent empty result.
+    let profiles = selectors.filter(investigation_profiles(path))?;
+    let (report, findings, interrupted) =
+        run_profile_loop(&profiles, tier, progress, cancel, checkpoint)?;
+    Ok((profiles, report, findings, interrupted))
 }
 
 /// The layered detections to show + log for an investigation (RFC 0001 D8).
@@ -1072,6 +1191,7 @@ pub fn run_investigate(
     restart: bool,
     forced_type: Option<crate::detect::DetectionKind>,
     manifest_path: Option<&Path>,
+    selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
     use std::io::IsTerminal as _;
 
@@ -1101,8 +1221,8 @@ pub fn run_investigate(
     // by default. The resume decision is announced on stderr so stdout stays clean.
     let mut checkpoint = open_checkpoint(path, tier, checkpoint_path, restart)?;
 
-    let (profiles, report, interrupted) =
-        collect_investigation(path, tier, &progress, &cancel, &mut checkpoint)?;
+    let (profiles, _report, findings, interrupted) =
+        collect_investigation(path, tier, &progress, &cancel, &mut checkpoint, selectors)?;
 
     // Layered PATH auto-detection (RFC 0001 D8): show what each input was
     // detected as, with confidence + basis, and — with `--manifest` — record it
@@ -1115,8 +1235,8 @@ pub fn run_investigate(
         write_detection_manifest(mp, path, &detections)?;
     }
 
-    let findings =
-        crate::investigate::rank_findings(crate::investigate::findings_from_report(&report));
+    // Findings are already origin-stamped per profile (D9); rank them for render.
+    let findings = crate::investigate::rank_findings(findings);
 
     let resolved = crate::output::resolve_stdout(format);
     match resolved {
@@ -1358,6 +1478,7 @@ pub fn run_recover(
     path: &Path,
     symbols: Option<&Path>,
     format: Option<OutputFormat>,
+    selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
     use std::io::IsTerminal as _;
 
@@ -1370,18 +1491,21 @@ pub fn run_recover(
     let scope = recover_scope_of(path);
     let findings = match scope {
         crate::recover::RecoverScope::Profile => {
-            // Every profile beneath a home dir, or the path itself when it is a
-            // bare profile directory the discovery layer does not classify.
-            let mut dirs: Vec<PathBuf> = investigation_profiles(path)
-                .into_iter()
-                .map(|p| p.path)
-                .collect();
-            if dirs.is_empty() {
-                dirs.push(path.to_path_buf());
-            }
+            // Every profile beneath a home dir, scoped by the selectors (RFC 0001
+            // D9; a non-match errors loudly), each recovered finding stamped with
+            // its origin. When discovery classifies nothing and no selector is set,
+            // fall back to the path itself as a single (unstamped) profile dir.
+            let profiles = selectors.filter(investigation_profiles(path))?;
             let mut findings = Vec::new();
-            for dir in dirs {
-                findings.extend(recover_profile_findings(&dir));
+            if profiles.is_empty() {
+                findings.extend(recover_profile_findings(path));
+            } else {
+                for profile in &profiles {
+                    findings.extend(crate::selectors::stamp(
+                        recover_profile_findings(&profile.path),
+                        profile,
+                    ));
+                }
             }
             findings
         }
@@ -1939,9 +2063,12 @@ pub fn reconstruct_history(path: &Path, idle_gap_minutes: i64) -> Result<Vec<Bro
 ///
 /// # Errors
 /// Propagates the underlying collection / parse error.
-fn collect_timeline_events(path: &Path) -> Result<Vec<BrowserEvent>> {
+fn collect_timeline_events(
+    path: &Path,
+    selectors: &crate::selectors::Selectors,
+) -> Result<Vec<BrowserEvent>> {
     if path.is_dir() {
-        return collect_correlation_events(path);
+        return collect_correlation_events(path, selectors);
     }
     // A lone history file: the `urls`-table chronology (matching the historic
     // single-file `timeline`), not the per-visit `visits` table `artifact history`
@@ -2013,9 +2140,15 @@ pub fn run_timeline(
     graph: Option<GraphFormat>,
     graph_window: i64,
     format: Option<OutputFormat>,
+    selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
     if !path.exists() {
         anyhow::bail!("path does not exist: {}", path.display());
+    }
+    // Validate the selectors up front so EVERY view (default/graph/chains) errors
+    // loudly on a non-match, naming what was present (RFC 0001 D9).
+    if selectors.is_active() && path.is_dir() {
+        selectors.filter(investigation_profiles(path))?;
     }
     let tz = parse_tz(tz)?;
     let around_ns = around.map(parse_timestamp_ns).transpose()?;
@@ -2029,7 +2162,7 @@ pub fn run_timeline(
     // Entity-graph view (formerly `graph`): timestamps carry no display, so `--tz`
     // does not apply; it renders to stdout (redirect for a file).
     if let Some(graph_format) = graph {
-        let mut events = collect_timeline_events(path)?;
+        let mut events = collect_timeline_events(path, selectors)?;
         apply_around(&mut events);
         print!("{}", graph_output(&events, graph_format, graph_window));
         return Ok(());
@@ -2047,7 +2180,7 @@ pub fn run_timeline(
     }
 
     // Default: the unified cross-artifact chronology + per-host rollup.
-    let mut events = collect_timeline_events(path)?;
+    let mut events = collect_timeline_events(path, selectors)?;
     apply_around(&mut events);
     print!("{}", correlate_output(&events, resolved, tz));
     Ok(())
@@ -3271,6 +3404,43 @@ fn collect_profile_events(path: &Path) -> Result<Vec<BrowserEvent>> {
     Ok(events)
 }
 
+/// Collect a profile/home directory's events, scoped by the user/profile/browser
+/// selectors (RFC 0001 D9). With no selector this is exactly
+/// [`collect_profile_events`]; with a selector it discovers + filters profiles
+/// (a non-match is a loud error naming what WAS present), collects each selected
+/// profile's events, and stamps every event with its origin.
+///
+/// # Errors
+/// Propagates a bootstrap failure (nonexistent path), a non-matching selector, or
+/// a per-profile collection error.
+fn collect_profile_events_scoped(
+    path: &Path,
+    selectors: &crate::selectors::Selectors,
+) -> Result<Vec<BrowserEvent>> {
+    if !selectors.is_active() {
+        return collect_profile_events(path);
+    }
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
+    let profiles = selectors.filter(investigation_profiles(path))?;
+    let mut events = Vec::new();
+    for profile in &profiles {
+        let report =
+            browser_forensic_triage::triage_profile(&profile.path, profile.browser.clone())
+                .with_context(|| {
+                    format!("collecting events from profile {}", profile.path.display())
+                })?;
+        let mut frag = report.events;
+        for event in &mut frag {
+            crate::selectors::stamp_event(event, profile);
+        }
+        events.append(&mut frag);
+    }
+    events.sort_by_key(|e| e.timestamp_ns);
+    Ok(events)
+}
+
 /// The history file inside a profile directory for a given family, if present.
 fn history_file_for(profile: &Path, family: BrowserFamily) -> Option<PathBuf> {
     let name = match family {
@@ -3335,7 +3505,16 @@ fn collect_visit_history(path: &Path) -> (Vec<BrowserEvent>, Vec<BrowserFamily>)
 ///
 /// # Errors
 /// Returns an error if collection fails.
-fn collect_correlation_events(path: &Path) -> Result<Vec<BrowserEvent>> {
+fn collect_correlation_events(
+    path: &Path,
+    selectors: &crate::selectors::Selectors,
+) -> Result<Vec<BrowserEvent>> {
+    // A scoped run returns only the selected profiles' events (origin-stamped),
+    // WITHOUT the path-wide per-visit enrichment — that lever reads every
+    // profile's `visits` and would reintroduce out-of-scope data (D9).
+    if selectors.is_active() {
+        return collect_profile_events_scoped(path, selectors);
+    }
     let mut events = collect_profile_events(path)?;
     let (visits, families) = collect_visit_history(path);
     if !visits.is_empty() {
@@ -3487,6 +3666,7 @@ pub fn run_find(
     to: Option<&str>,
     sources: &[SourceKind],
     format: Option<OutputFormat>,
+    selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
     use browser_forensic_core::finding::EvidenceSource;
     use browser_forensic_search::{filter_events, EventQuery, Pattern};
@@ -3499,7 +3679,7 @@ pub fn run_find(
                 "--iocs enumerates all IOCs; drop --regex/--term/--terms-file (usage: br4n6 find --iocs <PATH>)"
             );
         }
-        return run_find_iocs(term, path, from, to, sources, format);
+        return run_find_iocs(term, path, from, to, sources, format, selectors);
     }
 
     // Resolve the PATH: when the term comes from a flag, the single positional is
@@ -3607,7 +3787,8 @@ pub fn run_find(
 
     // Live artifacts + recovered domains (triage folds recovered-domain artifacts
     // into the event stream); each hit's provenance is derived from its artifact.
-    let events = collect_profile_events(&evidence_path)?;
+    // Scoped to the selected user/profile/browser (RFC 0001 D9) when set.
+    let events = collect_profile_events_scoped(&evidence_path, selectors)?;
     let mut hits: Vec<FindHit> = Vec::new();
     for tp in &terms {
         let query = EventQuery {
@@ -3678,6 +3859,7 @@ fn run_find_iocs(
     to: Option<&str>,
     sources: &[SourceKind],
     format: Option<OutputFormat>,
+    selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
     use browser_forensic_core::finding::EvidenceSource;
     use browser_forensic_search::{filter_events, EventQuery};
@@ -3703,7 +3885,7 @@ fn run_find_iocs(
 
     // Scope the events by the time window first, then extract — so an IocMatch's
     // `event_index` indexes the same scoped slice and time scoping matches `find`.
-    let events = collect_profile_events(&evidence_path)?;
+    let events = collect_profile_events_scoped(&evidence_path, selectors)?;
     let query = EventQuery {
         pattern: None,
         fields: Vec::new(),
@@ -3858,6 +4040,7 @@ pub fn run_report(
     output: Option<&Path>,
     timezone: Option<&str>,
     manifest_out: Option<&Path>,
+    selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
     use std::io::Write as _;
 
@@ -3877,6 +4060,12 @@ pub fn run_report(
     }
     let mut events = std::mem::take(&mut collected.events);
     events.sort_by_key(|e| e.timestamp_ns);
+
+    // Scope the reported events to the selected user/profile/browser (RFC 0001
+    // D9), origin-stamped; a non-match errors loudly, naming what was present.
+    if selectors.is_active() {
+        events = collect_profile_events_scoped(path, selectors)?;
+    }
 
     let rendered = match format {
         ReportFormat::Bodyfile => report::to_bodyfile(&events),
@@ -5015,7 +5204,9 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let events = collect_correlation_events(dir.path()).unwrap();
+        let events =
+            collect_correlation_events(dir.path(), &crate::selectors::Selectors::default())
+                .unwrap();
         // Per-visit enrichment brings the from_visit linkage the collapsed view drops.
         assert!(events.iter().any(|e| e.attrs.contains_key("from_visit")));
 
@@ -6125,7 +6316,7 @@ mod tests {
         };
 
         let mut no_cp = None;
-        let (report, interrupted) = run_profile_loop(
+        let (report, _findings, interrupted) = run_profile_loop(
             &profiles,
             crate::investigate::Tier::Standard,
             &progress,
@@ -6179,7 +6370,7 @@ mod tests {
             cancel: std::sync::Arc::clone(&cancel),
         };
         let mut checkpoint = Some(session);
-        let (_report, interrupted) = run_profile_loop(
+        let (_report, _findings, interrupted) = run_profile_loop(
             &profiles,
             crate::investigate::Tier::Standard,
             &progress,
@@ -6215,7 +6406,7 @@ mod tests {
         // Uninterrupted baseline (no checkpoint).
         let no_cancel = std::sync::atomic::AtomicBool::new(false);
         let mut no_cp = None;
-        let (full, none) = run_profile_loop(
+        let (full, _findings, none) = run_profile_loop(
             &profiles,
             crate::investigate::Tier::Standard,
             &inert,
@@ -6244,7 +6435,7 @@ mod tests {
         .unwrap();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut cp1 = Some(s1);
-        let (_r1, i1) = run_profile_loop(
+        let (_r1, _f1, i1) = run_profile_loop(
             &profiles,
             crate::investigate::Tier::Standard,
             &CancelOnFirstUnit {
@@ -6277,7 +6468,7 @@ mod tests {
         );
         let no_cancel2 = std::sync::atomic::AtomicBool::new(false);
         let mut cp2 = Some(s2);
-        let (r2, i2) = run_profile_loop(
+        let (r2, _f2, i2) = run_profile_loop(
             &profiles,
             crate::investigate::Tier::Standard,
             &inert,
