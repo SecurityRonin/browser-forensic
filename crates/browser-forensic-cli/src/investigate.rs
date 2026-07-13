@@ -297,7 +297,7 @@ fn priority_weight(priority: Priority) -> u8 {
 /// Rank findings by [`Priority`] (High → Medium → Info), stable within a tier.
 #[must_use]
 pub fn rank_findings(mut findings: Vec<Finding>) -> Vec<Finding> {
-    findings.sort_by(|a, b| priority_weight(b.priority).cmp(&priority_weight(a.priority)));
+    findings.sort_by_key(|f| std::cmp::Reverse(priority_weight(f.priority)));
     findings
 }
 
