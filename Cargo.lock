@@ -457,6 +457,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser-forensic-image"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "browser-forensic-core",
+ "browser-forensic-triage",
+ "forensic-vfs",
+ "forensicnomicon",
+ "rusqlite",
+ "tempfile",
+]
+
+[[package]]
 name = "browser-forensic-integrity"
 version = "0.2.0"
 dependencies = [
@@ -1321,6 +1334,15 @@ name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
+name = "forensic-vfs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e1fd9ca5012d956da1cd418e2c40732f3e7d18638cd8705551e04fc7cc67030"
+dependencies = [
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "forensicnomicon"

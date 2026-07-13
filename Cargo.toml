@@ -16,6 +16,7 @@ members = [
     "crates/browser-forensic-storage",
     "crates/browser-forensic-manifest",
     "crates/browser-forensic-triage",
+    "crates/browser-forensic-image",
     "crates/browser-forensic-correlate",
     "crates/browser-forensic-cli",
     "crates/browser-forensic-mcp",
@@ -44,6 +45,11 @@ clap = { version = "4", features = ["derive"] }
 assert_cmd = "2"
 tempfile = "3"
 forensicnomicon = { version = "1.5", features = ["serde"] }
+# forensic-vfs: the read-only FileSystem/ImageSource/PathSpec *contracts* (a true
+# leaf — thiserror only). browser-forensic speaks this trait and owns ZERO
+# container/partition/filesystem code (the disk-format readers and the Vfs::open
+# resolver live behind it in the forensic-vfs fleet).
+forensic-vfs = "0.1"
 sqlite-core = "0.9"
 sqlite-forensic = "0.9"
 thiserror = "2"
