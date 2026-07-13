@@ -4116,6 +4116,126 @@ mod tests {
     }
 
     #[test]
+    fn carved_event_tags_recovery_provenance() {
+        use browser_forensic_cache::{
+            CachedResource, RecoveredResource, RecoveryMechanism, RecoveryQuality,
+        };
+        let resource = CachedResource {
+            url: "https://orphan.example/gone".to_string(),
+            http_status: Some(200),
+            status_line: Some("HTTP/1.1 200 OK".to_string()),
+            headers: vec![("Content-Type".to_string(), "text/html".to_string())],
+            content_type: Some("text/html".to_string()),
+            content_encoding: None,
+            request_time_ns: Some(1_600_000_000_000_000_000),
+            response_time_ns: Some(1_600_000_000_000_000_100),
+            raw_body: b"orphan-body".to_vec(),
+            decoded_body: b"orphan-body".to_vec(),
+            body_decoded: true,
+            decode_note: None,
+            source_file: std::path::PathBuf::from("/Cache/Cache_Data/bbbb2222_0"),
+            sparse_file: None,
+        };
+        let rr = RecoveredResource {
+            resource,
+            mechanism: RecoveryMechanism::OrphanedSimpleEntry,
+            quality: RecoveryQuality::Full,
+            note: "consistent with the resource having been cached and then evicted".to_string(),
+        };
+        let ev = cache_carve_event(&rr);
+        assert_eq!(ev.artifact, ArtifactKind::Cache);
+        assert_eq!(ev.description, "https://orphan.example/gone");
+        // response_time wins over request_time for the event timestamp.
+        assert_eq!(ev.timestamp_ns, 1_600_000_000_000_000_100);
+        // The load-bearing recovery/provenance tags.
+        assert_eq!(
+            ev.attrs.get("artifact_subtype").unwrap(),
+            &json!("cache_carve")
+        );
+        assert_eq!(ev.attrs.get("recovered").unwrap(), &json!(true));
+        assert_eq!(
+            ev.attrs.get("recovery_mechanism").unwrap(),
+            &json!("orphaned_simple_entry")
+        );
+        assert_eq!(ev.attrs.get("recovery_quality").unwrap(), &json!("full"));
+        assert_eq!(
+            ev.attrs.get("recovery_note").unwrap(),
+            &json!("consistent with the resource having been cached and then evicted")
+        );
+        assert_eq!(ev.attrs.get("http_status").unwrap(), &json!(200));
+        assert_eq!(ev.attrs.get("content_type").unwrap(), &json!("text/html"));
+    }
+
+    #[test]
+    fn carved_event_partial_quality_tag() {
+        use browser_forensic_cache::{
+            CachedResource, RecoveredResource, RecoveryMechanism, RecoveryQuality,
+        };
+        let resource = CachedResource {
+            url: String::new(),
+            http_status: None,
+            status_line: None,
+            headers: Vec::new(),
+            content_type: None,
+            content_encoding: None,
+            request_time_ns: None,
+            response_time_ns: None,
+            raw_body: Vec::new(),
+            decoded_body: Vec::new(),
+            body_decoded: false,
+            decode_note: None,
+            source_file: std::path::PathBuf::from("/Cache/dddd4444_s"),
+            sparse_file: None,
+        };
+        let rr = RecoveredResource {
+            resource,
+            mechanism: RecoveryMechanism::DanglingSparseFile,
+            quality: RecoveryQuality::Partial,
+            note: "dangling sparse body".to_string(),
+        };
+        let ev = cache_carve_event(&rr);
+        assert_eq!(ev.timestamp_ns, 0);
+        assert_eq!(ev.attrs.get("recovered").unwrap(), &json!(true));
+        assert_eq!(
+            ev.attrs.get("recovery_mechanism").unwrap(),
+            &json!("dangling_sparse_file")
+        );
+        assert_eq!(ev.attrs.get("recovery_quality").unwrap(), &json!("partial"));
+    }
+
+    #[test]
+    fn run_cache_carve_all_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        // A `[hash]_s` sparse body with no companion `_0` is a dangling fragment;
+        // with a `the-real-index` present it is claimed recovered.
+        let hash: u64 = 0x0000_0000_dddd_4444;
+        std::fs::write(dir.path().join(format!("{hash:016x}_s")), b"sparse ranges").unwrap();
+        // Build an empty `the-real-index` pickle (no live hashes).
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&browser_forensic_cache::carve::INDEX_MAGIC.to_le_bytes());
+        payload.extend_from_slice(&9u32.to_le_bytes()); // version
+        payload.extend_from_slice(&0u64.to_le_bytes()); // entry_count
+        payload.extend_from_slice(&0u64.to_le_bytes()); // cache_size
+        payload.extend_from_slice(&0u32.to_le_bytes()); // reason
+        payload.extend_from_slice(&0i64.to_le_bytes()); // cache_modified
+        let mut idx = Vec::new();
+        idx.extend_from_slice(&(u32::try_from(payload.len()).unwrap()).to_le_bytes());
+        idx.extend_from_slice(&0u32.to_le_bytes()); // crc (not enforced)
+        idx.extend_from_slice(&payload);
+        let idx_dir = dir.path().join("index-dir");
+        std::fs::create_dir_all(&idx_dir).unwrap();
+        std::fs::write(idx_dir.join("the-real-index"), &idx).unwrap();
+
+        assert!(
+            !browser_forensic_cache::carve_cache_dir(dir.path()).is_empty(),
+            "the dangling sparse fragment should be recovered"
+        );
+        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
+            run_cache_carve(dir.path(), fmt).unwrap();
+        }
+    }
+
+    #[test]
     fn run_profiles_all_formats() {
         for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
             run_profiles(fmt).unwrap();

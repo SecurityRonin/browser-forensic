@@ -422,6 +422,7 @@ dependencies = [
  "cbc",
  "der",
  "des",
+ "dpapi-core",
  "hmac",
  "pbkdf2",
  "rusqlite",
@@ -1105,6 +1106,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "dpapi-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71e85f5dd899267c8e52882e75a31c54c40ca9f9da1c709c46e9b1a038106bf2"
+dependencies = [
+ "aes",
+ "aes-gcm",
+ "base64",
+ "cbc",
+ "cipher",
+ "des",
+ "forensicnomicon",
+ "hmac",
+ "sha1",
+ "sha2",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
