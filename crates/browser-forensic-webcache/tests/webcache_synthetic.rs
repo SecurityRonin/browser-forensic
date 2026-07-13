@@ -177,8 +177,8 @@ fn parse_synthetic_webcache_end_to_end() {
         assert_eq!(ev.browser, BrowserFamily::InternetExplorer);
         assert_eq!(ev.timestamp_ns, NS_2023);
         assert_eq!(ev.attrs["container"], serde_json::json!("History"));
-        assert!(ev.attrs.get("url").is_some());
-        assert!(ev.attrs.get("accessed_time_ns").is_some());
+        assert!(ev.attrs.contains_key("url"));
+        assert!(ev.attrs.contains_key("accessed_time_ns"));
     }
     assert!(events.iter().any(|e| e.description.contains("example.com")));
     assert!(events

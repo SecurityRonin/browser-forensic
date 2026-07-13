@@ -19,10 +19,12 @@ pub fn check_cookie_integrity(
     match browser {
         BrowserFamily::Chromium => check_chromium_cookies(path),
         BrowserFamily::Firefox => check_firefox_cookies(path),
-        BrowserFamily::Safari => Ok(Vec::new()), // Safari uses binary cookies format, not SQLite
-        // IE / Edge-Legacy cookies live in the ESE WebCacheV01.dat, not SQLite;
-        // no dedicated integrity checks yet.
-        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => Ok(Vec::new()),
+        // Safari stores cookies in a binary format (not SQLite); IE / Edge-Legacy
+        // cookies live in the ESE WebCacheV01.dat (not SQLite). No dedicated
+        // cookie integrity checks for these families yet.
+        BrowserFamily::Safari | BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
+            Ok(Vec::new())
+        }
     }
 }
 
