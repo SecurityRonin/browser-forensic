@@ -1,6 +1,15 @@
-//! End-to-end coverage for the Milestone-6 analysis subcommands: `search`,
-//! `extract-iocs`, and `match-domains`, exercised against the `br4n6` binary
-//! over an IOC-rich Chrome `History` fixture.
+//! RFC 0001 P5a clean break — the former `search` / `extract-iocs` /
+//! `match-domains` commands are removed; `find` (P4) is the front door. These
+//! tests exercise the surviving capabilities via `find`:
+//!   * term / regex / time-range search (was `search`) — here;
+//!   * blocklist matching (was `match-domains`) — `find --terms-file`, in
+//!     `find_supersedes.rs`.
+//!
+//! Retired: the pattern-free IOC *enumeration* of `extract-iocs` (list every
+//! email/IP/card/search-term with no query) is NOT a `find` capability — `find`
+//! is term/regex/@file-driven. Its former tests are dropped rather than forced
+//! into a shape `find` does not have. The `extract_iocs` library API remains and
+//! is still surfaced by `export --interpret`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use assert_cmd::Command;
@@ -8,9 +17,8 @@ use rusqlite::Connection;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// A Chrome `History` seeded with URLs/titles carrying an email, an IPv4, a
-/// Google search term, and a blocklisted host. Returns `(TempDir, profile_dir)`;
-/// the profile dir is what the analysis subcommands point at.
+/// A Chrome `History` seeded with URLs/titles carrying an IPv4, a Google search
+/// term, and a blocklisted host. Returns `(TempDir, profile_dir)`.
 fn ioc_history() -> (TempDir, PathBuf) {
     let dir = TempDir::new().unwrap();
     let profile_dir = dir.path().join("google-chrome").join("Default");
@@ -42,20 +50,18 @@ fn br4n6() -> Command {
 // ---- help ----
 
 #[test]
-fn help_exits_zero_for_new_subcommands() {
-    for sub in ["search", "extract-iocs", "match-domains"] {
-        br4n6().args([sub, "--help"]).assert().success();
-    }
+fn find_help_exits_zero() {
+    br4n6().args(["find", "--help"]).assert().success();
 }
 
-// ---- search ----
+// ---- find --regex (was `search --regex`) ----
 
 #[test]
-fn search_regex_filters_events() {
+fn find_regex_filters_events() {
     let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
-            "search",
+            "find",
             home.to_str().unwrap(),
             "--regex",
             r"8\.8\.8\.8",
@@ -70,7 +76,7 @@ fn search_regex_filters_events() {
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("8.8.8.8"),
-        "expected the 8.8.8.8 event, got: {text}"
+        "expected the 8.8.8.8 hit, got: {text}"
     );
     assert!(
         !text.contains("good.example.org"),
@@ -78,15 +84,16 @@ fn search_regex_filters_events() {
     );
 }
 
+// ---- find <TERM> against a title (was `search --substring`) ----
+
 #[test]
-fn search_substring_matches_title() {
+fn find_literal_term_matches_title() {
     let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
-            "search",
-            home.to_str().unwrap(),
-            "--substring",
+            "find",
             "Tracker",
+            home.to_str().unwrap(),
             "--format",
             "jsonl",
         ])
@@ -99,14 +106,18 @@ fn search_substring_matches_title() {
     assert!(text.contains("tracker.evil.com"), "got: {text}");
 }
 
+// ---- find --from/--to (was `search --from/--to`) ----
+
 #[test]
-fn search_time_range_excludes_future() {
+fn find_time_range_excludes_future() {
     let (_dir, home) = ioc_history();
     // All fixture visits are in 2023; a 2100 lower bound excludes everything.
     let out = br4n6()
         .args([
-            "search",
+            "find",
             home.to_str().unwrap(),
+            "--regex",
+            r"8\.8\.8\.8",
             "--from",
             "2100-01-01",
             "--format",
@@ -118,16 +129,18 @@ fn search_time_range_excludes_future() {
         .stdout
         .clone();
     let text = String::from_utf8(out).unwrap();
-    assert!(text.trim().is_empty(), "expected no events, got: {text}");
+    assert!(text.trim().is_empty(), "expected no hits, got: {text}");
 }
 
 #[test]
-fn search_time_range_includes_past() {
+fn find_time_range_includes_past() {
     let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
-            "search",
+            "find",
             home.to_str().unwrap(),
+            "--regex",
+            r"8\.8\.8\.8",
             "--from",
             "2000-01-01",
             "--format",
@@ -145,114 +158,17 @@ fn search_time_range_includes_past() {
     );
 }
 
-// ---- extract-iocs ----
+// ---- find --terms-file missing (was `match-domains --list` missing) ----
 
 #[test]
-fn extract_iocs_finds_email_ip_and_search_term() {
-    let (_dir, home) = ioc_history();
-    let out = br4n6()
-        .args(["extract-iocs", home.to_str().unwrap(), "--format", "jsonl"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let text = String::from_utf8(out).unwrap();
-    assert!(text.contains("evil@phish.example"), "email missing: {text}");
-    assert!(text.contains("8.8.8.8"), "ipv4 missing: {text}");
-    assert!(
-        text.contains("how to launder money"),
-        "search term missing: {text}"
-    );
-}
-
-#[test]
-fn extract_iocs_jsonl_is_valid_json() {
-    let (_dir, home) = ioc_history();
-    let out = br4n6()
-        .args(["extract-iocs", home.to_str().unwrap(), "--format", "jsonl"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let text = String::from_utf8(out).unwrap();
-    let mut lines = 0;
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        let v: serde_json::Value = serde_json::from_str(line).expect("valid json line");
-        assert!(v.get("kind").is_some(), "line missing kind: {line}");
-        assert!(v.get("value").is_some(), "line missing value: {line}");
-        lines += 1;
-    }
-    assert!(lines >= 3, "expected several IOC rows, got {lines}");
-}
-
-#[test]
-fn extract_iocs_missing_path_errors() {
-    br4n6()
-        .args(["extract-iocs", "/no/such/path/xyz"])
-        .assert()
-        .failure();
-}
-
-// ---- match-domains ----
-
-#[test]
-fn match_domains_flags_blocklisted_host() {
-    let (_dir, home) = ioc_history();
-    let list = home.join("blocklist.txt");
-    std::fs::write(&list, "# bad domains\nevil.com\n").unwrap();
-    let out = br4n6()
-        .args([
-            "match-domains",
-            home.to_str().unwrap(),
-            "--list",
-            list.to_str().unwrap(),
-            "--format",
-            "jsonl",
-        ])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let text = String::from_utf8(out).unwrap();
-    assert!(
-        text.contains("tracker.evil.com"),
-        "blocklisted host not flagged: {text}"
-    );
-    assert!(text.contains("evil.com"), "blocklist entry missing: {text}");
-    assert!(
-        !text.contains("good.example.org"),
-        "clean host leaked: {text}"
-    );
-}
-
-#[test]
-fn match_domains_missing_list_errors() {
+fn find_terms_file_missing_errors() {
     let (_dir, home) = ioc_history();
     br4n6()
         .args([
-            "match-domains",
+            "find",
             home.to_str().unwrap(),
-            "--list",
+            "--terms-file",
             "/no/such/list.txt",
-        ])
-        .assert()
-        .failure();
-}
-
-#[test]
-fn match_domains_empty_list_errors_loudly() {
-    let (_dir, home) = ioc_history();
-    let list = home.join("empty.txt");
-    std::fs::write(&list, "# only comments\n\n").unwrap();
-    br4n6()
-        .args([
-            "match-domains",
-            home.to_str().unwrap(),
-            "--list",
-            list.to_str().unwrap(),
         ])
         .assert()
         .failure();

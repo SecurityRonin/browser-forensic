@@ -37,10 +37,10 @@ fn ioc_history() -> (TempDir, PathBuf) {
 // ---- isatty auto-format + loud stderr notice ----
 
 #[test]
-fn search_piped_default_switches_to_jsonl_and_notices() {
+fn find_piped_default_switches_to_jsonl_and_notices() {
     let (_dir, home) = ioc_history();
     let out = br4n6()
-        .args(["search", home.to_str().unwrap(), "--substring", "Tracker"])
+        .args(["find", "Tracker", home.to_str().unwrap()])
         .assert()
         .success()
         .get_output()
@@ -68,14 +68,13 @@ fn search_piped_default_switches_to_jsonl_and_notices() {
 }
 
 #[test]
-fn search_explicit_format_suppresses_the_notice() {
+fn find_explicit_format_suppresses_the_notice() {
     let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
-            "search",
-            home.to_str().unwrap(),
-            "--substring",
+            "find",
             "Tracker",
+            home.to_str().unwrap(),
             "--format",
             "jsonl",
         ])
@@ -91,31 +90,15 @@ fn search_explicit_format_suppresses_the_notice() {
 }
 
 #[test]
-fn extract_iocs_piped_default_notices() {
-    let (_dir, home) = ioc_history();
-    let out = br4n6()
-        .args(["extract-iocs", home.to_str().unwrap()])
-        .assert()
-        .success()
-        .get_output()
-        .clone();
-    let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(
-        stderr.contains("piped output"),
-        "extract-iocs missing pipe notice: {stderr}"
-    );
-}
-
-#[test]
-fn match_domains_piped_default_notices() {
+fn find_terms_file_piped_default_notices() {
     let (_dir, home) = ioc_history();
     let list = home.join("blocklist.txt");
     std::fs::write(&list, "evil.com\n").unwrap();
     let out = br4n6()
         .args([
-            "match-domains",
+            "find",
             home.to_str().unwrap(),
-            "--list",
+            "--terms-file",
             list.to_str().unwrap(),
         ])
         .assert()
@@ -125,21 +108,20 @@ fn match_domains_piped_default_notices() {
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(
         stderr.contains("piped output"),
-        "match-domains missing pipe notice: {stderr}"
+        "find --terms-file missing pipe notice: {stderr}"
     );
 }
 
 // ---- negative-result discipline ----
 
 #[test]
-fn search_no_hits_states_where_it_looked_and_what_it_skipped() {
+fn find_no_hits_states_where_it_looked_and_what_it_skipped() {
     let (_dir, home) = ioc_history();
     let out = br4n6()
         .args([
-            "search",
-            home.to_str().unwrap(),
-            "--substring",
+            "find",
             "no-such-term-zzz",
+            home.to_str().unwrap(),
             "--format",
             "text",
         ])
