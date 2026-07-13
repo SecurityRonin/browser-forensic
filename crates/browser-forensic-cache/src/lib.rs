@@ -11,6 +11,7 @@
 //! Untrusted-input posture: `#![forbid(unsafe_code)]`, no `unwrap`/`expect` in
 //! production code, every offset/size bounds-checked before use.
 
+pub mod blockfile;
 pub mod cachestorage;
 pub mod decompress;
 pub mod error;
@@ -20,6 +21,10 @@ pub mod resource;
 pub mod safari;
 pub mod simple;
 
+pub use blockfile::{
+    parse_blockfile_cache_dir, parse_blockfile_cache_dir_with, parse_blockfile_index,
+    BlockfileIndex, BLOCK_MAGIC, INDEX_MAGIC,
+};
 pub use cachestorage::{
     parse_cachestorage_cache_dir, parse_cachestorage_dir, parse_cachestorage_dir_with,
     parse_cachestorage_index, parse_cachestorage_metadata, resource_from_cachestorage_entry,
