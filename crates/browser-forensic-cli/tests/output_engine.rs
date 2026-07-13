@@ -179,7 +179,14 @@ fn actionable_db_error_suggests_recovery_and_keeps_the_underlying() {
     let underlying = anyhow::anyhow!("file is not a database (SQLITE_NOTADB)");
     let mapped = output::actionable_db_error(underlying, Path::new("/ev/History"));
     let msg = format!("{mapped:#}");
-    assert!(msg.contains("carve"), "must suggest the recovery command");
+    assert!(
+        msg.contains("br4n6 recover"),
+        "must suggest the recover orchestrator (carve was removed in P5b): {msg}"
+    );
+    assert!(
+        !msg.contains("br4n6 carve"),
+        "must not suggest the removed carve command: {msg}"
+    );
     assert!(msg.contains("/ev/History"), "must name the evidence path");
     assert!(
         msg.to_ascii_lowercase().contains("corrupt") || msg.to_ascii_lowercase().contains("lock")
@@ -197,7 +204,7 @@ fn actionable_db_error_passes_unrelated_errors_through_unchanged() {
     let msg = format!("{mapped:#}");
     assert!(msg.contains("path does not exist"));
     assert!(
-        !msg.contains("carve"),
+        !msg.contains("recover"),
         "unrelated errors must not gain a bogus suggestion"
     );
 }

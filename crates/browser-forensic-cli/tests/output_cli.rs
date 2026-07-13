@@ -164,8 +164,8 @@ fn corrupt_history_open_suggests_the_recovery_command() {
         .clone();
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(
-        stderr.contains("carve"),
-        "must suggest a recovery command: {stderr}"
+        stderr.contains("br4n6 recover"),
+        "must suggest the recover orchestrator: {stderr}"
     );
     let low = stderr.to_ascii_lowercase();
     assert!(
