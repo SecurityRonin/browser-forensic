@@ -28,6 +28,12 @@ pub enum BrowserFamily {
     Chromium,
     Firefox,
     Safari,
+    /// Internet Explorer (Trident) — history/cookies/cache live in the ESE
+    /// `WebCacheV01.dat`, not SQLite.
+    InternetExplorer,
+    /// Legacy (EdgeHTML/Spartan) Microsoft Edge — shares the ESE
+    /// `WebCacheV01.dat` store with Internet Explorer.
+    EdgeLegacy,
 }
 
 impl std::fmt::Display for BrowserFamily {
@@ -36,6 +42,8 @@ impl std::fmt::Display for BrowserFamily {
             Self::Chromium => write!(f, "Chromium"),
             Self::Firefox => write!(f, "Firefox"),
             Self::Safari => write!(f, "Safari"),
+            Self::InternetExplorer => write!(f, "Internet Explorer"),
+            Self::EdgeLegacy => write!(f, "Edge (Legacy)"),
         }
     }
 }

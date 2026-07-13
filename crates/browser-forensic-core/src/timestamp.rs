@@ -1,6 +1,7 @@
 // crates/browser-forensic-core/src/timestamp.rs
 
 pub use forensicnomicon::heuristics::{CORE_DATA_EPOCH_OFFSET_SECS, WEBKIT_EPOCH_OFFSET_US};
+pub use forensicnomicon::temporal::FILETIME_EPOCH_OFFSET;
 
 // All conversions use saturating arithmetic: untrusted browser artifacts can
 // carry extreme integer values, and a parser must clamp rather than panic on
@@ -36,6 +37,27 @@ pub fn unix_secs_f64_to_nanos(secs: f64) -> i64 {
     let whole = secs.trunc() as i64;
     let frac_ns = (secs.fract() * 1_000_000_000.0) as i64;
     whole * 1_000_000_000 + frac_ns
+}
+
+/// Convert a Windows `FILETIME` (100 ns ticks since 1601-01-01 UTC) into Unix
+/// nanoseconds. Used by the IE / Edge-Legacy WebCache (ESE) parser, whose
+/// `Container_#` timestamp columns (`AccessedTime`, `ModifiedTime`,
+/// `CreationTime`, `ExpiryTime`, …) are little-endian FILETIMEs.
+///
+/// Reuses [`FILETIME_EPOCH_OFFSET`] (forensicnomicon) rather than hand-rolling
+/// the 1601→1970 epoch math. Computation is done in `i128` and clamped to
+/// `i64`, so an adversarial WebCache record carrying an extreme FILETIME (or a
+/// `0` "not set" value, which pre-dates 1970) clamps rather than
+/// overflow-panics (never-panic invariant for parsers).
+#[must_use]
+pub fn filetime_to_unix_nanos(ft: u64) -> i64 {
+    let ticks_since_unix = i128::from(ft) - i128::from(FILETIME_EPOCH_OFFSET);
+    let nanos = ticks_since_unix * 100;
+    i64::try_from(nanos).unwrap_or(if nanos.is_negative() {
+        i64::MIN
+    } else {
+        i64::MAX
+    })
 }
 
 #[cfg(test)]
