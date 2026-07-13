@@ -3192,6 +3192,13 @@ pub fn run_triage(home: Option<&Path>, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
+/// `br4n6 image PATH [--snapshot XID]` — ingest browser artifacts from a disk
+/// image, delegating all disk work to the forensic-vfs fleet. TDD RED stub.
+pub fn run_image(path: &Path, snapshot: Option<u64>, format: OutputFormat) -> Result<()> {
+    let _ = (path, snapshot, format);
+    Ok(())
+}
+
 /// The registrable host (eTLD+1) an event is attributed to, or `""` when none
 /// can be derived from its URL/host fields.
 fn event_host(e: &BrowserEvent) -> String {
@@ -4640,5 +4647,20 @@ mod tests {
             .unwrap()
             .as_bool()
             .unwrap());
+    }
+
+    #[test]
+    fn run_image_fails_loud_when_engine_unavailable() {
+        // Opening a disk image needs the (unpublished) forensic-vfs engine, so
+        // `br4n6 image` must fail loud naming the path — never exit 0 / silent.
+        let err = format!(
+            "{:#}",
+            run_image(Path::new("/evidence/case.E01"), None, OutputFormat::Text).unwrap_err()
+        );
+        assert!(err.contains("/evidence/case.E01"), "names the image: {err}");
+        assert!(
+            err.contains("forensic-vfs engine"),
+            "explains the disk seam: {err}"
+        );
     }
 }

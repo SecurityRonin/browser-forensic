@@ -361,6 +361,7 @@ dependencies = [
  "browser-forensic-decrypt",
  "browser-forensic-discovery",
  "browser-forensic-firefox",
+ "browser-forensic-image",
  "browser-forensic-integrity",
  "browser-forensic-interpret",
  "browser-forensic-manifest",
