@@ -385,6 +385,18 @@ enum Command {
     TamperCheck(ArtifactArgs),
     /// Carve deleted records from a browser SQLite database.
     Carve(ArtifactArgs),
+    /// Carve browser artifacts from a memory image (process-attributed via memf).
+    Memory {
+        /// A memory image (raw/LiME/AVML/crash-dump), or any buffer to byte-scan.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Volatility-3 ISF symbol file (offline symbols); otherwise auto-profiled.
+        #[arg(long, value_name = "ISF")]
+        symbols: Option<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
     /// Run full triage: discover profiles, parse, check integrity, carve.
     Triage {
         /// Home directory to scan for browser profiles.
@@ -607,6 +619,11 @@ where
         Some(Command::Integrity(a)) => run_integrity(&a.path, a.format),
         Some(Command::TamperCheck(a)) => run_tamper_check(&a.path, a.format),
         Some(Command::Carve(a)) => run_carve(&a.path, a.format),
+        Some(Command::Memory {
+            path,
+            symbols,
+            format,
+        }) => run_memory(&path, symbols.as_deref(), format),
         Some(Command::Triage { home, format }) => run_triage(home.as_deref(), format),
         Some(Command::Image {
             path,
@@ -3183,6 +3200,43 @@ pub fn run_carve(path: &Path, format: OutputFormat) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `br4n6 memory PATH` — process-attributed browser-artifact carve from a memory
+/// image, riding on the memf framework. Prefers the structured carve (URLs and
+/// cookies tagged with their owning pid/process); on a raw buffer or non-Windows
+/// image it degrades — loudly, to stderr — to a whole-buffer byte scan. A hard
+/// bootstrap failure (unreadable image, or a Windows image with no usable
+/// profile) fails loud rather than reporting a false empty.
+///
+/// # Errors
+/// Propagates a non-degradable [`browser_forensic_memory::MemoryCarveError`]
+/// (open failure / no profile), or a read error in the fallback path.
+pub fn run_memory(path: &Path, symbols: Option<&Path>, format: OutputFormat) -> Result<()> {
+    match browser_forensic_memory::carve_memory_image_with_symbols(path, symbols) {
+        Ok(events) => {
+            let procs = browser_forensic_memory::browser_processes(&events);
+            eprintln!(
+                "br4n6 memory: structured carve — {} event(s) across {} browser process(es)",
+                events.len(),
+                procs.len()
+            );
+            emit_events(&events, format);
+            Ok(())
+        }
+        Err(e) if e.is_degradable() => {
+            eprintln!(
+                "br4n6 memory: {e}; falling back to a raw byte-scan (no process attribution)"
+            );
+            let bytes = std::fs::read(path)
+                .with_context(|| format!("cannot read memory buffer {}", path.display()))?;
+            let mut events = browser_forensic_memory::scan_bytes_for_urls(&bytes);
+            events.extend(browser_forensic_memory::scan_bytes_for_cookies(&bytes));
+            emit_events(&events, format);
+            Ok(())
+        }
+        Err(e) => Err(anyhow::Error::new(e)),
+    }
 }
 
 /// `br4n6 triage --home DIR` — discover profiles, parse, check integrity, and

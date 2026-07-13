@@ -84,6 +84,7 @@ fn every_subcommand_help_exits_0() {
         "analyze",
         "integrity",
         "carve",
+        "memory",
         "triage",
         "browsers",
         "sessions",

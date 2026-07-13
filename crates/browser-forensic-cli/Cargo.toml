@@ -31,6 +31,7 @@ browser-forensic-triage = { version = "0.2.0", path = "../browser-forensic-triag
 browser-forensic-image = { version = "0.1.0", path = "../browser-forensic-image" }
 browser-forensic-correlate = { version = "0.1.0", path = "../browser-forensic-correlate" }
 browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-interpret" }
+browser-forensic-memory = { version = "0.2.0", path = "../browser-forensic-memory" }
 browser-forensic-search = { version = "0.2.0", path = "../browser-forensic-search" }
 browser-forensic-decrypt = { version = "0.2.0", path = "../browser-forensic-decrypt" }
 ratatui = "0.30"
