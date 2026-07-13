@@ -184,6 +184,13 @@ enum Command {
     /// Recover Service Worker CacheStorage (Cache API) responses. `PATH` is a
     /// `Service Worker/CacheStorage` directory (or one `<origin-hash>` subdir).
     Cachestorage(ArtifactArgs),
+    /// Recover deleted/orphaned/evicted Chromium cache entries the live index no
+    /// longer references (orphaned SimpleCache `[hash]_0`, dangling `[hash]_s`,
+    /// free-but-intact Blockfile). `PATH` is a `Cache`/`Cache_Data` directory.
+    /// Each recovered response is a *consistent-with* cached-then-evicted
+    /// artifact, tagged with the recovery mechanism and quality (full/partial);
+    /// deliberate user deletion is never asserted.
+    CacheCarve(ArtifactArgs),
     /// Reconstruct viewable pages from browser cache. `PATH` is a cache
     /// directory or a whole profile. Writes a self-contained single-file HTML
     /// page, a replayable WARC, or a cached-image gallery to `--out`. Every
@@ -499,6 +506,7 @@ where
         Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
         Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
         Some(Command::Cachestorage(a)) => run_cachestorage(&a.path, a.format),
+        Some(Command::CacheCarve(a)) => run_cache_carve(&a.path, a.format),
         Some(Command::Reconstruct {
             path,
             out,
@@ -2693,6 +2701,62 @@ fn cachestorage_event(r: &browser_forensic_cache::CacheStorageResource) -> Brows
     }
     if let Some(note) = &r.body_note {
         ev = ev.with_attr("body_note", json!(note));
+    }
+    ev
+}
+
+/// `br4n6 cache-carve PATH` — recover deleted/orphaned/evicted Chromium cache
+/// entries the live index no longer references. `PATH` is a `Cache`/`Cache_Data`
+/// directory. Each recovered response becomes one event tagged with the recovery
+/// mechanism and quality plus an honest, consistent-with provenance note.
+///
+/// # Errors
+/// Never fails on a malformed tree (best-effort recovery); returns `Ok` with the
+/// events that were recovered.
+pub fn run_cache_carve(path: &Path, format: OutputFormat) -> Result<()> {
+    let recovered = browser_forensic_cache::carve_cache_dir(path);
+    let mut events: Vec<BrowserEvent> = recovered.iter().map(cache_carve_event).collect();
+    events.sort_by_key(|e| e.timestamp_ns);
+    print_events(&events, format);
+    Ok(())
+}
+
+/// Map a [`RecoveredResource`](browser_forensic_cache::RecoveredResource) to a
+/// normalized [`BrowserEvent`], carrying the recovery provenance a live-index hit
+/// does not need: `recovered=true`, the carve mechanism, and its recovery quality
+/// (full/partial). The note keeps consistent-with framing — a carved entry is a
+/// recovered artifact, never asserted to be a deliberate user deletion.
+fn cache_carve_event(r: &browser_forensic_cache::RecoveredResource) -> BrowserEvent {
+    let res = &r.resource;
+    let ts = res.response_time_ns.or(res.request_time_ns).unwrap_or(0);
+    let mut ev = BrowserEvent::new(
+        ts,
+        browser_forensic_core::BrowserFamily::Chromium,
+        browser_forensic_core::ArtifactKind::Cache,
+        res.source_file.display().to_string(),
+        res.url.clone(),
+    )
+    .with_attr("artifact_subtype", json!("cache_carve"))
+    .with_attr("recovered", json!(true))
+    .with_attr("recovery_mechanism", json!(r.mechanism.as_str()))
+    .with_attr("recovery_quality", json!(r.quality.as_str()))
+    .with_attr("recovery_note", json!(r.note))
+    .with_attr("body_len", json!(res.decoded_body.len()))
+    .with_attr("raw_body_len", json!(res.raw_body.len()));
+    if let Some(s) = res.http_status {
+        ev = ev.with_attr("http_status", json!(s));
+    }
+    if let Some(ct) = &res.content_type {
+        ev = ev.with_attr("content_type", json!(ct));
+    }
+    if let Some(ce) = &res.content_encoding {
+        ev = ev.with_attr("content_encoding", json!(ce));
+    }
+    if let Some(note) = &res.decode_note {
+        ev = ev.with_attr("decode_note", json!(note));
+    }
+    if let Some(sparse) = &res.sparse_file {
+        ev = ev.with_attr("sparse_file", json!(sparse.display().to_string()));
     }
     ev
 }
