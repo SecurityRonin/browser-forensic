@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Finding",
+  "description": "A court-safe forensic finding (RFC 0001 D4/D5/D9).\n\nPriority, Confidence and Interpretation are three structurally separate axes;\nprovenance ([`Provenance`]) and origin (`user`/`profile`/`browser`) stamp\nevery finding with where it came from. Render with [`Finding::render`].",
+  "type": "object",
+  "properties": {
+    "browser": {
+      "description": "Originating browser family, when known (D9).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BrowserFamily"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confidence": {
+      "description": "Confidence in the interpretation (paired with `rule_id`).",
+      "$ref": "#/$defs/Confidence"
+    },
+    "evidence": {
+      "description": "The concrete datum this finding rests on\n(e.g. `Chrome History urls rowid gap 128 → 944`).",
+      "type": "string"
+    },
+    "interpretation": {
+      "description": "The hedged *\"consistent with …\"* statement.",
+      "type": "string"
+    },
+    "next": {
+      "description": "A drill-down command pointer for the examiner's next step.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "priority": {
+      "description": "Triage attention cue — *look here first*, not a verdict.",
+      "$ref": "#/$defs/Priority"
+    },
+    "profile": {
+      "description": "Originating browser profile (e.g. `Chrome/Default`), when known (D9).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provenance": {
+      "description": "The four-axis provenance record (D4).",
+      "$ref": "#/$defs/Provenance"
+    },
+    "rule_id": {
+      "description": "Identifier of the rule that produced this finding.",
+      "type": "string"
+    },
+    "user": {
+      "description": "Originating user (SID or name), when known (D9).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "priority",
+    "confidence",
+    "rule_id",
+    "interpretation",
+    "provenance",
+    "evidence"
+  ],
+  "$defs": {
+    "BrowserFamily": {
+      "description": "Browser engine family.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Chromium",
+            "Firefox",
+            "Safari"
+          ]
+        },
+        {
+          "description": "Internet Explorer (Trident) — history/cookies/cache live in the ESE\n`WebCacheV01.dat`, not SQLite.",
+          "type": "string",
+          "const": "InternetExplorer"
+        },
+        {
+          "description": "Legacy (EdgeHTML/Spartan) Microsoft Edge — shares the ESE\n`WebCacheV01.dat` store with Internet Explorer.",
+          "type": "string",
+          "const": "EdgeLegacy"
+        }
+      ]
+    },
+    "Confidence": {
+      "description": "How strongly the finding's *interpretation* is supported (RFC 0001 D5).\nAlways travels with a `rule_id` on the [`Finding`].",
+      "type": "string",
+      "enum": [
+        "High",
+        "Medium",
+        "Low"
+      ]
+    },
+    "EvidenceSource": {
+      "description": "Where the datum was read from — a coarse provenance axis (RFC 0001 D4).\nA live history hit, a carved string, and a cached resource have different\ncourtroom value; this axis records which.",
+      "type": "string",
+      "enum": [
+        "History",
+        "Cache",
+        "Cookie",
+        "Download",
+        "Carved",
+        "Memory"
+      ]
+    },
+    "EvidenceState": {
+      "description": "Liveness / derivation state of the datum (RFC 0001 D4).",
+      "type": "string",
+      "enum": [
+        "Live",
+        "Deleted",
+        "Carved",
+        "Reconstructed",
+        "Inferred"
+      ]
+    },
+    "Priority": {
+      "description": "Triage attention cue — *where to look first* (RFC 0001 D5).\n\nDeliberately **not** a confidence or a verdict: `High` means \"look here\nfirst,\" never \"high confidence of wrongdoing.\" Kept a separate type from\n[`Confidence`] so the two axes can never be conflated.",
+      "type": "string",
+      "enum": [
+        "High",
+        "Medium",
+        "Info"
+      ]
+    },
+    "Provenance": {
+      "description": "The four provenance axes (RFC 0001 D4). They travel together so a [`Finding`]\ncan never be constructed without a full provenance record — no silent,\nmisleading default.",
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "Where the datum was read from.",
+          "$ref": "#/$defs/EvidenceSource"
+        },
+        "state": {
+          "description": "Its liveness / derivation state.",
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "timestamp_basis": {
+          "description": "The basis for any timestamp on the finding.",
+          "$ref": "#/$defs/TimestampBasis"
+        },
+        "user_action_claim": {
+          "description": "The user-action the evidence supports, as a claim.",
+          "$ref": "#/$defs/UserActionClaim"
+        }
+      },
+      "required": [
+        "source",
+        "state",
+        "timestamp_basis",
+        "user_action_claim"
+      ]
+    },
+    "TimestampBasis": {
+      "description": "Basis for the timestamp attached to a finding (RFC 0001 D4/D8).",
+      "oneOf": [
+        {
+          "description": "A timestamp the artifact stores explicitly for this record.",
+          "type": "string",
+          "const": "Explicit"
+        },
+        {
+          "description": "Derived from adjacent data, not stored for this record directly.",
+          "type": "string",
+          "const": "Inferred"
+        },
+        {
+          "description": "Taken from a surrounding page/resource rather than the datum itself.",
+          "type": "string",
+          "const": "SurroundingPage"
+        },
+        {
+          "description": "No time basis is available.",
+          "type": "string",
+          "const": "None"
+        }
+      ]
+    },
+    "UserActionClaim": {
+      "description": "The user-action the evidence supports — stated as a *claim*, never a verdict\n(RFC 0001 D4). \"Observed string\" is the weakest: the term merely appeared in\nstored bytes, with no proof a human acted on it.",
+      "type": "string",
+      "enum": [
+        "Visited",
+        "Downloaded",
+        "Searched",
+        "ObservedString",
+        "Unknown"
+      ]
+    }
+  }
+}
