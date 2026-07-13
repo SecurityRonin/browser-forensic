@@ -740,8 +740,10 @@ pub struct Interrupted {
 /// never mistaken for a complete run.
 #[must_use]
 pub fn interrupted_footer(done: usize, total: usize, path_display: &str) -> String {
-    let _ = (done, total, path_display);
-    String::new() // RED stub — GREEN fills it in.
+    format!(
+        "[interrupted] partial results — parsed {done}/{total} profile(s) before Ctrl-C; \
+         NOT complete → resume with br4n6 investigate {path_display}"
+    )
 }
 
 /// Drive the triage pipeline over each profile at `tier`, reporting per-artifact
@@ -753,19 +755,28 @@ fn run_profile_loop(
     progress: &dyn crate::progress::InvestigationProgress,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<(browser_forensic_triage::TriageReport, Option<Interrupted>)> {
-    let _ = cancel; // RED stub: cancellation is not yet observed. GREEN wires it.
+    use std::sync::atomic::Ordering;
+
     let total = profiles.len();
     let mut report = empty_report_now();
-    let interrupted = None;
+    let mut interrupted = None;
 
     for (index, profile) in profiles.iter().enumerate() {
+        // Check the cancellation flag at the profile boundary — never mid-parse —
+        // so a Ctrl-C stops scheduling new work but keeps every completed unit.
+        if cancel.load(Ordering::Relaxed) {
+            interrupted = Some(Interrupted { done: index, total });
+            break;
+        }
         progress.set_profile(index, total);
         let mut frag = collect_one_profile(profile, tier, progress)?;
         report.events.append(&mut frag.events);
         report.integrity.append(&mut frag.integrity);
         report.carved.append(&mut frag.carved);
     }
-    progress.set_profile(total, total);
+    // Reflect the true completed count (all of them, or how far an interrupt got).
+    let done = interrupted.map_or(total, |i| i.done);
+    progress.set_profile(done, total);
     progress.finish();
 
     Ok((report, interrupted))
