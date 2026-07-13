@@ -20,7 +20,7 @@ ese-core = "0.2"
 [dev-dependencies]
 tempfile = { workspace = true }
 # Dev-only ESE fixture builder from the same git source (never ships).
-ese-test-fixtures = { git = "https://github.com/SecurityRonin/ese-forensic.git", rev = "7a5690f144fb5bd83e7a3c9b15f24cd54cdcd413" }
+ese-test-fixtures = { git = "https://github.com/SecurityRonin/ese-forensic.git", rev = "856758d" }
 
 [lints]
 workspace = true
