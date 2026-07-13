@@ -172,12 +172,13 @@ enum Command {
     /// artifact, tagged with the recovery mechanism and quality (full/partial);
     /// deliberate user deletion is never asserted.
     CacheCarve(ArtifactArgs),
-    /// Reconstruct viewable pages from browser cache. `PATH` is a cache
-    /// directory or a whole profile. Writes a self-contained single-file HTML
-    /// page, a replayable WARC, or a cached-image gallery to `--out`. Every
-    /// artifact carries a provenance manifest of found vs missing sub-resources:
-    /// a cache reconstruction is a *consistent-with* artifact, NOT a rendered
-    /// capture (JS/SPA/lazy-loaded/auth-gated content may be absent).
+    /// Reconstruct cached representations consistent with access to a URL, from
+    /// browser cache. `PATH` is a cache directory or a whole profile. Writes a
+    /// self-contained single-file HTML page, a replayable WARC, or a cached-image
+    /// gallery to `--out`. Every artifact carries a provenance manifest of found
+    /// vs missing sub-resources: the output shows what the cache STORED, a
+    /// *consistent-with* artifact — never a rendering of the page as displayed
+    /// (JS/SPA/lazy-loaded/auth-gated content may be absent).
     Reconstruct {
         /// A cache directory or profile directory to read.
         #[arg(value_name = "PATH")]
@@ -3971,10 +3972,18 @@ pub fn run_reconstruct(
         );
     }
 
-    println!(
-        "Reconstructed from cached resources (consistent-with, NOT a rendered capture; \
-         JS/SPA/lazy-loaded/auth-gated content may be absent)."
-    );
+    match url {
+        Some(target) => println!(
+            "Reconstructed cached representations consistent with access to {target} \
+             (what the cache STORED, NOT a rendering of the page as displayed; \
+             JS/SPA/lazy-loaded/auth-gated content may be absent)."
+        ),
+        None => println!(
+            "Reconstructed cached representations consistent with access \
+             (what the cache STORED, NOT a rendering of the page as displayed; \
+             JS/SPA/lazy-loaded/auth-gated content may be absent)."
+        ),
+    }
     match out_format {
         OutputFormat::Html => println!(
             "Wrote {} page(s): {} sub-resource(s) found in cache, {} referenced but MISSING.",

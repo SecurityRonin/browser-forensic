@@ -12,8 +12,9 @@
 //!
 //! ## Honesty is the whole point
 //!
-//! A cache reconstruction is **not** a screenshot of what the user saw. Every
-//! artifact carries a prominent, machine-readable and human-visible provenance
+//! A cache reconstruction shows **cached representations consistent with
+//! access** — what the cache stored, not a rendering of the page as displayed.
+//! Every artifact carries a prominent, machine-readable and human-visible provenance
 //! manifest ([`manifest::Manifest`]) stating the limit and enumerating which
 //! sub-resources were **found in cache** and which were **referenced but
 //! missing** — gaps are shown, never hidden or fabricated. This is a

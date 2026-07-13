@@ -1,6 +1,7 @@
 //! The provenance manifest that every reconstructed artifact carries.
 //!
-//! A cache reconstruction is **not** a screenshot of what the user saw. The
+//! A cache reconstruction shows cached representations consistent with access —
+//! what the cache stored, not a rendering of the page as displayed. The
 //! manifest states that limit in machine-readable JSON and, via
 //! [`Manifest::banner_html`], as a human-visible banner — enumerating which
 //! sub-resources were found in cache (with their own cached timestamps and
@@ -12,7 +13,7 @@ use serde::Serialize;
 use crate::util::escape_html;
 
 /// The provenance statement carried, verbatim, by every reconstructed artifact.
-pub const PROVENANCE_BANNER: &str = "Reconstructed from cached resources — partial, not a rendered capture; JS-generated/lazy-loaded/auth-gated content may be absent; component resources may carry different cache timestamps.";
+pub const PROVENANCE_BANNER: &str = "Reconstructed from cached resources — cached representations consistent with access, not a rendering of the page as displayed; JS-generated/lazy-loaded/auth-gated content may be absent; component resources may carry different cache timestamps.";
 
 /// A sub-resource that was located in the cache and inlined/included.
 #[derive(Debug, Clone, Serialize)]
