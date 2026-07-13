@@ -206,18 +206,25 @@ pub struct Manifest {
     /// Per-input auto-detection basis + confidence (RFC 0001 D8). Omitted from
     /// the JSON when empty, so a run that does not populate it serializes exactly
     /// as before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub detection_basis: Vec<DetectionRecord>,
     /// Sources that were skipped or whose parsers failed (RFC 0001 D8/D11).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub skipped_sources: Vec<String>,
     /// The producing tool's version, when recorded separately from [`RunMetadata`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_version: Option<String>,
     /// Versions of the rules that ran, for reproducibility (RFC 0001 D11).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rule_versions: Vec<RuleVersion>,
     /// Build hash of the tool, when available (RFC 0001 D11).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub build_hash: Option<String>,
     /// The timezone conversion rule applied to timestamps (RFC 0001 D11).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timezone_rule: Option<String>,
     /// Schema version of the tool's output records (RFC 0001 D11).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_schema_version: Option<String>,
 }
 
