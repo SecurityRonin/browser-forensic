@@ -93,6 +93,15 @@ enum Command {
         /// Ignore any existing checkpoint and start a clean run (alias: --no-resume).
         #[arg(long, visible_alias = "no-resume")]
         restart: bool,
+        /// Override the layered auto-detection (RFC 0001 D8): force the input's
+        /// artifact kind instead of detecting it. Use on carved / stomped data
+        /// the detector guesses wrong; the override is recorded in the manifest.
+        #[arg(long = "type", value_enum, value_name = "KIND")]
+        forced_type: Option<crate::detect::DetectionKind>,
+        /// Also write a chain-of-custody manifest here, recording the detection
+        /// basis + confidence for every input (RFC 0001 D8/D11).
+        #[arg(long, value_name = "PATH")]
+        manifest: Option<PathBuf>,
     },
     /// Find a term across ALL sources — "did they visit / download / search X?"
     /// (RFC 0001 P4). TERM is auto-classified by shape (domain / url / ipv4 /
@@ -545,12 +554,16 @@ where
             format,
             checkpoint,
             restart,
+            forced_type,
+            manifest,
         }) => run_investigate(
             &path,
             tier_from_flags(quick, standard, deep),
             format,
             checkpoint.as_deref(),
             restart,
+            forced_type,
+            manifest.as_deref(),
         ),
         Some(Command::Find {
             term,
@@ -907,6 +920,62 @@ fn collect_investigation(
     Ok((profiles, report, interrupted))
 }
 
+/// The layered detections to show + log for an investigation (RFC 0001 D8).
+///
+/// With `--type <KIND>` the examiner's forced kind replaces auto-detection (a
+/// single record over the top path). Otherwise the top path is detected and, for
+/// each discovered profile, its primary history database — so "SQLite" is refined
+/// to the concrete artifact by the schema probe, per input.
+fn investigation_detections(
+    path: &Path,
+    profiles: &[browser_forensic_discovery::DiscoveredProfile],
+    forced_type: Option<crate::detect::DetectionKind>,
+) -> Vec<(PathBuf, crate::detect::Detection)> {
+    if let Some(kind) = forced_type {
+        return vec![(path.to_path_buf(), crate::detect::forced(kind))];
+    }
+    let mut out = vec![(path.to_path_buf(), crate::detect::detect(path))];
+    for profile in profiles {
+        for (name, _family) in PROFILE_HISTORY_DBS {
+            let db = profile.path.join(name);
+            if db.is_file() {
+                out.push((db.clone(), crate::detect::detect(&db)));
+            }
+        }
+    }
+    out
+}
+
+/// Write a chain-of-custody manifest over `path`'s evidence carrying the
+/// per-input detection basis + confidence (RFC 0001 D8/D11).
+///
+/// # Errors
+/// Propagates a manifest serialization or write failure.
+fn write_detection_manifest(
+    out: &Path,
+    path: &Path,
+    detections: &[(PathBuf, crate::detect::Detection)],
+) -> Result<()> {
+    let inputs = browser_forensic_manifest::enumerate_evidence(path);
+    let args: Vec<String> = std::env::args().collect();
+    let run = browser_forensic_manifest::RunMetadata::capture(
+        "br4n6",
+        env!("CARGO_PKG_VERSION"),
+        &args,
+        None,
+    );
+    let mut manifest = browser_forensic_manifest::build_manifest(&inputs, run);
+    manifest.detection_basis = detections
+        .iter()
+        .map(|(p, det)| crate::detect::to_record(p, det))
+        .collect();
+    let json = browser_forensic_manifest::to_json(&manifest).context("serializing manifest")?;
+    std::fs::write(out, json.as_bytes())
+        .with_context(|| format!("writing manifest {}", out.display()))?;
+    eprintln!("wrote chain-of-custody manifest to {}", out.display());
+    Ok(())
+}
+
 /// `br4n6 investigate PATH [--quick|--standard|--deep]` — the RFC 0001 P3a golden
 /// path. Runs the bounded triage pipeline at the chosen tier and renders a ranked,
 /// court-safe summary (human on a TTY, JSONL of the findings when piped). The
@@ -915,12 +984,15 @@ fn collect_investigation(
 /// # Errors
 /// Returns a loud error if the path does not exist (a bootstrap failure is never
 /// absorbed into an empty result) or the triage pipeline fails.
+#[allow(clippy::too_many_arguments)] // one flag per RFC 0001 P3/P7 concern; a struct would obscure the 1:1 CLI mapping
 pub fn run_investigate(
     path: &Path,
     tier: crate::investigate::Tier,
     format: Option<OutputFormat>,
     checkpoint_path: Option<&Path>,
     restart: bool,
+    forced_type: Option<crate::detect::DetectionKind>,
+    manifest_path: Option<&Path>,
 ) -> Result<()> {
     use std::io::IsTerminal as _;
 
@@ -952,6 +1024,18 @@ pub fn run_investigate(
 
     let (profiles, report, interrupted) =
         collect_investigation(path, tier, &progress, &cancel, &mut checkpoint)?;
+
+    // Layered PATH auto-detection (RFC 0001 D8): show what each input was
+    // detected as, with confidence + basis, and — with `--manifest` — record it
+    // for court defensibility. `--type` forces the kind (auto-detection skipped).
+    let detections = investigation_detections(path, &profiles, forced_type);
+    for (_, det) in &detections {
+        eprintln!("{}", det.header());
+    }
+    if let Some(mp) = manifest_path {
+        write_detection_manifest(mp, path, &detections)?;
+    }
+
     let findings =
         crate::investigate::rank_findings(crate::investigate::findings_from_report(&report));
 

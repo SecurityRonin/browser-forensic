@@ -13,6 +13,7 @@ pub use render::draw;
 
 pub mod checkpoint;
 pub mod cli;
+pub mod detect;
 pub mod export;
 pub mod find;
 pub mod investigate;
