@@ -11,16 +11,19 @@
 
 # browser-forensic
 
-**Parse Chrome, Firefox, and Safari — and embedded-Chromium apps — into one JSON timeline. Detect history clearing. Carve deleted records. No runtime deps.**
+**One command turns a seized profile — Chrome, Firefox, Safari, or an embedded-Chromium app — into a ranked, court-safe answer. Detect history clearing. Recover deleted records. No runtime deps.**
 
-Browser artifacts are present in almost every investigation — they reconstruct the user's timeline, expose credential exposure, and often reveal the delivery mechanism for an attack. The problem is tooling: most parsers require Python, lock you to Windows, or ignore the forensically interesting question of whether the evidence was tampered with.
-
-`br4n6` is a single static Rust binary. Point it at a browser database and get JSON. Point it at a profile directory and get a full triage report with integrity indicators and carved deleted records. Point it at an evidence tree and it sweeps out every browser *and* every embedded-Chromium app (Electron, WebView2, CEF) it can structurally identify.
+At 2am you shouldn't have to remember a tool's vocabulary before you can ask it a question. `br4n6` is a single static Rust binary built around the **six questions an examiner actually asks** — point it at a profile, a home directory, or an evidence tree and it does the classifying for you.
 
 ```bash
 cargo install --git https://github.com/SecurityRonin/browser-forensic browser-forensic-cli
-br4n6 history /path/to/Chrome/Default/History --format jsonl | jq 'select(.attrs.url | test("google.com"))'
+
+# The golden path: what happened here?
+br4n6 investigate /mnt/evidence/Users/jsmith
+#   or just:  br4n6 /mnt/evidence/Users/jsmith
 ```
+
+`investigate` runs a bounded, standard-tier triage and prints a ranked, provenance-tagged summary — then always ends by naming what it did *not* do (deep carving, memory, cache reconstruction), so nothing is silently skipped and a clean result never poses as a complete one.
 
 ---
 
@@ -36,43 +39,95 @@ cargo build --release
 
 ---
 
-## Three Things You Do With This
+## The six questions
 
-### Reconstruct the full browser timeline
+Each verb is a question, not a format's noun. Everything else is `--help` away.
 
-```bash
-# Chrome history — last 30 days, sorted by time
-br4n6 history /path/to/Chrome/Default/History --format jsonl \
-  | jq -r '[.timestamp_ns, .attrs.url, .attrs.title] | @tsv' \
-  | sort | tail -100
+| Ask | Verb | Example |
+|---|---|---|
+| **What happened?** | `investigate` | `br4n6 investigate <PATH>` (or bare `br4n6 <PATH>`) |
+| **Did they visit / download / search X?** | `find` | `br4n6 find evil.com <PATH>` |
+| **When — the chronology?** | `timeline` | `br4n6 timeline <PATH> --around 2026-07-01T14:00Z` |
+| **What was deleted / carved / evicted?** | `recover` | `br4n6 recover <PATH>` |
+| **What did a cached page look like?** | `reconstruct` | `br4n6 reconstruct https://evil.com <PATH> --out ./recon` |
+| **What do I hand the lawyer?** | `report` | `br4n6 report <PATH> --bundle -o ./case-42` |
 
-# Firefox — same command, different path
-br4n6 history /path/to/Firefox/Profiles/abc.default/places.sqlite --format jsonl
-```
-
-Every supported browser produces the same `BrowserEvent` JSON schema. Your downstream analysis pipeline doesn't need to know which browser produced the data.
-
-### Detect history clearing and tampering
+Under the six verbs sit the 46 primitives — every per-artifact parser — in one discoverable namespace:
 
 ```bash
-br4n6 integrity /path/to/Chrome/Default/History --format jsonl
+br4n6 artifact --list                            # name · browser family · what it proves
+br4n6 artifact history <PATH> --format jsonl      # one parser, machine output
 ```
 
-```json
-{"HistoryCleared":{"browser":"Chromium","path":"/path/to/History","detected_at_ns":1700000000000000000}}
-{"AutoIncrementGap":{"path":"/path/to/History","table":"urls","max_rowid":2,"auto_increment":847}}
-{"VisitIdGap":{"path":"/path/to/History","expected_id":3,"found_id":851}}
+> **Upgrading from the old flat commands** (`br4n6 history`, `chains`, `carve`, …)? They were removed in a clean break at 0.3.0. See **[docs/migration-v2.md](docs/migration-v2.md)** for every old command mapped to its new form.
+
+---
+
+## Provenance, not homogenized hits
+
+`find` is one front door over distinct evidence classes — but it never merges them. A live history visit, a cached string, and a carved deleted record carry different courtroom value, so each is a separate row with its own axes:
+
+```text
+TERM       SOURCE    STATE     CONF  TIME BASIS    USER-ACTION       MATCH
+evil.com   history   live      high  explicit      visited           https://evil.com/a
+evil.com   cache     live      med   surrounding   observed-string   https://evil.com/a.js
+evil.com   carved    deleted   low   none          unknown           <fragment>
 ```
 
-Three indicators in under 100ms. The `sqlite_sequence` table recorded 847 URL insertions; only 2 rows remain. IDs jump from 2 to 851. The user cleared their history — and this database says exactly when the last visible record was written.
+An empty result proves it looked: `no hits in live history/downloads/bookmarks; skipped: encrypted cookies, memory, carving`.
 
-### Carve deleted records from SQLite free pages
+## Priority ≠ confidence ≠ proof
+
+Every finding renders **three separate axes**, enforced by the data model so no renderer can emit a bare "HIGH" that reads as *high confidence of wrongdoing*:
+
+```text
+Priority:       High            (look here first — a triage attention cue)
+Confidence:     Medium          (rule investigate.exec_download.v1)
+Interpretation: consistent with an executable downloaded via the browser; a download
+                does not by itself establish execution
+Next:           br4n6 artifact downloads <PATH>
+```
+
+Priority is where to look first, never a finding of malice. Interpretations are *consistent-with* statements — the evidence is shown; the conclusion is not asserted.
+
+## Recover deleted evidence — one orchestrator
+
+`recover` runs every applicable recovery over a profile, a single database, or a memory image and ranks the results — you never choose carve-vs-WAL-vs-memory. Recovered items are *consistent-with* eviction or clearing, never asserted as a deliberate user deletion.
 
 ```bash
-br4n6 carve /path/to/Chrome/Default/History --format jsonl
+br4n6 recover /mnt/evidence/Users/jsmith          # deleted SQLite/WAL, evicted cache, tamper indicators
+br4n6 recover /path/to/History                     # a single database: carve + tamper
+br4n6 recover /path/to/memory.raw                  # process-attributed RAM carve
 ```
 
-SQLite marks deleted rows as free pages rather than overwriting them immediately. `br4n6 carve` walks the freelist chain, scans each free page for URL patterns, and returns whatever survived (via the published [`sqlite-forensic`](https://github.com/SecurityRonin/sqlite-forensic) recovery engine). Combine with `br4n6 integrity` to establish what was deleted and what was recovered.
+## Decrypting cookies and passwords — one flag
+
+Encrypted material is always **counted and reported**, never silently dropped. To read it, add `--keys <PATH>`: key material is auto-located **within the evidence root** (never outside it), every key file is hashed into the manifest, and secrets are file-oriented — never printed to the terminal.
+
+```bash
+# Chromium cookies — key auto-located in the root; Windows logon password via stdin
+br4n6 artifact cookies /mnt/evidence/Users/jsmith --keys /mnt/evidence/Users/jsmith --password-stdin
+
+# Firefox logins — usernames show; passwords materialize to a FILE only
+br4n6 artifact logins /path/to/profile --keys /path/to/profile --reveal-secrets ./secrets.txt
+```
+
+Without `--keys`, you still get the count: `1,022 cookies encrypted — add --keys <path>`.
+
+## The court/exam bundle
+
+`report --bundle` writes a reproducible, self-verifying deliverable to a directory:
+
+```bash
+br4n6 report /mnt/evidence/Users/jsmith --bundle -o ./case-42
+```
+
+- `report.html` — the ranked, court-safe findings + timeline
+- `timeline.xlsx` / `timeline.jsonl` — the machine timeline (spreadsheet + round-trippable)
+- `manifest.json` — chain of custody: every input's SHA-256/MD5, the exact command line, detection basis, rule + tool versions, timezone rule
+- `SHA256SUMS.txt` — a sidecar hashing the bundle's own outputs (`sha256sum -c SHA256SUMS.txt`)
+
+Single-file interop still works too: `br4n6 report <PATH> --format bodyfile|l2t|html`.
 
 ---
 
@@ -127,10 +182,10 @@ browser-forensic now matches the artifact breadth of the mainstream browser-hist
 
 ## Web Storage
 
-`br4n6 storage` reads the three web-storage backends the browsers use, emitting the same `BrowserEvent` schema as every other artifact:
+`br4n6 artifact storage` reads the three web-storage backends the browsers use, emitting the same `BrowserEvent` schema as every other artifact:
 
 ```bash
-br4n6 storage /path/to/Chrome/Default --format jsonl
+br4n6 artifact storage /path/to/Chrome/Default --format jsonl
 ```
 
 - **Chromium Local / Session Storage** — LevelDB, decoded through the published [`leveldb-forensic`](https://github.com/SecurityRonin/leveldb-forensic) crate.

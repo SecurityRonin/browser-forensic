@@ -4,7 +4,7 @@
 
 ```bash
 cargo install --git https://github.com/SecurityRonin/browser-forensic browser-forensic-cli
-br4n6 triage --home ~ --format jsonl
+br4n6 investigate /mnt/evidence/Users/jsmith
 ```
 
 **[GitHub Repository →](https://github.com/SecurityRonin/browser-forensic)**
@@ -22,24 +22,30 @@ Beyond parsing, it detects structural integrity anomalies that indicate history 
 ## Quick start
 
 ```bash
-# Parse Chrome history
-br4n6 history /path/to/Chrome/Default/History --format jsonl
+# The golden path — bounded, ranked, court-safe triage (or bare `br4n6 <PATH>`)
+br4n6 investigate /mnt/evidence/Users/jsmith
 
-# Parse web storage (Local / Session Storage, IndexedDB)
-br4n6 storage /path/to/Chrome/Default --format jsonl
+# Did they touch X? — provenance-tagged hits across every source
+br4n6 find evil.com /mnt/evidence/Users/jsmith
+
+# Parse one artifact — the 46 primitives live under `artifact <name>`
+br4n6 artifact history /path/to/Chrome/Default/History --format jsonl
+br4n6 artifact storage /path/to/Chrome/Default --format jsonl
 
 # Detect tampering indicators
 br4n6 integrity /path/to/Chrome/Default/History --format jsonl
 
-# Carve deleted records
-br4n6 carve /path/to/Chrome/Default/History --format jsonl
+# Recover deleted / carved / evicted evidence — one orchestrator
+br4n6 recover /path/to/Chrome/Default/History --format jsonl
 
 # Sweep an evidence tree for browsers AND embedded-Chromium apps
 br4n6 browsers --sweep /mnt/evidence/Users/jsmith --format jsonl
 
-# Full triage — discovers all profiles, parses all artifacts, checks integrity
-br4n6 triage --home /mnt/evidence/Users/jsmith --format jsonl > report.jsonl
+# A reproducible court/exam bundle (html + xlsx + jsonl + manifest + hashes)
+br4n6 report /mnt/evidence/Users/jsmith --bundle -o ./case-42
 ```
+
+Upgrading from the old flat commands? See [Migrating to v2](migration-v2.md).
 
 ---
 

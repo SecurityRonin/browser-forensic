@@ -1888,7 +1888,7 @@ impl SourceKind {
     }
 }
 
-/// Entity-graph output format for `br4n6 graph`.
+/// Entity-graph output format for `br4n6 timeline --graph`.
 #[derive(Clone, Copy, Debug, ValueEnum, Default, PartialEq, Eq)]
 pub enum GraphFormat {
     /// JSON document with `nodes` and `edges` arrays.
@@ -1999,7 +1999,7 @@ fn resolve_sessions(path: &Path) -> Result<SessionSource> {
     );
 }
 
-/// `br4n6 history` — dump history visits for the auto-detected browser family.
+/// `br4n6 artifact history` — dump history visits for the auto-detected browser family.
 /// Chromium redirect chains are collapsed into logical page views unless
 /// `no_collapse` is set (Firefox/Safari history is already per-URL, so the flag
 /// is a no-op there); `search` filters to visits whose URL or title contains the
@@ -2663,7 +2663,7 @@ pub fn run_artifact(path: &Path, artifact: ArtifactType, format: OutputFormat) -
         // not the per-artifact SQLite files this dispatch parses.
         (BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy, _) => {
             anyhow::bail!(
-                "IE / Edge-Legacy artifacts live in WebCacheV01.dat (ESE); use `br4n6 webcache PATH`"
+                "IE / Edge-Legacy artifacts live in WebCacheV01.dat (ESE); use `br4n6 artifact webcache PATH`"
             );
         }
         (BrowserFamily::Chromium, ArtifactType::History) => {
@@ -3203,7 +3203,7 @@ fn parse_cookie_events(path: &Path) -> Result<Vec<BrowserEvent>> {
         BrowserFamily::Firefox => browser_forensic_firefox::parse_cookies(path),
         BrowserFamily::Safari => browser_forensic_safari::parse_cookies(path),
         BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => anyhow::bail!(
-            "IE / Edge-Legacy cookies live in WebCacheV01.dat (ESE); use `br4n6 webcache PATH`"
+            "IE / Edge-Legacy cookies live in WebCacheV01.dat (ESE); use `br4n6 artifact webcache PATH`"
         ),
     }
 }
@@ -4582,7 +4582,7 @@ fn csv_field(value: &str) -> String {
     format!("\"{}\"", guarded.replace('"', "\"\""))
 }
 
-/// `br4n6 storage PATH` — parse web storage (Local/Session Storage, IndexedDB)
+/// `br4n6 artifact storage PATH` — parse web storage (Local/Session Storage, IndexedDB)
 /// for the auto-detected browser family. `PATH` may be a single LevelDB
 /// directory, a `webappsstore.sqlite` / IndexedDB `*.sqlite` file, or a profile
 /// directory (every web-storage source beneath it is aggregated).
@@ -4597,7 +4597,7 @@ pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 webcache PATH` — parse an IE / Edge-Legacy `WebCacheV01.dat` (ESE) into
+/// `br4n6 artifact webcache PATH` — parse an IE / Edge-Legacy `WebCacheV01.dat` (ESE) into
 /// a chronological event stream: history visits, cookies, cached content, and
 /// DOM storage, each tagged with its browser family and artifact kind. Read-only.
 ///
@@ -4612,7 +4612,7 @@ pub fn run_webcache(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 cachestorage PATH` — recover Service Worker CacheStorage (Cache API)
+/// `br4n6 artifact cachestorage PATH` — recover Service Worker CacheStorage (Cache API)
 /// responses. `PATH` is a `Service Worker/CacheStorage` tree or a single
 /// `<origin-hash>` directory. Each recovered response becomes one event carrying
 /// its cache-name + origin attribution, request method, and body length.
@@ -4791,7 +4791,7 @@ pub fn run_reconstruct(
     Ok(())
 }
 
-/// `br4n6 indexeddb PATH` — decode a Chromium IndexedDB LevelDB directory
+/// `br4n6 artifact indexeddb PATH` — decode a Chromium IndexedDB LevelDB directory
 /// directly: database/object-store names, keys, and Blink/V8 values.
 ///
 /// # Errors
@@ -4804,7 +4804,7 @@ pub fn run_indexeddb(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 permissions PATH` — surface per-site permission grants. `PATH` is a
+/// `br4n6 artifact permissions PATH` — surface per-site permission grants. `PATH` is a
 /// Chromium `Preferences` / `Secure Preferences` JSON file, or a Firefox
 /// `permissions.sqlite`. Metadata only; no secrets are involved.
 ///
@@ -4832,7 +4832,7 @@ pub fn run_permissions(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 credentials PATH` — surface stored account/payment metadata from a
+/// `br4n6 artifact credentials PATH` — surface stored account/payment metadata from a
 /// Chromium `Web Data` database: saved cards, sync/OAuth tokens, and autofill
 /// address profiles. Card numbers and tokens are surfaced as opaque
 /// `ENCRYPTED`; they are never decrypted.
@@ -4847,7 +4847,7 @@ pub fn run_credentials(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 favicons PATH` — parse a Chromium `Favicons` database. Every stored
+/// `br4n6 artifact favicons PATH` — parse a Chromium `Favicons` database. Every stored
 /// favicon is joined back to the `page_url` it was fetched for, an independent
 /// cleartext source of visited URLs. Chromium-only.
 ///
@@ -4861,7 +4861,7 @@ pub fn run_favicons(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 top-sites PATH` — parse a Chromium `Top Sites` database (the
+/// `br4n6 artifact top-sites PATH` — parse a Chromium `Top Sites` database (the
 /// profile's most-visited pages, frecency-ranked). Chromium-only.
 ///
 /// # Errors
@@ -4874,7 +4874,7 @@ pub fn run_top_sites(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 extension-cookies PATH` — parse a Chromium `Extension Cookies` jar
+/// `br4n6 artifact extension-cookies PATH` — parse a Chromium `Extension Cookies` jar
 /// (the cookie store for extension background contexts). Same schema as
 /// `Cookies`; every event is tagged `cookie_store=extension`. Values are never
 /// decrypted. Chromium-only.
@@ -4899,7 +4899,7 @@ fn resolve_places(path: &Path) -> PathBuf {
     }
 }
 
-/// `br4n6 typed-input PATH` — list strings the user typed into the Firefox
+/// `br4n6 artifact typed-input PATH` — list strings the user typed into the Firefox
 /// address bar (`moz_inputhistory`). Firefox-only.
 ///
 /// # Errors
@@ -4912,7 +4912,7 @@ pub fn run_typed_input(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 annotations PATH` — list Firefox page annotations (`moz_annos`).
+/// `br4n6 artifact annotations PATH` — list Firefox page annotations (`moz_annos`).
 /// Firefox-only; stated as recorded.
 ///
 /// # Errors
@@ -4926,7 +4926,7 @@ pub fn run_annotations(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 deleted-bookmarks PATH` — recover bookmarks present in a Firefox
+/// `br4n6 artifact deleted-bookmarks PATH` — recover bookmarks present in a Firefox
 /// `bookmarkbackups/*.jsonlz4` backup but absent from the current
 /// `moz_bookmarks` (consistent with deletion after that backup). `PATH` is a
 /// profile directory or its `places.sqlite`. Firefox-only.
@@ -4952,7 +4952,7 @@ pub fn run_deleted_bookmarks(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 media-history PATH` — parse a Chromium `Media History` database:
+/// `br4n6 artifact media-history PATH` — parse a Chromium `Media History` database:
 /// audio/video playback, watch time, resume positions, and media titles.
 /// Chromium-only.
 ///
@@ -4966,7 +4966,7 @@ pub fn run_media_history(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 predictor PATH` — parse a Chromium `Network Action Predictor`: the
+/// `br4n6 artifact network-action-predictor PATH` — parse a Chromium `Network Action Predictor`: the
 /// (often partial) omnibox strings the user typed and the URLs Chromium learned
 /// to predict from them. Chromium-only.
 ///
@@ -4980,7 +4980,7 @@ pub fn run_predictor(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 shortcuts PATH` — parse a Chromium `Shortcuts` database: the omnibox
+/// `br4n6 artifact shortcuts PATH` — parse a Chromium `Shortcuts` database: the omnibox
 /// strings the user typed and the URLs they selected. Chromium-only.
 ///
 /// # Errors
@@ -5224,7 +5224,7 @@ pub fn correlate_output(
     out
 }
 
-/// Render the entity graph for `br4n6 graph` in the requested format.
+/// Render the entity graph for `br4n6 timeline --graph` in the requested format.
 #[must_use]
 pub fn graph_output(events: &[BrowserEvent], format: GraphFormat, window_secs: i64) -> String {
     use browser_forensic_correlate::graph::{entity_graph, GraphConfig};
