@@ -23,6 +23,7 @@ pub use forensicnomicon::evidence::EvidenceStrength;
 
 /// Browser engine family.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum BrowserFamily {
     Chromium,
     Firefox,
@@ -41,6 +42,7 @@ impl std::fmt::Display for BrowserFamily {
 
 /// Kind of browser artifact.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum ArtifactKind {
     History,
     Cookies,
@@ -130,6 +132,7 @@ impl std::fmt::Display for ArtifactKind {
 
 /// A single browser forensic event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BrowserEvent {
     pub timestamp_ns: i64,
     pub browser: BrowserFamily,
@@ -163,6 +166,18 @@ impl BrowserEvent {
         self.attrs.insert(key.into(), value);
         self
     }
+}
+
+/// Generate the JSON Schema (draft 2020-12) for [`BrowserEvent`] and its
+/// sub-types.
+///
+/// The schema is *derived* from the Rust types via schemars, so it never drifts
+/// from the serialized shape. `br4n6 schema` emits it, and a sync test keeps the
+/// committed `docs/browserevent.schema.json` in step.
+#[cfg(feature = "schema")]
+#[must_use]
+pub fn browser_event_schema() -> schemars::Schema {
+    schemars::schema_for!(BrowserEvent)
 }
 
 /// Forensic metadata from forensicnomicon for a specific browser artifact.
