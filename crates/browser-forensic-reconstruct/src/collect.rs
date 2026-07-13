@@ -9,8 +9,8 @@
 use std::path::Path;
 
 use browser_forensic_cache::{
-    parse_cachestorage_dir, parse_firefox_cache2_dir, parse_safari_cache_db,
-    parse_simple_cache_dir, CacheStorageResource, CachedResource,
+    parse_blockfile_cache_dir, parse_cachestorage_dir, parse_firefox_cache2_dir,
+    parse_safari_cache_db, parse_simple_cache_dir, CacheStorageResource, CachedResource,
 };
 
 use crate::index::{CacheSource, IndexedResource, ResourceIndex};
@@ -114,6 +114,13 @@ fn add_simple(dir: &Path, idx: &mut ResourceIndex) {
     }
 }
 
+/// Add Chromium legacy Blockfile resources found directly under `dir`.
+fn add_blockfile(dir: &Path, idx: &mut ResourceIndex) {
+    for res in parse_blockfile_cache_dir(dir) {
+        idx.insert(indexed_from_cached(&res, CacheSource::ChromiumBlockfile));
+    }
+}
+
 /// Add Firefox cache2 resources found directly under `dir`.
 fn add_firefox(dir: &Path, idx: &mut ResourceIndex) {
     for res in parse_firefox_cache2_dir(dir) {
@@ -160,6 +167,20 @@ fn collect_into(path: &Path, idx: &mut ResourceIndex) {
         path.join("Default").join("Cache").join("Cache_Data"),
     ] {
         add_simple(&sub, idx);
+    }
+
+    // Chromium legacy Blockfile: the path itself plus the well-known caches
+    // that still use it (GPU/shader caches, Code Cache) under a profile.
+    for sub in [
+        path.to_path_buf(),
+        path.join("GPUCache"),
+        path.join("Code Cache").join("js"),
+        path.join("Code Cache").join("wasm"),
+        path.join("Default").join("GPUCache"),
+        path.join("Default").join("Code Cache").join("js"),
+        path.join("Default").join("Code Cache").join("wasm"),
+    ] {
+        add_blockfile(&sub, idx);
     }
 
     // Firefox cache2 entries.
