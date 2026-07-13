@@ -306,4 +306,60 @@ mod tests {
         let idx = ResourceIndex::from_cache_dir(Path::new("/no/such/path/xyz"));
         assert!(idx.is_empty());
     }
+
+    /// Build a one-entry Blockfile cache (index + data_0 + data_1) with the
+    /// entry at block 0, headers at block 1, body at block 2.
+    fn build_blockfile(dir: &Path, url: &str, headers: &[u8], body: &[u8]) {
+        fn b(v: u32) -> [u8; 4] {
+            v.to_le_bytes()
+        }
+        fn blockhdr(this_file: i16) -> Vec<u8> {
+            let mut h = vec![0u8; 8192];
+            h[0..4].copy_from_slice(&b(0xC104_CAC3));
+            h[8..10].copy_from_slice(&this_file.to_le_bytes());
+            h[12..16].copy_from_slice(&256i32.to_le_bytes());
+            h
+        }
+        let mut entry = vec![0u8; 256];
+        entry[24..32].copy_from_slice(&13_350_000_000_000_000u64.to_le_bytes());
+        entry[32..36].copy_from_slice(&(url.len() as i32).to_le_bytes());
+        entry[40..44].copy_from_slice(&(headers.len() as i32).to_le_bytes());
+        entry[44..48].copy_from_slice(&(body.len() as i32).to_le_bytes());
+        entry[56..60].copy_from_slice(&b(0xA001_0001)); // stream0 -> block 1
+        entry[60..64].copy_from_slice(&b(0xA001_0002)); // stream1 -> block 2
+        entry[96..96 + url.len()].copy_from_slice(url.as_bytes());
+
+        let mut index = vec![0u8; 368];
+        index[0..4].copy_from_slice(&b(0xC103_CAC3));
+        index[28..32].copy_from_slice(&1i32.to_le_bytes());
+        index.extend_from_slice(&b(0xA001_0000));
+
+        let mut data1 = blockhdr(1);
+        data1.resize(8192 + 256 * 3, 0);
+        data1[8192..8192 + 256].copy_from_slice(&entry);
+        data1[8192 + 256..8192 + 256 + headers.len()].copy_from_slice(headers);
+        data1[8192 + 512..8192 + 512 + body.len()].copy_from_slice(body);
+
+        std::fs::write(dir.join("index"), &index).unwrap();
+        std::fs::write(dir.join("data_0"), blockhdr(0)).unwrap();
+        std::fs::write(dir.join("data_1"), &data1).unwrap();
+    }
+
+    #[test]
+    fn from_blockfile_dir_indexes_resource() {
+        let dir = TempDir::new().unwrap();
+        build_blockfile(
+            dir.path(),
+            "https://example.com/app.js",
+            b"HTTP/1.1 200 OK\0Content-Type: application/javascript\0\0",
+            b"console.log(1)",
+        );
+        let idx = ResourceIndex::from_cache_dir(dir.path());
+        let res = idx
+            .get("https://example.com/app.js")
+            .expect("blockfile resource indexed");
+        assert_eq!(res.source, CacheSource::ChromiumBlockfile);
+        assert_eq!(res.body, b"console.log(1)");
+        assert_eq!(res.content_type.as_deref(), Some("application/javascript"));
+    }
 }

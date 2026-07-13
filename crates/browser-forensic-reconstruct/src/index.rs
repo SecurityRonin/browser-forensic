@@ -13,6 +13,9 @@ use std::path::PathBuf;
 pub enum CacheSource {
     /// Chromium-family SimpleCache (`Cache/Cache_Data/`).
     ChromiumSimpleCache,
+    /// Chromium-family legacy Blockfile (`index` + `data_0..3`; GPUCache,
+    /// ShaderCache, Code Cache).
+    ChromiumBlockfile,
     /// Firefox `cache2/entries/`.
     FirefoxCache2,
     /// Safari `Cache.db`.
@@ -27,6 +30,7 @@ impl CacheSource {
     pub fn label(self) -> &'static str {
         match self {
             CacheSource::ChromiumSimpleCache => "chromium-simplecache",
+            CacheSource::ChromiumBlockfile => "chromium-blockfile",
             CacheSource::FirefoxCache2 => "firefox-cache2",
             CacheSource::SafariCacheDb => "safari-cachedb",
             CacheSource::CacheStorage => "cachestorage",
