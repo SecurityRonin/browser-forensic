@@ -394,6 +394,22 @@ enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
+    /// Ingest browser artifacts from a disk image (E01 / raw / dmg). All disk
+    /// work (container/partition/filesystem detection and reads) is delegated to
+    /// the forensic-vfs fleet; profiles are located across every user and parsed
+    /// through the existing readers, each event stamped with image/volume/user
+    /// provenance.
+    Image {
+        /// Path to the disk image (E01 / raw / dmg).
+        path: PathBuf,
+        /// Optional APFS snapshot transaction id to ingest a historical view of
+        /// the volume instead of its live state.
+        #[arg(long, value_name = "XID")]
+        snapshot: Option<u64>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
     /// Correlate all collected events into a unified cross-artifact / cross-browser
     /// timeline and a per-host (registrable-domain) rollup. `PATH` is a profile or
     /// home directory. Correlation is co-occurrence by URL/host/time — not proof of
@@ -588,6 +604,11 @@ where
         Some(Command::TamperCheck(a)) => run_tamper_check(&a.path, a.format),
         Some(Command::Carve(a)) => run_carve(&a.path, a.format),
         Some(Command::Triage { home, format }) => run_triage(home.as_deref(), format),
+        Some(Command::Image {
+            path,
+            snapshot,
+            format,
+        }) => run_image(&path, snapshot, format),
         Some(Command::Correlate { path, format }) => run_correlate(&path, format),
         Some(Command::Graph {
             path,
@@ -3193,9 +3214,39 @@ pub fn run_triage(home: Option<&Path>, format: OutputFormat) -> Result<()> {
 }
 
 /// `br4n6 image PATH [--snapshot XID]` — ingest browser artifacts from a disk
-/// image, delegating all disk work to the forensic-vfs fleet. TDD RED stub.
+/// image, delegating all disk work to the forensic-vfs fleet. Fails loud on any
+/// bootstrap problem (unopenable image, no filesystem, no profiles), never a
+/// silent empty result.
 pub fn run_image(path: &Path, snapshot: Option<u64>, format: OutputFormat) -> Result<()> {
-    let _ = (path, snapshot, format);
+    let events = browser_forensic_image::ingest_image_path(path, snapshot)?;
+    match format {
+        OutputFormat::Text => {
+            println!(
+                "Recovered {} browser event(s) from {}",
+                events.len(),
+                path.display()
+            );
+            for ev in events.iter().take(50) {
+                println!("  {}", fmt::event_to_text(ev));
+            }
+            if events.len() > 50 {
+                println!("  ... and {} more events", events.len() - 50);
+            }
+        }
+        OutputFormat::Jsonl => {
+            for ev in &events {
+                if let Ok(json) = serde_json::to_string(ev) {
+                    println!("{json}");
+                }
+            }
+        }
+        OutputFormat::Csv => {
+            println!("{}", fmt::TIMELINE_CSV_HEADER);
+            for ev in &events {
+                println!("{}", fmt::event_to_csv_row(ev));
+            }
+        }
+    }
     Ok(())
 }
 
