@@ -15,7 +15,7 @@ serde_json = { workspace = true }
 # ESE itself. Pinned to the ese-forensic git revision that reads a real large-page
 # WebCacheV01.dat: large-page tag masks + 40-byte extended page header, real
 # MSysObjects per-table columns, and tagged-column (id >= 256) record decoding.
-ese-core = { git = "https://github.com/SecurityRonin/ese-forensic.git", rev = "7a5690f144fb5bd83e7a3c9b15f24cd54cdcd413" }
+ese-core = "0.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
