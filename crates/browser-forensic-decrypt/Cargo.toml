@@ -12,6 +12,10 @@ browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# Windows DPAPI format + crypto (master-key file KDF, blob decrypt, Local State
+# key) delegated to the audited, impacket-validated fleet crate — DRY, never
+# hand-roll (Paranoid Gatekeeper). Local State JSON extraction stays in this crate.
+dpapi-core = "0.2"
 # RustCrypto — audited primitives only; NEVER hand-roll (Paranoid Gatekeeper).
 aes = "0.8"
 aes-gcm = "0.10"
