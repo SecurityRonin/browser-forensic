@@ -9,6 +9,7 @@
 //! Core types for browser forensic analysis.
 
 pub mod analyze;
+pub mod finding;
 pub mod reconstruct;
 pub mod sqlite;
 pub mod test_utils;
@@ -20,6 +21,11 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 pub use forensicnomicon::evidence::EvidenceStrength;
+
+pub use finding::{
+    Confidence, EvidenceSource, EvidenceState, Finding, Priority, Provenance, TimestampBasis,
+    UserActionClaim,
+};
 
 /// Browser engine family.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
