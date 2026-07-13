@@ -54,7 +54,7 @@ the named test with its env var set to reproduce.
 | IOC extractors (email, IPv4/IPv6, crypto address, card) | std `Ipv4Addr`/`Ipv6Addr` parsers as oracle; documented vectors | 2/3 | search `ioc_*` | vectors in-test |
 | Firefox NSS decryption (opt-in) | **firepwd** (independent) | 1 (PBES2) | decrypt fixtures — see below | yes (synthetic) |
 | macOS Chromium `v10` decryption (opt-in) | live Chrome + real login-Keychain key | 1 | see below | no |
-| Windows Chromium DPAPI decryption (opt-in) | **impacket** on synthetic `[MS-DPAPI]` vectors; NIST CAVP for the GCM primitive | 2 (1 primitive) | decrypt vectors — see below | yes (synthetic) |
+| Windows Chromium DPAPI decryption (opt-in) | **real Windows DPAPI blob** (`ProtectedData.Protect`) recovered by `dpapi-core` from password+SID+masterkey → exact known plaintext; NIST CAVP for GCM; impacket on synthetic vectors | 1 (DPAPI chain, GCM) | decrypt vectors — see below | real Windows blob |
 
 ## Parsing correctness — counts reconciled against independent tools
 
@@ -193,21 +193,29 @@ cannot complete the 3DES login loop, so the 3DES login-blob step falls back to
 the shared, firepwd-confirmed ASN.1 decoder plus standard 3DES-CBC. Provenance
 in `crates/browser-forensic-decrypt/tests/data/README.md`.
 
-### Windows Chromium (DPAPI + AES-256-GCM) — tier 2 (tier 1 primitive)
+### Windows Chromium (DPAPI + AES-256-GCM) — tier 1 (DPAPI chain + GCM primitive)
 
-**No Windows profile exists on the build host, so this path is NOT validated
-end-to-end against a real Windows profile.** The DPAPI format + crypto (master-
-key file KDF, blob decrypt + session-key derivation, `Local State` key) is
-delegated to the audited, fuzz-hardened, impacket-validated fleet crate
-`dpapi-core`; this crate keeps only thin glue plus its own AES-256-GCM `v10`/`v11`
-value decryption and the `v20` App-Bound refusal.
+**Tier-1 on real Windows DPAPI.** On a Parallels Windows 11 VM, Windows' own
+`ProtectedData.Protect` (run as a real logged-on user) produced a genuine DPAPI
+blob over a known plaintext; that user's masterkey files were extracted via VSS.
+`dpapi-core` — from only the account password + SID + masterkey file — derived the
+masterkey (`prekey_from_password` → masterkey KDF) and decrypted the blob (session-
+key derivation + AES-256-CBC), recovering the exact known plaintext
+(`br4n6-dpapi-tier1-9f3a`; masterkey GUID `714a87f2-f4f0-4cc5-8841-454567e67983`).
+The producer (Windows) and the answer key are independent of our code, so the DPAPI
+masterkey+blob chain is **tier-1 on real Windows data**. The DPAPI format + crypto
+is delegated to the audited, fuzz-hardened fleet crate `dpapi-core`; this crate
+keeps only thin glue plus its own AES-256-GCM `v10`/`v11` value decryption and the
+`v20` App-Bound refusal. Not yet run end-to-end: the full `Local State`-key-unwrap +
+`v10` cookie decrypt on a real Edge *profile* — but each of its parts is validated
+(DPAPI here on real Windows; AES-256-GCM by NIST CAVP below).
 
 | Path | Validation | Tier |
 |---|---|---|
 | `decrypt_chromium_value_win` (`v10`/`v11`) | RustCrypto `aes-gcm` decrypts a PyCryptodome-oracle value under an externally-fixed key → known plaintext; flipped tag → `Err`. | 2 |
 | AES-256-GCM primitive | NIST CAVP KAT (`gcmEncryptExtIV256`, published tag `bdc1ac88…76f0`) verifies; flipped tag → `Err`. | 1 |
-| `decrypt_masterkey_file` (→ `dpapi-core`) | A synthetic master-key file to the `[MS-DPAPI]` layout is decrypted by **impacket** to the same 64-byte key; `dpapi-core` recovers the same; wrong password → `WrongDpapiPassword` (rejected by impacket too). | 2 |
-| `decrypt_dpapi_blob` (→ `dpapi-core`) | impacket decrypts the same synthetic blob to the same 32-byte Chromium key; `dpapi-core` recovers it independently; tampering → `Err`. | 2 |
+| `decrypt_masterkey_file` (→ `dpapi-core`) | **Real Windows masterkey** (VSS-extracted from a Win 11 VM) decrypted by `dpapi-core` from the account password + SID → the masterkey that then recovers a real DPAPI blob to its known plaintext. Also: a synthetic `[MS-DPAPI]` master-key file cross-checked against **impacket**; wrong password → `WrongDpapiPassword`. | 1 |
+| `decrypt_dpapi_blob` (→ `dpapi-core`) | **Real Windows `ProtectedData.Protect` blob** recovered by `dpapi-core` to its exact known plaintext (real Win 11 VM). Also: impacket decrypts the same synthetic blob to the same 32-byte Chromium key; tampering → `Err`. | 1 |
 | `decrypt_chromium_key_dpapi` (Local State, → `dpapi-core`) | End-to-end `base64("DPAPI"+blob)` → the 32-byte key, via a supplied master key and via password+SID+master-key file. | 2 |
 | `v20` App-Bound detection | Refused with `AppBoundUnsupported` (needs the SYSTEM key); never fabricated. | 2 |
 
