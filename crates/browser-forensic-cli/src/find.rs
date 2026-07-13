@@ -431,6 +431,23 @@ mod tests {
     }
 
     #[test]
+    fn carved_record_is_carved_state_low_conf_never_visited() {
+        let e = BrowserEvent::new(
+            0,
+            BrowserFamily::Chromium,
+            ArtifactKind::Carved,
+            "/ev/Default/History",
+            "carved row",
+        );
+        let hit = FindHit::from_event("secret", &e);
+        assert_eq!(hit.provenance.source, EvidenceSource::Carved);
+        assert_eq!(hit.provenance.state, EvidenceState::Carved);
+        assert_ne!(hit.provenance.state, EvidenceState::Live);
+        assert_ne!(hit.provenance.user_action_claim, UserActionClaim::Visited);
+        assert_eq!(hit.confidence, Confidence::Low);
+    }
+
+    #[test]
     fn timestamp_basis_is_explicit_for_history_none_for_recovered() {
         let live = FindHit::from_event("x", &event(ArtifactKind::History, "u"));
         assert_eq!(live.provenance.timestamp_basis, TimestampBasis::Explicit);
