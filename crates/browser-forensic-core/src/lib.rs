@@ -243,6 +243,39 @@ pub fn detect_browser(path: &Path) -> Option<BrowserFamily> {
     None
 }
 
+#[cfg(all(test, feature = "schema"))]
+mod schema_tests {
+    #[test]
+    fn browser_event_schema_describes_the_event_fields() {
+        let schema = super::browser_event_schema();
+        let json = serde_json::to_value(&schema).expect("schema serializes");
+        let props = json
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .expect("BrowserEvent schema has a properties object");
+        for field in [
+            "timestamp_ns",
+            "browser",
+            "artifact",
+            "source",
+            "description",
+            "attrs",
+        ] {
+            assert!(
+                props.contains_key(field),
+                "schema should describe the `{field}` field of BrowserEvent"
+            );
+        }
+        // The sub-types must be present as reusable definitions.
+        let defs = json
+            .get("$defs")
+            .and_then(serde_json::Value::as_object)
+            .expect("schema exposes $defs for the sub-types");
+        assert!(defs.contains_key("BrowserFamily"), "BrowserFamily in $defs");
+        assert!(defs.contains_key("ArtifactKind"), "ArtifactKind in $defs");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

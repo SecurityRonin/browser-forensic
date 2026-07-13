@@ -14,6 +14,13 @@ tempfile = { workspace = true }
 rusqlite = { workspace = true }
 sha2 = { workspace = true }
 forensicnomicon = { workspace = true }
+schemars = { workspace = true, optional = true }
+
+[features]
+# JSON Schema generation for `BrowserEvent` and its sub-types. Off by default so
+# the ~19 downstream crates that only need the Rust types don't pull schemars;
+# the CLI enables it for the `br4n6 schema` subcommand.
+schema = ["dep:schemars"]
 
 [lints]
 workspace = true
