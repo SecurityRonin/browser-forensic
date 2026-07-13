@@ -14,6 +14,7 @@ pub use render::draw;
 pub mod bundle;
 pub mod checkpoint;
 pub mod cli;
+pub mod completions;
 pub mod detect;
 pub mod export;
 pub mod find;

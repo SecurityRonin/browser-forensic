@@ -45,6 +45,7 @@ open = "5"
 ctrlc = "3"
 anyhow = { workspace = true }
 clap = { workspace = true }
+clap_complete = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 serde = { workspace = true }

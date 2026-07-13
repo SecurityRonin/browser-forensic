@@ -50,6 +50,7 @@ sha2 = "0.10"
 md-5 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 assert_cmd = "2"
 tempfile = "3"
 forensicnomicon = { version = "1.5", features = ["serde"] }

@@ -470,6 +470,14 @@ enum Command {
     /// tool emits, derived from the Rust types so it never drifts from the
     /// serialized shape. Feed it to a validator or code generator.
     Schema,
+    /// Generate a shell completion script (bash / zsh / fish) to stdout, derived
+    /// from the live command tree. Hidden — a setup helper, not a task verb.
+    #[command(hide = true)]
+    Completions {
+        /// The shell to generate completions for.
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 /// The per-artifact primitives, reachable as `br4n6 artifact <NAME> <PATH>`.
@@ -828,6 +836,11 @@ where
             format,
         }) => run_image(&path, snapshot, format),
         Some(Command::Schema) => run_schema(),
+        Some(Command::Completions { shell }) => {
+            let mut stdout = std::io::stdout().lock();
+            crate::completions::generate(shell, &mut stdout);
+            Ok(())
+        }
     }
 }
 
