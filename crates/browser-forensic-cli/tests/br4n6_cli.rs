@@ -141,7 +141,13 @@ fn urls_of(lines: &[Value]) -> Vec<String> {
 fn br4n6_history_collapses_redirect_chain_by_default() {
     let (_d, history) = create_chrome_history_with_redirect();
     let out = br4n6()
-        .args(["history", "--format", "jsonl", history.to_str().unwrap()])
+        .args([
+            "artifact",
+            "history",
+            "--format",
+            "jsonl",
+            history.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -166,6 +172,7 @@ fn br4n6_history_no_collapse_keeps_every_visit() {
     let (_d, history) = create_chrome_history_with_redirect();
     let out = br4n6()
         .args([
+            "artifact",
             "history",
             "--no-collapse",
             "--format",
@@ -185,6 +192,7 @@ fn br4n6_history_search_filters_to_substring() {
     let (_d, history) = create_chrome_history_with_redirect();
     let out = br4n6()
         .args([
+            "artifact",
             "history",
             "--search",
             "landing",
@@ -204,7 +212,13 @@ fn br4n6_history_accepts_profile_directory() {
     let (_d, history) = create_chrome_history_with_redirect();
     let profile = history.parent().unwrap();
     let out = br4n6()
-        .args(["history", "--format", "jsonl", profile.to_str().unwrap()])
+        .args([
+            "artifact",
+            "history",
+            "--format",
+            "jsonl",
+            profile.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -222,7 +236,13 @@ fn br4n6_history_accepts_profile_directory() {
 fn br4n6_sessions_surfaces_open_tabs() {
     let (_d, sessions) = create_sessions_dir();
     let out = br4n6()
-        .args(["sessions", "--format", "jsonl", sessions.to_str().unwrap()])
+        .args([
+            "artifact",
+            "sessions",
+            "--format",
+            "jsonl",
+            sessions.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -241,6 +261,7 @@ fn br4n6_sessions_search_filters() {
     let (_d, sessions) = create_sessions_dir();
     let out = br4n6()
         .args([
+            "artifact",
             "sessions",
             "--search",
             "beta",
@@ -364,7 +385,13 @@ fn create_firefox_sessionstore() -> (TempDir, PathBuf) {
 fn br4n6_history_reads_firefox_places() {
     let (_d, places) = create_firefox_places();
     let out = br4n6()
-        .args(["history", "--format", "jsonl", places.to_str().unwrap()])
+        .args([
+            "artifact",
+            "history",
+            "--format",
+            "jsonl",
+            places.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -387,7 +414,13 @@ fn br4n6_history_accepts_firefox_profile_directory() {
     let (_d, places) = create_firefox_places();
     let profile = places.parent().unwrap();
     let out = br4n6()
-        .args(["history", "--format", "jsonl", profile.to_str().unwrap()])
+        .args([
+            "artifact",
+            "history",
+            "--format",
+            "jsonl",
+            profile.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -403,7 +436,13 @@ fn br4n6_history_accepts_firefox_profile_directory() {
 fn br4n6_sessions_reads_firefox_sessionstore() {
     let (_d, session) = create_firefox_sessionstore();
     let out = br4n6()
-        .args(["sessions", "--format", "jsonl", session.to_str().unwrap()])
+        .args([
+            "artifact",
+            "sessions",
+            "--format",
+            "jsonl",
+            session.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -426,7 +465,13 @@ fn br4n6_sessions_accepts_firefox_profile_directory() {
     let (_d, session) = create_firefox_sessionstore();
     let profile = session.parent().unwrap();
     let out = br4n6()
-        .args(["sessions", "--format", "jsonl", profile.to_str().unwrap()])
+        .args([
+            "artifact",
+            "sessions",
+            "--format",
+            "jsonl",
+            profile.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -469,7 +514,13 @@ fn create_safari_history() -> (TempDir, PathBuf) {
 fn br4n6_history_reads_safari_history_db() {
     let (_d, history) = create_safari_history();
     let out = br4n6()
-        .args(["history", "--format", "jsonl", history.to_str().unwrap()])
+        .args([
+            "artifact",
+            "history",
+            "--format",
+            "jsonl",
+            history.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -492,7 +543,13 @@ fn br4n6_history_accepts_safari_profile_directory() {
     let (_d, history) = create_safari_history();
     let safari_dir = history.parent().unwrap();
     let out = br4n6()
-        .args(["history", "--format", "jsonl", safari_dir.to_str().unwrap()])
+        .args([
+            "artifact",
+            "history",
+            "--format",
+            "jsonl",
+            safari_dir.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(

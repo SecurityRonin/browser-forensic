@@ -68,18 +68,9 @@ fn br4n6() -> Command {
 
 #[test]
 fn every_subcommand_help_exits_0() {
+    // Verbs / orchestration commands kept at top level in RFC 0001 P1.
     for sub in [
         "timeline",
-        "history",
-        "cookies",
-        "downloads",
-        "bookmarks",
-        "extensions",
-        "login-data",
-        "autofill",
-        "session",
-        "cache",
-        "cachestorage",
         "profiles",
         "analyze",
         "integrity",
@@ -87,9 +78,24 @@ fn every_subcommand_help_exits_0() {
         "memory",
         "triage",
         "browsers",
-        "sessions",
     ] {
         br4n6().args([sub, "--help"]).assert().success();
+    }
+    // Per-artifact primitives moved under `artifact` (login-data -> logins).
+    for sub in [
+        "history",
+        "cookies",
+        "downloads",
+        "bookmarks",
+        "extensions",
+        "logins",
+        "autofill",
+        "session",
+        "cache",
+        "cachestorage",
+        "sessions",
+    ] {
+        br4n6().args(["artifact", sub, "--help"]).assert().success();
     }
 }
 
@@ -156,7 +162,7 @@ fn timeline_firefox_history_text() {
 #[test]
 fn cookies_nonexistent_path_exits_nonzero() {
     br4n6()
-        .args(["cookies", "/nonexistent/Cookies"])
+        .args(["artifact", "cookies", "/nonexistent/Cookies"])
         .assert()
         .failure();
 }
@@ -321,7 +327,13 @@ fn preferences_chrome_json_parses() {
     )
     .unwrap();
     let output = br4n6()
-        .args(["preferences", prefs.to_str().unwrap(), "--format", "jsonl"])
+        .args([
+            "artifact",
+            "preferences",
+            prefs.to_str().unwrap(),
+            "--format",
+            "jsonl",
+        ])
         .output()
         .expect("run");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -338,7 +350,13 @@ fn preferences_firefox_prefs_js_parses() {
     )
     .unwrap();
     let output = br4n6()
-        .args(["preferences", prefs.to_str().unwrap(), "--format", "jsonl"])
+        .args([
+            "artifact",
+            "preferences",
+            prefs.to_str().unwrap(),
+            "--format",
+            "jsonl",
+        ])
         .output()
         .expect("run");
     let stdout = String::from_utf8_lossy(&output.stdout);

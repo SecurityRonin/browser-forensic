@@ -73,7 +73,7 @@ fn typed_input_prints_typed_string() {
     let dir = build_profile();
     let places = dir.path().join("places.sqlite");
     let out = br4n6()
-        .args(["typed-input", places.to_str().unwrap()])
+        .args(["artifact", "typed-input", places.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(
@@ -90,7 +90,7 @@ fn annotations_prints_annotation() {
     let dir = build_profile();
     let places = dir.path().join("places.sqlite");
     let out = br4n6()
-        .args(["annotations", places.to_str().unwrap()])
+        .args(["artifact", "annotations", places.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(
@@ -119,7 +119,11 @@ fn deleted_bookmarks_recovers_absent_bookmark() {
         ],
     );
     let out = br4n6()
-        .args(["deleted-bookmarks", dir.path().to_str().unwrap()])
+        .args([
+            "artifact",
+            "deleted-bookmarks",
+            dir.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(
@@ -147,7 +151,11 @@ fn deleted_bookmarks_recovers_absent_bookmark() {
 fn deleted_bookmarks_no_backups_is_clean() {
     let dir = build_profile();
     let out = br4n6()
-        .args(["deleted-bookmarks", dir.path().to_str().unwrap()])
+        .args([
+            "artifact",
+            "deleted-bookmarks",
+            dir.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -156,6 +164,6 @@ fn deleted_bookmarks_no_backups_is_clean() {
 #[test]
 fn m17_subcommands_help_exit_0() {
     for sub in ["typed-input", "annotations", "deleted-bookmarks"] {
-        br4n6().args([sub, "--help"]).assert().success();
+        br4n6().args(["artifact", sub, "--help"]).assert().success();
     }
 }

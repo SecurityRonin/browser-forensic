@@ -119,14 +119,17 @@ fn build_tree() -> (TempDir, std::path::PathBuf) {
 
 #[test]
 fn cachestorage_help_exits_0() {
-    br4n6().args(["cachestorage", "--help"]).assert().success();
+    br4n6()
+        .args(["artifact", "cachestorage", "--help"])
+        .assert()
+        .success();
 }
 
 #[test]
 fn cachestorage_empty_dir_succeeds() {
     let dir = TempDir::new().unwrap();
     br4n6()
-        .args(["cachestorage", dir.path().to_str().unwrap()])
+        .args(["artifact", "cachestorage", dir.path().to_str().unwrap()])
         .assert()
         .success();
 }
@@ -135,7 +138,13 @@ fn cachestorage_empty_dir_succeeds() {
 fn cachestorage_jsonl_recovers_entry() {
     let (_dir, oh) = build_tree();
     let output = br4n6()
-        .args(["cachestorage", "--format", "jsonl", oh.to_str().unwrap()])
+        .args([
+            "artifact",
+            "cachestorage",
+            "--format",
+            "jsonl",
+            oh.to_str().unwrap(),
+        ])
         .output()
         .unwrap();
     assert!(

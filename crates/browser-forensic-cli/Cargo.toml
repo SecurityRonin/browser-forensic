@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "br4n6 / bw — dual-mode browser-forensic tool: a scriptable CLI (history, cookies, downloads, integrity, carve, triage) and a Midnight-Commander-style, vi-keyed TUI for on-disk browser history and session state"
 edition.workspace = true
 rust-version.workspace = true

@@ -62,32 +62,16 @@ enum Command {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
-    /// Dump history visits (Chromium redirect-collapsed by default).
-    History {
-        /// A history file, or a profile directory containing one.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Keep every raw visit, including intermediate redirect hops.
+    /// Parse a single browser artifact by name — the power / discovery layer.
+    /// `br4n6 artifact --list` tabulates every primitive; `br4n6 artifact <NAME>
+    /// <PATH>` runs one, each keeping its own flags (e.g. cookie decryption).
+    Artifact {
+        /// List every artifact primitive (name, browser family, what it records)
+        /// and exit.
         #[arg(long)]
-        no_collapse: bool,
-        /// Show only visits whose URL or title contains this substring.
-        #[arg(long, value_name = "TEXT")]
-        search: Option<String>,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
-    },
-    /// Dump session state (open / recently-closed tabs).
-    Sessions {
-        /// A profile directory, or its `Sessions` directory.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Show only tabs whose URL or title contains this substring.
-        #[arg(long, value_name = "TEXT")]
-        search: Option<String>,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
+        list: bool,
+        #[command(subcommand)]
+        kind: Option<ArtifactKind>,
     },
     /// Reconstruct navigation: referrer + redirect chains and inferred sessions.
     Chains {
@@ -109,81 +93,6 @@ enum Command {
     },
     /// Parse browser history into a chronological timeline.
     Timeline(ArtifactArgs),
-    /// Parse browser cookies.
-    Cookies {
-        /// Path to the cookies artifact file or profile directory.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
-        /// OPT-IN: decrypt Chromium `v10` cookie values via the macOS login
-        /// Keychain (prompts for authorization). Off by default.
-        #[arg(long)]
-        decrypt_macos: bool,
-        /// Keychain service holding the "… Safe Storage" password.
-        #[arg(long, value_name = "SERVICE", default_value = "Chrome Safe Storage")]
-        keychain_service: String,
-        /// OPT-IN: decrypt Windows Chromium `v10`/`v11` cookie values. Needs
-        /// `--local-state` and a DPAPI secret (below). Off by default; `v20`
-        /// App-Bound values are refused, never fabricated.
-        #[arg(long)]
-        decrypt_win: bool,
-        /// Path to the profile's `Local State` file (holds the DPAPI-wrapped key).
-        #[arg(long, value_name = "PATH")]
-        local_state: Option<PathBuf>,
-        /// DPAPI secret: a pre-decrypted 64-byte master key as hex. Mutually
-        /// exclusive with the `--dpapi-password`/`--dpapi-sid`/…-file trio.
-        #[arg(long, value_name = "HEX")]
-        dpapi_masterkey: Option<String>,
-        /// DPAPI secret: the user's logon password (with `--dpapi-sid` and
-        /// `--dpapi-masterkey-file`).
-        #[arg(long, value_name = "PASSWORD")]
-        dpapi_password: Option<String>,
-        /// DPAPI secret: the user SID (e.g. `S-1-5-21-…-1001`).
-        #[arg(long, value_name = "SID")]
-        dpapi_sid: Option<String>,
-        /// DPAPI secret: the user's master-key file
-        /// (`%APPDATA%/Microsoft/Protect/<SID>/<GUID>`).
-        #[arg(long, value_name = "PATH")]
-        dpapi_masterkey_file: Option<PathBuf>,
-    },
-    /// Parse browser downloads.
-    Downloads(ArtifactArgs),
-    /// Parse browser bookmarks.
-    Bookmarks(ArtifactArgs),
-    /// Parse browser extensions.
-    Extensions(ArtifactArgs),
-    /// Parse browser login data (passwords NEVER exposed unless explicitly
-    /// opted in with `--decrypt --include-passwords`).
-    LoginData {
-        /// A `logins.json`/`key4.db`/`Login Data` file, or a profile directory.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
-        /// OPT-IN: decrypt saved usernames (Firefox NSS). Needs the profile's
-        /// `key4.db`. Off by default (values stay `ENCRYPTED`).
-        #[arg(long)]
-        decrypt: bool,
-        /// Firefox master password (empty when none is set). Used with `--decrypt`.
-        #[arg(long, value_name = "PASSWORD", default_value = "")]
-        master_password: String,
-        /// EXTRA OPT-IN: also decrypt and show plaintext passwords (crown jewel).
-        /// Requires `--decrypt`. Default output never contains a password.
-        #[arg(long)]
-        include_passwords: bool,
-    },
-    /// Parse browser autofill data.
-    Autofill(ArtifactArgs),
-    /// Parse a browser session store.
-    Session(ArtifactArgs),
-    /// Parse browser cache.
-    Cache(ArtifactArgs),
-    /// Recover Service Worker CacheStorage (Cache API) responses. `PATH` is a
-    /// `Service Worker/CacheStorage` directory (or one `<origin-hash>` subdir).
-    Cachestorage(ArtifactArgs),
     /// Recover deleted/orphaned/evicted Chromium cache entries the live index no
     /// longer references (orphaned SimpleCache `[hash]_0`, dangling `[hash]_s`,
     /// free-but-intact Blockfile). `PATH` is a `Cache`/`Cache_Data` directory.
@@ -212,52 +121,11 @@ enum Command {
         #[arg(long, value_enum, default_value_t = ReconstructFormat::Html)]
         format: ReconstructFormat,
     },
-    /// Parse browser preferences (Chrome `Preferences` / Firefox `prefs.js`).
-    Preferences(ArtifactArgs),
-    /// List per-site permission grants (Chrome `Preferences` / Firefox `permissions.sqlite`).
-    Permissions(ArtifactArgs),
-    /// Surface stored account/payment metadata from Chromium `Web Data`
-    /// (cards, tokens, autofill profiles). Values are NEVER decrypted.
-    Credentials(ArtifactArgs),
     /// Recover domains contacted even after history is cleared, from
     /// network/state artifacts (Network Persistent State, Reporting and NEL,
     /// DIPS/BTM, TransportSecurity, Firefox HSTS). `PATH` is a profile directory
     /// or a single such artifact file.
     RecoveredDomains(ArtifactArgs),
-    /// Parse web storage (Local/Session Storage, IndexedDB).
-    Storage(ArtifactArgs),
-    /// Parse an IE / Edge-Legacy `WebCacheV01.dat` (ESE): history, cookies,
-    /// cached content, and DOM storage. `PATH` is the WebCacheV01.dat file.
-    Webcache(ArtifactArgs),
-    /// Decode a Chromium IndexedDB LevelDB directory directly: database and
-    /// object-store names, keys, and Blink/V8-serialized values. `PATH` is a
-    /// single `*.indexeddb.leveldb` directory.
-    Indexeddb(ArtifactArgs),
-    /// Parse a Chromium `Favicons` database (page_url visited-URL source).
-    Favicons(ArtifactArgs),
-    /// Parse a Chromium `Top Sites` database (most-visited / frecency).
-    TopSites(ArtifactArgs),
-    /// Parse a Chromium `Shortcuts` database (omnibox strings the user typed).
-    Shortcuts(ArtifactArgs),
-    /// Parse a Chromium `Network Action Predictor` (partial typed strings).
-    Predictor(ArtifactArgs),
-    /// Parse a Chromium `Media History` database (audio/video playback).
-    MediaHistory(ArtifactArgs),
-    /// Parse a Chromium `Extension Cookies` jar (tagged cookie_store=extension).
-    ExtensionCookies(ArtifactArgs),
-    /// List strings the user typed into the Firefox address bar (`places.sqlite`
-    /// `moz_inputhistory`). `PATH` is a `places.sqlite` file or a profile
-    /// directory. Firefox-only; direct evidence of typed intent.
-    TypedInput(ArtifactArgs),
-    /// List Firefox page annotations (`places.sqlite` `moz_annos`). `PATH` is a
-    /// `places.sqlite` file or a profile directory. Firefox-only; stated as
-    /// recorded.
-    Annotations(ArtifactArgs),
-    /// Recover deleted bookmarks by diffing Firefox `bookmarkbackups/*.jsonlz4`
-    /// against the current `moz_bookmarks`: bookmarks present in a backup but
-    /// absent now, consistent with deletion after that backup. `PATH` is a
-    /// profile directory (or its `places.sqlite`). Firefox-only.
-    DeletedBookmarks(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -461,6 +329,163 @@ enum Command {
     Schema,
 }
 
+/// The per-artifact primitives, reachable as `br4n6 artifact <NAME> <PATH>`.
+///
+/// Naming scheme: each subcommand is the kebab-case of the artifact's canonical
+/// name (clap derives `top-sites`, `media-history`, … from the variant names).
+/// Two deliberate renames adopt the cleaner forensic name — the login store is
+/// `logins` (was `login-data`), and the Chromium `Network Action Predictor` is
+/// `network-action-predictor` (was `predictor`). Every variant keeps the exact
+/// flags its former flat command had, and routes to the same handler.
+#[derive(Subcommand, Debug)]
+enum ArtifactKind {
+    /// Dump history visits (Chromium redirect-collapsed by default).
+    History {
+        /// A history file, or a profile directory containing one.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Keep every raw visit, including intermediate redirect hops.
+        #[arg(long)]
+        no_collapse: bool,
+        /// Show only visits whose URL or title contains this substring.
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Dump session state (open / recently-closed tabs).
+    Sessions {
+        /// A profile directory, or its `Sessions` directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Show only tabs whose URL or title contains this substring.
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+    /// Parse browser cookies.
+    Cookies {
+        /// Path to the cookies artifact file or profile directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+        /// OPT-IN: decrypt Chromium `v10` cookie values via the macOS login
+        /// Keychain (prompts for authorization). Off by default.
+        #[arg(long)]
+        decrypt_macos: bool,
+        /// Keychain service holding the "… Safe Storage" password.
+        #[arg(long, value_name = "SERVICE", default_value = "Chrome Safe Storage")]
+        keychain_service: String,
+        /// OPT-IN: decrypt Windows Chromium `v10`/`v11` cookie values. Needs
+        /// `--local-state` and a DPAPI secret (below). Off by default; `v20`
+        /// App-Bound values are refused, never fabricated.
+        #[arg(long)]
+        decrypt_win: bool,
+        /// Path to the profile's `Local State` file (holds the DPAPI-wrapped key).
+        #[arg(long, value_name = "PATH")]
+        local_state: Option<PathBuf>,
+        /// DPAPI secret: a pre-decrypted 64-byte master key as hex. Mutually
+        /// exclusive with the `--dpapi-password`/`--dpapi-sid`/…-file trio.
+        #[arg(long, value_name = "HEX")]
+        dpapi_masterkey: Option<String>,
+        /// DPAPI secret: the user's logon password (with `--dpapi-sid` and
+        /// `--dpapi-masterkey-file`).
+        #[arg(long, value_name = "PASSWORD")]
+        dpapi_password: Option<String>,
+        /// DPAPI secret: the user SID (e.g. `S-1-5-21-…-1001`).
+        #[arg(long, value_name = "SID")]
+        dpapi_sid: Option<String>,
+        /// DPAPI secret: the user's master-key file
+        /// (`%APPDATA%/Microsoft/Protect/<SID>/<GUID>`).
+        #[arg(long, value_name = "PATH")]
+        dpapi_masterkey_file: Option<PathBuf>,
+    },
+    /// Parse browser downloads.
+    Downloads(ArtifactArgs),
+    /// Parse browser bookmarks.
+    Bookmarks(ArtifactArgs),
+    /// Parse browser extensions.
+    Extensions(ArtifactArgs),
+    /// Parse browser login data (passwords NEVER exposed unless explicitly
+    /// opted in with `--decrypt --include-passwords`).
+    #[command(name = "logins")]
+    Logins {
+        /// A `logins.json`/`key4.db`/`Login Data` file, or a profile directory.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+        /// OPT-IN: decrypt saved usernames (Firefox NSS). Needs the profile's
+        /// `key4.db`. Off by default (values stay `ENCRYPTED`).
+        #[arg(long)]
+        decrypt: bool,
+        /// Firefox master password (empty when none is set). Used with `--decrypt`.
+        #[arg(long, value_name = "PASSWORD", default_value = "")]
+        master_password: String,
+        /// EXTRA OPT-IN: also decrypt and show plaintext passwords (crown jewel).
+        /// Requires `--decrypt`. Default output never contains a password.
+        #[arg(long)]
+        include_passwords: bool,
+    },
+    /// Parse browser autofill data.
+    Autofill(ArtifactArgs),
+    /// Parse a browser session store.
+    Session(ArtifactArgs),
+    /// Parse browser cache.
+    Cache(ArtifactArgs),
+    /// Recover Service Worker CacheStorage (Cache API) responses. `PATH` is a
+    /// `Service Worker/CacheStorage` directory (or one `<origin-hash>` subdir).
+    Cachestorage(ArtifactArgs),
+    /// Parse browser preferences (Chrome `Preferences` / Firefox `prefs.js`).
+    Preferences(ArtifactArgs),
+    /// List per-site permission grants (Chrome `Preferences` / Firefox `permissions.sqlite`).
+    Permissions(ArtifactArgs),
+    /// Surface stored account/payment metadata from Chromium `Web Data`
+    /// (cards, tokens, autofill profiles). Values are NEVER decrypted.
+    Credentials(ArtifactArgs),
+    /// Parse web storage (Local/Session Storage, IndexedDB).
+    Storage(ArtifactArgs),
+    /// Parse an IE / Edge-Legacy `WebCacheV01.dat` (ESE): history, cookies,
+    /// cached content, and DOM storage. `PATH` is the WebCacheV01.dat file.
+    Webcache(ArtifactArgs),
+    /// Decode a Chromium IndexedDB LevelDB directory directly: database and
+    /// object-store names, keys, and Blink/V8-serialized values. `PATH` is a
+    /// single `*.indexeddb.leveldb` directory.
+    Indexeddb(ArtifactArgs),
+    /// Parse a Chromium `Favicons` database (page_url visited-URL source).
+    Favicons(ArtifactArgs),
+    /// Parse a Chromium `Top Sites` database (most-visited / frecency).
+    TopSites(ArtifactArgs),
+    /// Parse a Chromium `Shortcuts` database (omnibox strings the user typed).
+    Shortcuts(ArtifactArgs),
+    /// Parse a Chromium `Network Action Predictor` (partial typed strings).
+    #[command(name = "network-action-predictor")]
+    NetworkActionPredictor(ArtifactArgs),
+    /// Parse a Chromium `Media History` database (audio/video playback).
+    MediaHistory(ArtifactArgs),
+    /// Parse a Chromium `Extension Cookies` jar (tagged cookie_store=extension).
+    ExtensionCookies(ArtifactArgs),
+    /// List strings the user typed into the Firefox address bar (`places.sqlite`
+    /// `moz_inputhistory`). `PATH` is a `places.sqlite` file or a profile
+    /// directory. Firefox-only; direct evidence of typed intent.
+    TypedInput(ArtifactArgs),
+    /// List Firefox page annotations (`places.sqlite` `moz_annos`). `PATH` is a
+    /// `places.sqlite` file or a profile directory. Firefox-only; stated as
+    /// recorded.
+    Annotations(ArtifactArgs),
+    /// Recover deleted bookmarks by diffing Firefox `bookmarkbackups/*.jsonlz4`
+    /// against the current `moz_bookmarks`: bookmarks present in a backup but
+    /// absent now, consistent with deletion after that backup. `PATH` is a
+    /// profile directory (or its `places.sqlite`). Firefox-only.
+    DeletedBookmarks(ArtifactArgs),
+}
+
 /// Parse the process arguments and dispatch. The no-subcommand and `tui` paths
 /// call `launch_tui` (injected so this lib stays decoupled from the TUI main
 /// loop); every other subcommand runs a scriptable handler in this module.
@@ -485,62 +510,13 @@ where
             Some(root) => run_browsers_sweep(&root, format),
             None => run_browsers(home.as_deref(), format),
         },
-        Some(Command::History {
-            path,
-            no_collapse,
-            search,
-            format,
-        }) => run_history(&path, no_collapse, search.as_deref(), format),
-        Some(Command::Sessions {
-            path,
-            search,
-            format,
-        }) => run_sessions(&path, search.as_deref(), format),
+        Some(Command::Artifact { list, kind }) => run_artifact_command(list, kind),
         Some(Command::Chains {
             path,
             idle_gap,
             format,
         }) => run_chains(&path, idle_gap, format),
         Some(Command::Timeline(a)) => run_artifact(&a.path, ArtifactType::History, a.format),
-        Some(Command::Cookies {
-            path,
-            format,
-            decrypt_macos,
-            keychain_service,
-            decrypt_win,
-            local_state,
-            dpapi_masterkey,
-            dpapi_password,
-            dpapi_sid,
-            dpapi_masterkey_file,
-        }) => dispatch_cookies(
-            &path,
-            format,
-            decrypt_macos,
-            &keychain_service,
-            CookieWinDecrypt {
-                enabled: decrypt_win,
-                local_state,
-                dpapi_masterkey,
-                dpapi_password,
-                dpapi_sid,
-                dpapi_masterkey_file,
-            },
-        ),
-        Some(Command::Downloads(a)) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
-        Some(Command::Bookmarks(a)) => run_artifact(&a.path, ArtifactType::Bookmarks, a.format),
-        Some(Command::Extensions(a)) => run_artifact(&a.path, ArtifactType::Extensions, a.format),
-        Some(Command::LoginData {
-            path,
-            format,
-            decrypt,
-            master_password,
-            include_passwords,
-        }) => dispatch_login_data(&path, format, decrypt, &master_password, include_passwords),
-        Some(Command::Autofill(a)) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
-        Some(Command::Session(a)) => run_artifact(&a.path, ArtifactType::Session, a.format),
-        Some(Command::Cache(a)) => run_artifact(&a.path, ArtifactType::Cache, a.format),
-        Some(Command::Cachestorage(a)) => run_cachestorage(&a.path, a.format),
         Some(Command::CacheCarve(a)) => run_cache_carve(&a.path, a.format),
         Some(Command::Reconstruct {
             path,
@@ -548,22 +524,7 @@ where
             url,
             format,
         }) => run_reconstruct(&path, &out, url.as_deref(), format),
-        Some(Command::Preferences(a)) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
-        Some(Command::Permissions(a)) => run_permissions(&a.path, a.format),
-        Some(Command::Credentials(a)) => run_credentials(&a.path, a.format),
         Some(Command::RecoveredDomains(a)) => run_recovered_domains(&a.path, a.format),
-        Some(Command::Storage(a)) => run_storage(&a.path, a.format),
-        Some(Command::Webcache(a)) => run_webcache(&a.path, a.format),
-        Some(Command::Indexeddb(a)) => run_indexeddb(&a.path, a.format),
-        Some(Command::Favicons(a)) => run_favicons(&a.path, a.format),
-        Some(Command::TopSites(a)) => run_top_sites(&a.path, a.format),
-        Some(Command::Shortcuts(a)) => run_shortcuts(&a.path, a.format),
-        Some(Command::Predictor(a)) => run_predictor(&a.path, a.format),
-        Some(Command::MediaHistory(a)) => run_media_history(&a.path, a.format),
-        Some(Command::ExtensionCookies(a)) => run_extension_cookies(&a.path, a.format),
-        Some(Command::TypedInput(a)) => run_typed_input(&a.path, a.format),
-        Some(Command::Annotations(a)) => run_annotations(&a.path, a.format),
-        Some(Command::DeletedBookmarks(a)) => run_deleted_bookmarks(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -643,6 +604,239 @@ where
         }) => run_graph(&path, format, out.as_deref(), window),
         Some(Command::Schema) => run_schema(),
     }
+}
+
+/// Handle `br4n6 artifact …`: `--list` tabulates the primitives; otherwise the
+/// selected primitive routes to its existing handler. With neither, guide the
+/// user to `--list` rather than fail silently.
+fn run_artifact_command(list: bool, kind: Option<ArtifactKind>) -> Result<()> {
+    if list {
+        return run_artifact_list();
+    }
+    match kind {
+        Some(k) => dispatch_artifact(k),
+        None => anyhow::bail!(
+            "no artifact selected — run `br4n6 artifact --list` to see every primitive, \
+             or `br4n6 artifact <NAME> <PATH>` to parse one"
+        ),
+    }
+}
+
+/// Route one `artifact` primitive to the same handler its former flat command
+/// called. Behavior-preserving: this is a routing move, not a rewrite.
+fn dispatch_artifact(kind: ArtifactKind) -> Result<()> {
+    match kind {
+        ArtifactKind::History {
+            path,
+            no_collapse,
+            search,
+            format,
+        } => run_history(&path, no_collapse, search.as_deref(), format),
+        ArtifactKind::Sessions {
+            path,
+            search,
+            format,
+        } => run_sessions(&path, search.as_deref(), format),
+        ArtifactKind::Cookies {
+            path,
+            format,
+            decrypt_macos,
+            keychain_service,
+            decrypt_win,
+            local_state,
+            dpapi_masterkey,
+            dpapi_password,
+            dpapi_sid,
+            dpapi_masterkey_file,
+        } => dispatch_cookies(
+            &path,
+            format,
+            decrypt_macos,
+            &keychain_service,
+            CookieWinDecrypt {
+                enabled: decrypt_win,
+                local_state,
+                dpapi_masterkey,
+                dpapi_password,
+                dpapi_sid,
+                dpapi_masterkey_file,
+            },
+        ),
+        ArtifactKind::Downloads(a) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
+        ArtifactKind::Bookmarks(a) => run_artifact(&a.path, ArtifactType::Bookmarks, a.format),
+        ArtifactKind::Extensions(a) => run_artifact(&a.path, ArtifactType::Extensions, a.format),
+        ArtifactKind::Logins {
+            path,
+            format,
+            decrypt,
+            master_password,
+            include_passwords,
+        } => dispatch_login_data(&path, format, decrypt, &master_password, include_passwords),
+        ArtifactKind::Autofill(a) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
+        ArtifactKind::Session(a) => run_artifact(&a.path, ArtifactType::Session, a.format),
+        ArtifactKind::Cache(a) => run_artifact(&a.path, ArtifactType::Cache, a.format),
+        ArtifactKind::Cachestorage(a) => run_cachestorage(&a.path, a.format),
+        ArtifactKind::Preferences(a) => run_artifact(&a.path, ArtifactType::Preferences, a.format),
+        ArtifactKind::Permissions(a) => run_permissions(&a.path, a.format),
+        ArtifactKind::Credentials(a) => run_credentials(&a.path, a.format),
+        ArtifactKind::Storage(a) => run_storage(&a.path, a.format),
+        ArtifactKind::Webcache(a) => run_webcache(&a.path, a.format),
+        ArtifactKind::Indexeddb(a) => run_indexeddb(&a.path, a.format),
+        ArtifactKind::Favicons(a) => run_favicons(&a.path, a.format),
+        ArtifactKind::TopSites(a) => run_top_sites(&a.path, a.format),
+        ArtifactKind::Shortcuts(a) => run_shortcuts(&a.path, a.format),
+        ArtifactKind::NetworkActionPredictor(a) => run_predictor(&a.path, a.format),
+        ArtifactKind::MediaHistory(a) => run_media_history(&a.path, a.format),
+        ArtifactKind::ExtensionCookies(a) => run_extension_cookies(&a.path, a.format),
+        ArtifactKind::TypedInput(a) => run_typed_input(&a.path, a.format),
+        ArtifactKind::Annotations(a) => run_annotations(&a.path, a.format),
+        ArtifactKind::DeletedBookmarks(a) => run_deleted_bookmarks(&a.path, a.format),
+    }
+}
+
+/// The artifact catalog printed by `br4n6 artifact --list`:
+/// `(name, browser family, what it records)`. "What it records" states the
+/// artifact as recorded — never that a user deliberately performed the action.
+const ARTIFACT_CATALOG: &[(&str, &str, &str)] = &[
+    (
+        "history",
+        "Chromium/Firefox/Safari",
+        "URLs visited, with timestamps and transition type",
+    ),
+    (
+        "sessions",
+        "Chromium/Firefox",
+        "open and recently-closed tabs",
+    ),
+    (
+        "cookies",
+        "Chromium/Firefox",
+        "cookie names and domains; values decrypted opt-in only",
+    ),
+    (
+        "downloads",
+        "Chromium/Firefox",
+        "downloaded files: source URL, target path, timing",
+    ),
+    (
+        "bookmarks",
+        "Chromium/Firefox",
+        "bookmarked URLs and folder structure",
+    ),
+    (
+        "extensions",
+        "Chromium/Firefox",
+        "installed extensions: id, name, permissions",
+    ),
+    (
+        "logins",
+        "Chromium/Firefox",
+        "saved login origins/usernames; secrets opt-in only",
+    ),
+    ("autofill", "Chromium/Firefox", "saved form-field values"),
+    (
+        "session",
+        "Chromium/Firefox",
+        "session-store tabs and navigation entries",
+    ),
+    (
+        "cache",
+        "Chromium/Firefox/Safari",
+        "cached HTTP responses: URL, headers, timing",
+    ),
+    (
+        "cachestorage",
+        "Chromium",
+        "Service Worker Cache API responses",
+    ),
+    (
+        "preferences",
+        "Chromium/Firefox",
+        "browser/profile settings",
+    ),
+    (
+        "permissions",
+        "Chromium/Firefox",
+        "per-site permission grants",
+    ),
+    (
+        "credentials",
+        "Chromium",
+        "stored account/payment metadata (never decrypted)",
+    ),
+    (
+        "storage",
+        "Chromium/Firefox",
+        "Local/Session Storage and IndexedDB records",
+    ),
+    (
+        "webcache",
+        "IE/Edge-Legacy",
+        "history, cookies, cached content, DOM storage (ESE)",
+    ),
+    (
+        "indexeddb",
+        "Chromium",
+        "IndexedDB database/store names, keys, values",
+    ),
+    (
+        "favicons",
+        "Chromium",
+        "favicon page_url source (visited URLs)",
+    ),
+    (
+        "top-sites",
+        "Chromium",
+        "most-visited / frecency-ranked sites",
+    ),
+    ("shortcuts", "Chromium", "omnibox strings the user typed"),
+    (
+        "network-action-predictor",
+        "Chromium",
+        "partial typed strings (autocomplete predictor)",
+    ),
+    ("media-history", "Chromium", "audio/video playback records"),
+    (
+        "extension-cookies",
+        "Chromium",
+        "extension-scoped cookie jar",
+    ),
+    (
+        "typed-input",
+        "Firefox",
+        "strings typed into the address bar",
+    ),
+    ("annotations", "Firefox", "page annotations (moz_annos)"),
+    (
+        "deleted-bookmarks",
+        "Firefox",
+        "bookmarks in a backup but absent now (consistent with deletion)",
+    ),
+];
+
+/// Print the artifact catalog as a markdown-clean, space-aligned table (no
+/// box-drawing, survives paste). Columns: NAME, BROWSER, RECORDS.
+///
+/// # Errors
+/// Never fails; returns `Result` for a uniform handler signature.
+fn run_artifact_list() -> Result<()> {
+    let name_w = ARTIFACT_CATALOG
+        .iter()
+        .map(|(n, _, _)| n.len())
+        .chain(std::iter::once("NAME".len()))
+        .max()
+        .unwrap_or(4);
+    let fam_w = ARTIFACT_CATALOG
+        .iter()
+        .map(|(_, f, _)| f.len())
+        .chain(std::iter::once("BROWSER".len()))
+        .max()
+        .unwrap_or(7);
+    println!("{:<name_w$}  {:<fam_w$}  RECORDS", "NAME", "BROWSER");
+    for (name, family, records) in ARTIFACT_CATALOG {
+        println!("{name:<name_w$}  {family:<fam_w$}  {records}");
+    }
+    Ok(())
 }
 
 /// Emit the `BrowserEvent` JSON Schema to stdout as pretty-printed JSON.
