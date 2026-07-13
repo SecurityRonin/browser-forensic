@@ -102,7 +102,7 @@ fn markdown_table_is_char_safe_on_multibyte_values() {
 fn markdown_table_pads_short_rows_without_panicking() {
     // A row with fewer cells than headers must not panic and stays aligned.
     let table = output::markdown_table(&["A", "B", "C"], &[vec!["x".into()]]);
-    assert!(table.contains("x"));
+    assert!(table.contains('x'));
 }
 
 // ---- color as a TTY-only cue; severity word always printed ----
