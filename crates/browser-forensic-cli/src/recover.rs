@@ -49,14 +49,67 @@ fn attr_str<'a>(event: &'a BrowserEvent, key: &str) -> Option<&'a str> {
     event.attrs.get(key).and_then(serde_json::Value::as_str)
 }
 
+/// Compact, full-value summary of a carved row's recovered columns (never
+/// ellipsized — a truncated value is destroyed evidence).
+fn carved_fields_summary(record: &browser_forensic_carve::CarvedRecord) -> String {
+    serde_json::to_string(&record.fields).unwrap_or_else(|_| "{}".to_string())
+}
+
 /// Deleted-record findings from SQLite free-page / WAL carving. Each carved row
 /// is a *recovered deleted record* — state is never `Live` — hedged as
 /// consistent-with routine deletion (VACUUM, history expiry, sync), not proof of
 /// a deliberate user act.
 #[must_use]
 pub fn carved_record_findings(records: &[browser_forensic_carve::CarvedRecord]) -> Vec<Finding> {
-    let _ = records;
-    Vec::new()
+    use browser_forensic_carve::{RecoveryMethod, RecoveryQuality};
+    records
+        .iter()
+        .map(|rec| {
+            // Free-space / direct-scan residue is precisely "carved"; WAL /
+            // rollback-journal residue is an uncommitted-then-deleted record.
+            let state = match rec.method {
+                RecoveryMethod::WalUncommitted | RecoveryMethod::JournalRollback => {
+                    EvidenceState::Deleted
+                }
+                RecoveryMethod::FreePage | RecoveryMethod::DirectScan => EvidenceState::Carved,
+            };
+            let confidence = match rec.quality {
+                RecoveryQuality::Complete => Confidence::Medium,
+                RecoveryQuality::Partial | RecoveryQuality::Corrupt => Confidence::Low,
+            };
+            let substrate = match rec.method {
+                RecoveryMethod::FreePage => "a SQLite free (deallocated) page",
+                RecoveryMethod::WalUncommitted => "an uncommitted WAL frame",
+                RecoveryMethod::JournalRollback => "a rollback journal",
+                RecoveryMethod::DirectScan => "a raw byte-pattern scan",
+            };
+            let provenance = Provenance::new(
+                EvidenceSource::Carved,
+                state,
+                TimestampBasis::None,
+                UserActionClaim::Unknown,
+            );
+            Finding::new(
+                Priority::Medium,
+                confidence,
+                "recover.carve.deleted_record.v1",
+                format!(
+                    "consistent with a record deleted from the `{table}` table and recovered \
+                     from {substrate}; deletion may be routine (VACUUM, history expiry, profile \
+                     sync) — not proof of a deliberate user act",
+                    table = rec.table
+                ),
+                provenance,
+                format!(
+                    "{table} deleted row @offset {offset}: {fields}",
+                    table = rec.table,
+                    offset = rec.offset,
+                    fields = carved_fields_summary(rec)
+                ),
+            )
+            .with_next("br4n6 recover <PATH> --format jsonl")
+        })
+        .collect()
 }
 
 /// Orphaned/evicted cache findings from `cache-carve`. The input events are the
@@ -65,8 +118,43 @@ pub fn carved_record_findings(records: &[browser_forensic_carve::CarvedRecord]) 
 /// artifact (state `Deleted`), never a deliberate deletion.
 #[must_use]
 pub fn cache_carve_findings(events: &[BrowserEvent]) -> Vec<Finding> {
-    let _ = events;
-    Vec::new()
+    events
+        .iter()
+        .map(|e| {
+            let quality = attr_str(e, "recovery_quality").unwrap_or("partial");
+            let confidence = if quality == "full" {
+                Confidence::Medium
+            } else {
+                Confidence::Low
+            };
+            let mechanism = attr_str(e, "recovery_mechanism").unwrap_or("cache carve");
+            let note = attr_str(e, "recovery_note").unwrap_or(
+                "consistent with a cached response no longer referenced by the live index",
+            );
+            let provenance = Provenance::new(
+                EvidenceSource::Cache,
+                EvidenceState::Deleted,
+                TimestampBasis::SurroundingPage,
+                UserActionClaim::ObservedString,
+            );
+            Finding::new(
+                Priority::Info,
+                confidence,
+                "recover.cache_carve.evicted.v1",
+                format!(
+                    "{note}; a cached-then-evicted artifact — cache eviction is routine and does \
+                     not by itself establish a deliberate deletion"
+                ),
+                provenance,
+                format!(
+                    "{url} (mechanism {mechanism}, quality {quality})",
+                    url = e.description
+                ),
+            )
+            .with_browser(e.browser.clone())
+            .with_next("br4n6 recover <PATH> --format jsonl")
+        })
+        .collect()
 }
 
 /// Recovered-domain findings (Network Persistent State / NEL / DIPS / HSTS): a
@@ -75,8 +163,34 @@ pub fn cache_carve_findings(events: &[BrowserEvent]) -> Vec<Finding> {
 /// navigation); it may be a subresource/third-party.
 #[must_use]
 pub fn recovered_domain_findings(events: &[BrowserEvent]) -> Vec<Finding> {
-    let _ = events;
-    Vec::new()
+    events
+        .iter()
+        .map(|e| {
+            let domain = attr_str(e, "domain").unwrap_or(&e.description);
+            let source_artifact =
+                attr_str(e, "source_artifact").unwrap_or("a network/state artifact");
+            let provenance = Provenance::new(
+                EvidenceSource::Recovered,
+                EvidenceState::Inferred,
+                TimestampBasis::Inferred,
+                UserActionClaim::Unknown,
+            );
+            Finding::new(
+                Priority::Info,
+                Confidence::Low,
+                "recover.recovered_domain.v1",
+                format!(
+                    "consistent with contact to `{domain}` recovered from {source_artifact}, which \
+                     survives a history clear; contact may be a subresource/third-party, not a \
+                     deliberate navigation"
+                ),
+                provenance,
+                format!("{domain} (recovered from {source_artifact})"),
+            )
+            .with_browser(e.browser.clone())
+            .with_next("br4n6 recover <PATH> --format jsonl")
+        })
+        .collect()
 }
 
 /// Deleted-bookmark findings: a bookmark present in a Firefox backup but absent
@@ -84,25 +198,124 @@ pub fn recovered_domain_findings(events: &[BrowserEvent]) -> Vec<Finding> {
 /// backup — routine reorganization is an innocent alternative.
 #[must_use]
 pub fn deleted_bookmark_findings(events: &[BrowserEvent]) -> Vec<Finding> {
-    let _ = events;
-    Vec::new()
+    events
+        .iter()
+        .map(|e| {
+            let url = attr_str(e, "url").unwrap_or(&e.description);
+            let provenance = Provenance::new(
+                EvidenceSource::History,
+                EvidenceState::Deleted,
+                TimestampBasis::Explicit,
+                UserActionClaim::Unknown,
+            );
+            Finding::new(
+                Priority::Medium,
+                Confidence::Medium,
+                "recover.deleted_bookmark.v1",
+                "consistent with a bookmark present in a Firefox backup but absent from the \
+                 current set — deleted after that backup; deletion may be routine reorganization, \
+                 not proof of concealment",
+                provenance,
+                url.to_string(),
+            )
+            .with_browser(e.browser.clone())
+            .with_next("br4n6 artifact deleted-bookmarks <PATH>")
+        })
+        .collect()
 }
 
 /// Tamper / anti-forensic findings from integrity indicators. History-clearing
 /// variants are the top attention cue (`High`); other anomalies are `Medium`.
 /// Each keeps the integrity crate's own observation + innocent alternative.
+/// The serde variant tag of an integrity indicator (e.g. `"HistoryCleared"`),
+/// taken from its JSON object key so it stays in sync with the type.
+fn indicator_tag(indicator: &IntegrityIndicator) -> String {
+    match serde_json::to_value(indicator) {
+        Ok(serde_json::Value::Object(map)) => map
+            .keys()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| "Unknown".into()),
+        Ok(serde_json::Value::String(s)) => s,
+        _ => "Unknown".to_string(),
+    }
+}
+
+/// Integrity variants that indicate history *clearing* or mass deletion — the
+/// top attention cues (`High`), vs. lower-priority anomalies (`Medium`).
+fn is_clearing_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "HistoryCleared" | "AutoIncrementGap" | "HistoryTombstoneFound" | "SqliteSequenceGap"
+    )
+}
+
 #[must_use]
 pub fn tamper_findings(indicators: &[IntegrityIndicator]) -> Vec<Finding> {
-    let _ = indicators;
-    Vec::new()
+    indicators
+        .iter()
+        .map(|ind| {
+            let tag = indicator_tag(ind);
+            let clearing = is_clearing_tag(&tag);
+            let priority = if clearing {
+                Priority::High
+            } else {
+                Priority::Medium
+            };
+            let state = if clearing {
+                EvidenceState::Deleted
+            } else {
+                EvidenceState::Inferred
+            };
+            let provenance = Provenance::new(
+                EvidenceSource::History,
+                state,
+                TimestampBasis::None,
+                UserActionClaim::Unknown,
+            );
+            Finding::new(
+                priority,
+                Confidence::Medium,
+                format!("recover.tamper.{tag}.v1"),
+                format!(
+                    "consistent with clearing/tampering; innocent alternative: {}",
+                    ind.innocent_alternative()
+                ),
+                provenance,
+                ind.observation(),
+            )
+            .with_next("br4n6 integrity <PATH>")
+        })
+        .collect()
 }
 
 /// Memory-carve findings: browser artifacts (URLs, cookies) recovered from a RAM
 /// capture. State is `Carved`; a string in RAM is not proof a human acted on it.
 #[must_use]
 pub fn memory_findings(events: &[BrowserEvent]) -> Vec<Finding> {
-    let _ = events;
-    Vec::new()
+    events
+        .iter()
+        .map(|e| {
+            let datum = attr_str(e, "url").unwrap_or(&e.description);
+            let provenance = Provenance::new(
+                EvidenceSource::Memory,
+                EvidenceState::Carved,
+                TimestampBasis::None,
+                UserActionClaim::ObservedString,
+            );
+            Finding::new(
+                Priority::Info,
+                Confidence::Low,
+                "recover.memory.carved.v1",
+                "consistent with a browser artifact present in process memory at capture time; a \
+                 string in RAM is not proof a human acted on it",
+                provenance,
+                datum.to_string(),
+            )
+            .with_browser(e.browser.clone())
+            .with_next("br4n6 recover <MEMORY-IMAGE> --format jsonl")
+        })
+        .collect()
 }
 
 /// The always-present skipped-work footer for a scope (RFC 0001 D2). Names what
@@ -110,8 +323,69 @@ pub fn memory_findings(events: &[BrowserEvent]) -> Vec<Finding> {
 /// is never false reassurance.
 #[must_use]
 pub fn recover_footer(scope: RecoverScope, path_display: &str) -> String {
-    let _ = (scope, path_display);
-    String::new()
+    match scope {
+        RecoverScope::Profile => format!(
+            "Not attempted: memory was NOT scanned (no image supplied) and whole-image / \
+             physical-disk carving was NOT run. This run covered profile recovery over \
+             {path_display}: deleted SQLite/WAL records, orphaned cache, recovered domains, \
+             deleted bookmarks, and tamper indicators. For RAM: br4n6 recover <memory-image>; \
+             for a whole disk: br4n6 image <disk-image>"
+        ),
+        RecoverScope::Database => format!(
+            "Not attempted: memory, orphaned-cache recovery, recovered domains, and deleted \
+             bookmarks were NOT scanned (single-database scope), and whole-image carving was NOT \
+             run. This run carved deleted SQLite/WAL records and checked tamper indicators over \
+             {path_display}. For the full set, point recover at the profile directory."
+        ),
+        RecoverScope::MemoryImage => format!(
+            "Not attempted: profile recovery (deleted SQLite/WAL records, orphaned cache, \
+             recovered domains, deleted bookmarks, tamper indicators) was NOT run over a memory \
+             image, and whole-image carving was NOT run. This run carved browser artifacts from \
+             RAM over {path_display}. For on-disk profiles: br4n6 recover <profile-dir>"
+        ),
+    }
+}
+
+/// The scope header line — what `recover` auto-selected and ran (resolved-decision
+/// #2: the examiner chose no submode).
+#[must_use]
+fn scope_header(scope: RecoverScope, path_display: &str) -> String {
+    match scope {
+        RecoverScope::Profile => format!(
+            "Recovering (profile scope): deleted SQLite/WAL records, orphaned cache, recovered \
+             domains, deleted bookmarks, tamper indicators — {path_display}"
+        ),
+        RecoverScope::Database => format!(
+            "Recovering (single-database scope): deleted SQLite/WAL records + tamper indicators \
+             — {path_display}"
+        ),
+        RecoverScope::MemoryImage => {
+            format!(
+                "Recovering (memory-image scope): process-attributed RAM carve — {path_display}"
+            )
+        }
+    }
+}
+
+/// Colorize a rendered finding's `Priority:` value line as a TTY cue (the
+/// severity word is always printed by [`Finding::render`]; color is additive).
+fn colorize_priority_line(block: &str, priority: Priority) -> String {
+    let ansi = match priority {
+        Priority::High => crate::output::ANSI_RED,
+        Priority::Medium => crate::output::ANSI_YELLOW,
+        Priority::Info => crate::output::ANSI_CYAN,
+    };
+    block
+        .lines()
+        .map(|line| {
+            if let Some(rest) = line.strip_prefix("Priority:") {
+                format!("Priority:{}", crate::output::paint(rest, ansi, true))
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The full human (TTY) render: a scope header, the priority-cue note, the ranked
@@ -123,8 +397,37 @@ pub fn render_summary(
     path_display: &str,
     color: bool,
 ) -> String {
-    let _ = (findings, scope, path_display, color);
-    String::new()
+    let mut out = String::new();
+    out.push_str(&scope_header(scope, path_display));
+    out.push_str("\n\n");
+    out.push_str(PRIORITY_CUE_NOTE);
+    out.push_str("\n\n");
+
+    if findings.is_empty() {
+        out.push_str("No recoverable items surfaced at this scope.\n\n");
+    } else {
+        let visible = findings.len().min(MAX_VISIBLE_FINDINGS);
+        for finding in &findings[..visible] {
+            let block = finding.render();
+            if color {
+                out.push_str(&colorize_priority_line(&block, finding.priority));
+                out.push('\n');
+            } else {
+                out.push_str(&block);
+            }
+            out.push('\n');
+        }
+        if findings.len() > visible {
+            out.push_str(&format!(
+                "… {} more recovered item(s) not shown, ranked by Priority.\n\n",
+                findings.len() - visible
+            ));
+        }
+    }
+
+    out.push_str(&recover_footer(scope, path_display));
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]
