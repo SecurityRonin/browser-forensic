@@ -119,18 +119,23 @@ struct Located {
     browser: BrowserFamily,
 }
 
+/// A filesystem path as raw byte components (names are not guaranteed UTF-8).
+type BytePath = Vec<Vec<u8>>;
+/// A directory's immediate children: `(name, is_dir)` pairs.
+type ChildList = Vec<(Vec<u8>, bool)>;
+
 /// Index over a walk: which paths exist (and whether each is a directory).
 struct PathIndex {
     /// path -> is_dir
-    kinds: HashMap<Vec<Vec<u8>>, bool>,
+    kinds: HashMap<BytePath, bool>,
     /// parent path -> its immediate children (name, is_dir)
-    children: HashMap<Vec<Vec<u8>>, Vec<(Vec<u8>, bool)>>,
+    children: HashMap<BytePath, ChildList>,
 }
 
 impl PathIndex {
     fn build(nodes: &[Node]) -> Self {
         let mut kinds = HashMap::new();
-        let mut children: HashMap<Vec<Vec<u8>>, Vec<(Vec<u8>, bool)>> = HashMap::new();
+        let mut children: HashMap<BytePath, ChildList> = HashMap::new();
         for n in nodes {
             kinds.insert(n.path.clone(), n.is_dir);
             if let Some((name, parent)) = n.path.split_last() {
@@ -194,10 +199,6 @@ impl PathIndex {
 /// marker set does not cover). Chromium is tested first, then Firefox, then
 /// Safari; a directory is emitted at most once.
 fn locate_profiles(nodes: &[Node], index: &PathIndex) -> Vec<Located> {
-    // TDD RED stub — real marker-based location implemented in the GREEN commit.
-    let _ = (nodes, index);
-    return Vec::new();
-    #[allow(unreachable_code)]
     let mut out = Vec::new();
     for n in nodes {
         if !n.is_dir {
@@ -297,13 +298,11 @@ fn materialize_profile(
         let mut target = dest.to_path_buf();
         let mut safe = true;
         for comp in rel {
-            match safe_component(comp) {
-                Some(p) => target.push(p),
-                None => {
-                    safe = false;
-                    break;
-                }
-            }
+            let Some(p) = safe_component(comp) else {
+                safe = false;
+                break;
+            };
+            target.push(p);
         }
         if !safe {
             continue;
@@ -399,16 +398,13 @@ fn ingest_fs_counted(
 
         let user = user_of(&prof.dir);
         let profile_path = path_string(&prof.dir);
-        match triage_profile(&dest, prof.browser.clone()) {
-            Ok(report) => {
-                for mut ev in report.events {
-                    stamp(&mut ev, image, volume, user.as_deref(), &profile_path);
-                    events.push(ev);
-                }
+        // Per-profile degrade: a parse failure on one profile does not sink the
+        // volume — its events are simply absent.
+        if let Ok(report) = triage_profile(&dest, prof.browser.clone()) {
+            for mut ev in report.events {
+                stamp(&mut ev, image, volume, user.as_deref(), &profile_path);
+                events.push(ev);
             }
-            // Per-profile degrade: a parse failure on one profile does not sink
-            // the volume.
-            Err(_) => continue,
         }
     }
     events.sort_by_key(|e| e.timestamp_ns);
@@ -790,7 +786,7 @@ mod tests {
             hit.attrs.get("br4n6:user").and_then(|v| v.as_str()),
             Some("alice")
         );
-        assert!(hit.attrs.get("br4n6:profile_path").is_some());
+        assert!(hit.attrs.contains_key("br4n6:profile_path"));
     }
 
     #[test]
