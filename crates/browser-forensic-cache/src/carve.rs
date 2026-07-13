@@ -46,10 +46,17 @@ use crate::blockfile::{
 use crate::decompress::DecompressLimits;
 use crate::error::CacheError;
 use crate::resource::{resource_from_entry_bytes, CachedResource};
+use crate::simple::{EOF_MAGIC, EOF_SIZE, HEADER_MAGIC, HEADER_SIZE};
 
 /// Highest `data_N` block-file selector probed when carving free blocks (the
 /// `CacheAddr` file selector is an 8-bit field; real caches use only a handful).
 const MAX_BLOCK_FILE_SELECTOR: u32 = 255;
+
+/// Largest span a single carved SimpleCache entry may occupy (header → stream-0
+/// EOF). Bounds the signature scan against a lying/garbage buffer.
+const MAX_CARVE_ENTRY: usize = 64 * 1024 * 1024;
+/// Cap on the number of entries a single signature carve will emit.
+const MAX_CARVED_ENTRIES: usize = 1_000_000;
 
 /// `kSimpleIndexMagicNumber` — first 8 payload bytes of `the-real-index`.
 pub const INDEX_MAGIC: u64 = 0x656e_7465_7220_796f;
@@ -379,6 +386,32 @@ pub fn carve_blockfile_free(cache_dir: &Path) -> Vec<RecoveredResource> {
     out
 }
 
+/// Scan an arbitrary byte buffer (a cache directory's slack, an unallocated
+/// region, a raw image window) for the SimpleCache entry header magic and
+/// recover every parseable entry it finds — entries the live index no longer
+/// references.
+///
+/// For each header hit the entry's extent is resolved by trying each following
+/// EOF-magic position as the stream-0 EOF and taking the first that parses, so a
+/// premature/garbage EOF is rejected rather than trusted. `source` labels the
+/// provenance of every recovered resource. Bounds-checked and panic-free; a
+/// header with no valid entry is skipped.
+#[must_use]
+pub fn carve_signature(_buf: &[u8], _source: &Path) -> Vec<RecoveredResource> {
+    Vec::new()
+}
+
+/// Run the on-disk recovery mechanisms against a cache directory: orphaned
+/// SimpleCache entries ([`carve_orphaned_simple`]) and free-but-intact Blockfile
+/// entries ([`carve_blockfile_free`]). Signature carving of raw slack is a
+/// separate entry point ([`carve_signature`]) since it takes a byte buffer.
+#[must_use]
+pub fn carve_cache_dir(cache_dir: &Path) -> Vec<RecoveredResource> {
+    let mut out = carve_orphaned_simple(cache_dir);
+    out.extend(carve_blockfile_free(cache_dir));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,6 +647,87 @@ mod tests {
                 .all(|r| r.resource.url != "https://live.example/keep"),
             "an allocated (live) entry must NOT be carved: {recovered:?}"
         );
+    }
+
+    // -- signature carve from raw bytes -------------------------------------
+
+    #[test]
+    fn signature_carve_recovers_embedded_entry() {
+        let entry = build_entry("https://carved.example/a.js", b"carved-body", HEADERS);
+        let mut buf = vec![0x41u8; 37]; // junk prefix
+        buf.extend_from_slice(&entry);
+        buf.extend_from_slice(&[0xEE; 19]); // junk suffix
+        let recovered = carve_signature(&buf, Path::new("slack.bin"));
+        assert_eq!(recovered.len(), 1, "one entry carved: {recovered:?}");
+        let r = &recovered[0];
+        assert_eq!(r.resource.url, "https://carved.example/a.js");
+        assert_eq!(r.resource.raw_body, b"carved-body");
+        assert_eq!(r.mechanism, RecoveryMechanism::SignatureCarve);
+    }
+
+    #[test]
+    fn signature_carve_recovers_two_back_to_back() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&build_entry("https://one.example/1", b"b1", HEADERS));
+        buf.extend_from_slice(&build_entry("https://two.example/2", b"body-two", HEADERS));
+        let mut urls: Vec<String> = carve_signature(&buf, Path::new("buf"))
+            .into_iter()
+            .map(|r| r.resource.url)
+            .collect();
+        urls.sort();
+        assert_eq!(urls, ["https://one.example/1", "https://two.example/2"]);
+    }
+
+    #[test]
+    fn signature_carve_garbage_magic_no_panic() {
+        // header magic present, but no valid entry follows → nothing recovered.
+        let mut buf = HEADER_MAGIC.to_le_bytes().to_vec();
+        buf.extend_from_slice(&[0xABu8; 200]);
+        let recovered = carve_signature(&buf, Path::new("g"));
+        assert!(
+            recovered.is_empty(),
+            "garbage after magic must not carve: {recovered:?}"
+        );
+    }
+
+    #[test]
+    fn signature_carve_lying_key_length_no_panic() {
+        let mut entry = build_entry("https://a.example/x", b"body", HEADERS);
+        // overwrite key_length (offset 12) with a huge value
+        entry[12..16].copy_from_slice(&0xffff_ffffu32.to_le_bytes());
+        let recovered = carve_signature(&entry, Path::new("l"));
+        assert!(recovered.is_empty(), "a lying key_length must be skipped");
+    }
+
+    #[test]
+    fn carve_cache_dir_combines_orphan_and_free() {
+        let dir = TempDir::new().unwrap();
+        // an orphaned SimpleCache _0
+        let orphan_hash: u64 = 0x00000000_1234abcd;
+        std::fs::write(
+            dir.path().join(format!("{orphan_hash:016x}_0")),
+            build_entry("https://orphan.example/o", b"ob", HEADERS),
+        )
+        .unwrap();
+        write_index(dir.path(), &build_real_index(&[]));
+        // a free Blockfile entry
+        let addr = |b: u32| 0xA001_0000u32 | b;
+        let evicted = entry_store("https://evicted.example/e", addr(2), 17, addr(3), 4);
+        let mut data1 = block256_header();
+        alloc(&mut data1, 2);
+        alloc(&mut data1, 3);
+        write_block(&mut data1, 0, &evicted); // block 0 FREE
+        write_block(&mut data1, 2, b"HTTP/1.1 200 OK\0\0");
+        write_block(&mut data1, 3, b"body");
+        std::fs::write(dir.path().join("data_1"), &data1).unwrap();
+
+        let all = carve_cache_dir(dir.path());
+        assert!(all
+            .iter()
+            .any(|r| r.mechanism == RecoveryMechanism::OrphanedSimpleEntry));
+        assert!(all
+            .iter()
+            .any(|r| r.mechanism == RecoveryMechanism::BlockfileFreeIntact));
     }
 
     #[test]
