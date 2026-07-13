@@ -774,7 +774,6 @@ fn run_profile_loop(
 ) -> Result<(browser_forensic_triage::TriageReport, Option<Interrupted>)> {
     use std::sync::atomic::Ordering;
 
-    let _ = &checkpoint; // RED stub: checkpoint skip/record not yet wired.
     let total = profiles.len();
     let mut report = empty_report_now();
     let mut interrupted = None;
@@ -786,8 +785,29 @@ fn run_profile_loop(
             interrupted = Some(Interrupted { done: index, total });
             break;
         }
+        let key = unit_key(profile);
+
+        // Resume: reuse a completed unit's persisted fragment instead of
+        // re-parsing it, so the merged result equals an uninterrupted run.
+        if let Some(unit) = checkpoint
+            .as_ref()
+            .and_then(|session| session.completed_unit(&key))
+        {
+            report.events.extend(unit.events.iter().cloned());
+            report.integrity.extend(unit.integrity.iter().cloned());
+            progress.set_profile(index + 1, total);
+            continue;
+        }
+
         progress.set_profile(index, total);
-        let mut frag = collect_one_profile(profile, tier, progress)?;
+        let frag = collect_one_profile(profile, tier, progress)?;
+        // Persist the completed unit's summary-relevant fragment (events +
+        // integrity) atomically before merging, so a crash right here still
+        // leaves a consistent, resumable checkpoint.
+        if let Some(session) = checkpoint.as_mut() {
+            session.record(&key, frag.events.clone(), frag.integrity.clone())?;
+        }
+        let mut frag = frag;
         report.events.append(&mut frag.events);
         report.integrity.append(&mut frag.integrity);
         report.carved.append(&mut frag.carved);
@@ -5643,8 +5663,11 @@ mod tests {
             "baseline sees both downloads"
         );
 
-        // Run 1: interrupt after profile A → checkpoint records unit A.
-        let cp_path = dir.path().join(".cp.json");
+        // Run 1: interrupt after profile A → checkpoint records unit A. The
+        // checkpoint lives OUTSIDE the evidence root: writing it inside would
+        // churn the evidence directory's mtime and invalidate its fingerprint.
+        let cp_dir = tempfile::TempDir::new().unwrap();
+        let cp_path = cp_dir.path().join("run.cp.json");
         let (s1, _) = crate::checkpoint::CheckpointSession::resume_or_new(
             &cp_path,
             crate::checkpoint::fingerprint(dir.path()),

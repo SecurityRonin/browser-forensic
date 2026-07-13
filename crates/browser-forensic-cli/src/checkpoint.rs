@@ -44,11 +44,26 @@ pub struct EvidenceFingerprint {
 /// Fingerprint the evidence root cheaply (one `stat`, no content read).
 #[must_use]
 pub fn fingerprint(path: &Path) -> EvidenceFingerprint {
-    let _ = path;
+    let root = std::fs::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string();
+    let (len, mtime_ns) = match std::fs::metadata(path) {
+        Ok(md) => {
+            let len = md.is_file().then(|| md.len());
+            let mtime_ns = md
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos() as i64);
+            (len, mtime_ns)
+        }
+        Err(_) => (None, None),
+    };
     EvidenceFingerprint {
-        root: String::new(), // RED stub
-        len: None,
-        mtime_ns: None,
+        root,
+        len,
+        mtime_ns,
     }
 }
 
@@ -100,8 +115,7 @@ impl Checkpoint {
     /// from it is safe.
     #[must_use]
     pub fn matches(&self, fingerprint: &EvidenceFingerprint, tier: &str) -> bool {
-        let _ = (fingerprint, tier);
-        true // RED stub — GREEN compares fingerprint + tier + version.
+        self.version == CHECKPOINT_VERSION && &self.fingerprint == fingerprint && self.tier == tier
     }
 
     /// Persist the checkpoint atomically (write a sibling temp file, then rename).
@@ -109,8 +123,14 @@ impl Checkpoint {
     /// # Errors
     /// Returns an error if the temp file cannot be written or the rename fails.
     pub fn write_atomic(&self, path: &Path) -> io::Result<()> {
-        let _ = (self, path);
-        Ok(()) // RED stub — GREEN writes temp + rename.
+        let data = serde_json::to_vec_pretty(self).map_err(io::Error::other)?;
+        // Same-directory temp keeps the rename atomic (a cross-filesystem rename
+        // is not). A pid suffix avoids clobbering a concurrent writer's temp.
+        let mut tmp = path.as_os_str().to_os_string();
+        tmp.push(format!(".tmp.{}", std::process::id()));
+        let tmp = PathBuf::from(tmp);
+        std::fs::write(&tmp, &data)?;
+        std::fs::rename(&tmp, path)
     }
 }
 
@@ -129,8 +149,19 @@ pub enum Load {
 /// caller can restart clean on either without crashing.
 #[must_use]
 pub fn load(path: &Path) -> Load {
-    let _ = path;
-    Load::Missing // RED stub
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Load::Missing,
+        Err(e) => return Load::Corrupt(format!("unreadable checkpoint: {e}")),
+    };
+    match serde_json::from_slice::<Checkpoint>(&bytes) {
+        Ok(cp) if cp.version == CHECKPOINT_VERSION => Load::Ok(Box::new(cp)),
+        Ok(cp) => Load::Corrupt(format!(
+            "unsupported checkpoint version {} (expected {CHECKPOINT_VERSION})",
+            cp.version
+        )),
+        Err(e) => Load::Corrupt(format!("malformed checkpoint: {e}")),
+    }
 }
 
 /// How a resume attempt resolved (drives the one-line stderr notice).
@@ -166,26 +197,65 @@ impl CheckpointSession {
         tier: &str,
         restart: bool,
     ) -> io::Result<(Self, Resumed)> {
-        let _ = (fingerprint, tier, restart);
-        // RED stub: always a fresh, empty session that records nothing useful.
-        Ok((
-            Self {
-                path: checkpoint_path.to_path_buf(),
-                checkpoint: Checkpoint::new(fingerprint_stub(), tier),
-                index: HashMap::new(),
-            },
-            Resumed::Fresh,
-        ))
+        let fresh = |resumed: Resumed| {
+            (
+                Self {
+                    path: checkpoint_path.to_path_buf(),
+                    checkpoint: Checkpoint::new(fingerprint.clone(), tier),
+                    index: HashMap::new(),
+                },
+                resumed,
+            )
+        };
+
+        if restart {
+            return Ok(fresh(Resumed::Fresh));
+        }
+
+        match load(checkpoint_path) {
+            Load::Missing => Ok(fresh(Resumed::Fresh)),
+            Load::Corrupt(reason) => Ok(fresh(Resumed::Restarted(format!(
+                "corrupt checkpoint: {reason}"
+            )))),
+            Load::Ok(cp) => {
+                if cp.matches(&fingerprint, tier) {
+                    let completed = cp.completed.len();
+                    let created_ns = cp.created_ns;
+                    let index = cp
+                        .completed
+                        .iter()
+                        .enumerate()
+                        .map(|(i, u)| (u.key.clone(), i))
+                        .collect();
+                    Ok((
+                        Self {
+                            path: checkpoint_path.to_path_buf(),
+                            checkpoint: *cp,
+                            index,
+                        },
+                        Resumed::Resumed {
+                            completed,
+                            created_ns,
+                        },
+                    ))
+                } else {
+                    Ok(fresh(Resumed::Restarted(
+                        "checkpoint is for different evidence or a different tier".to_string(),
+                    )))
+                }
+            }
+        }
     }
 
     /// The already-completed unit for `key`, if this run resumed one.
     #[must_use]
     pub fn completed_unit(&self, key: &str) -> Option<&CompletedUnit> {
-        let _ = key;
-        None // RED stub
+        self.index.get(key).map(|&i| &self.checkpoint.completed[i])
     }
 
     /// Record a freshly-completed unit and persist the checkpoint atomically.
+    /// Idempotent for a key already present (the run reuses it rather than
+    /// double-counting).
     ///
     /// # Errors
     /// Returns an error if the atomic write fails.
@@ -195,17 +265,17 @@ impl CheckpointSession {
         events: Vec<BrowserEvent>,
         integrity: Vec<IntegrityIndicator>,
     ) -> io::Result<()> {
-        let _ = (key, events, integrity);
-        Ok(()) // RED stub — GREEN appends + write_atomic.
-    }
-}
-
-/// Placeholder used only by the RED stub of [`CheckpointSession::resume_or_new`].
-fn fingerprint_stub() -> EvidenceFingerprint {
-    EvidenceFingerprint {
-        root: String::new(),
-        len: None,
-        mtime_ns: None,
+        if self.index.contains_key(key) {
+            return Ok(());
+        }
+        self.index
+            .insert(key.to_string(), self.checkpoint.completed.len());
+        self.checkpoint.completed.push(CompletedUnit {
+            key: key.to_string(),
+            events,
+            integrity,
+        });
+        self.checkpoint.write_atomic(&self.path)
     }
 }
 
