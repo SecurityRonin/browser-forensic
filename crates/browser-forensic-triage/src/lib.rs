@@ -26,8 +26,37 @@ pub struct TriageReport {
     pub generated_at_ns: i64,
 }
 
-/// Triage a single browser profile directory.
+/// Which recovery work a triage pass runs (RFC 0001 D2 tiering).
+///
+/// The default enables `carve`, matching the historic [`triage`] behavior. The
+/// `investigate --quick` tier sets `carve: false` to run live-artifact parsing
+/// and cheap integrity checks only, skipping bounded deleted-record recovery
+/// (SQLite freelist / WAL carving of the parsed DBs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TriageOptions {
+    /// Run bounded deleted-record recovery (SQLite freelist / WAL carving of the
+    /// parsed databases). Off for a quick, live-artifacts-only pass.
+    pub carve: bool,
+}
+
+impl Default for TriageOptions {
+    fn default() -> Self {
+        Self { carve: true }
+    }
+}
+
+/// Triage a single browser profile directory (carving enabled).
 pub fn triage_profile(profile_path: &Path, browser: BrowserFamily) -> Result<TriageReport> {
+    triage_profile_with_options(profile_path, browser, TriageOptions::default())
+}
+
+/// Triage a single browser profile directory under an explicit [`TriageOptions`]
+/// tier — `opts.carve == false` skips bounded deleted-record recovery.
+pub fn triage_profile_with_options(
+    profile_path: &Path,
+    browser: BrowserFamily,
+    opts: TriageOptions,
+) -> Result<TriageReport> {
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as i64);
@@ -38,13 +67,13 @@ pub fn triage_profile(profile_path: &Path, browser: BrowserFamily) -> Result<Tri
 
     match browser {
         BrowserFamily::Chromium => {
-            triage_chromium_profile(profile_path, &mut events, &mut integrity, &mut carved);
+            triage_chromium_profile(profile_path, &mut events, &mut integrity, &mut carved, opts);
         }
         BrowserFamily::Firefox => {
-            triage_firefox_profile(profile_path, &mut events, &mut integrity, &mut carved);
+            triage_firefox_profile(profile_path, &mut events, &mut integrity, &mut carved, opts);
         }
         BrowserFamily::Safari => {
-            triage_safari_profile(profile_path, &mut events, &mut integrity, &mut carved);
+            triage_safari_profile(profile_path, &mut events, &mut integrity, &mut carved, opts);
         }
         BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
             triage_webcache_profile(profile_path, &mut events);
@@ -62,10 +91,17 @@ pub fn triage_profile(profile_path: &Path, browser: BrowserFamily) -> Result<Tri
     })
 }
 
-/// Triage all browser profiles discovered under a home directory.
+/// Triage all browser profiles discovered under a home directory (carving enabled).
 pub fn triage(home_dir: &Path) -> Result<TriageReport> {
+    triage_with_options(home_dir, TriageOptions::default())
+}
+
+/// Triage all browser profiles under a home directory at an explicit tier —
+/// `opts.carve == false` skips bounded deleted-record recovery (D2 `--quick`).
+pub fn triage_with_options(home_dir: &Path, opts: TriageOptions) -> Result<TriageReport> {
     Ok(triage_profiles(
         browser_forensic_discovery::discover_profiles(home_dir),
+        opts,
     ))
 }
 
@@ -78,11 +114,12 @@ pub fn triage(home_dir: &Path) -> Result<TriageReport> {
 pub fn triage_sweep(root: &Path) -> Result<TriageReport> {
     Ok(triage_profiles(
         browser_forensic_discovery::sweep_containers(root),
+        TriageOptions::default(),
     ))
 }
 
 /// Triage a set of already-discovered profiles into one consolidated report.
-fn triage_profiles(profiles: Vec<DiscoveredProfile>) -> TriageReport {
+fn triage_profiles(profiles: Vec<DiscoveredProfile>, opts: TriageOptions) -> TriageReport {
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as i64);
@@ -103,6 +140,7 @@ fn triage_profiles(profiles: Vec<DiscoveredProfile>) -> TriageReport {
                     &mut events,
                     &mut integrity_vec,
                     &mut carved_vec,
+                    opts,
                 );
             }
             BrowserFamily::Firefox => {
@@ -111,6 +149,7 @@ fn triage_profiles(profiles: Vec<DiscoveredProfile>) -> TriageReport {
                     &mut events,
                     &mut integrity_vec,
                     &mut carved_vec,
+                    opts,
                 );
             }
             BrowserFamily::Safari => {
@@ -119,6 +158,7 @@ fn triage_profiles(profiles: Vec<DiscoveredProfile>) -> TriageReport {
                     &mut events,
                     &mut integrity_vec,
                     &mut carved_vec,
+                    opts,
                 );
             }
             BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
@@ -199,6 +239,7 @@ fn triage_chromium_profile(
     events: &mut Vec<BrowserEvent>,
     integrity: &mut Vec<IntegrityIndicator>,
     carved: &mut Vec<CarvedRecord>,
+    opts: TriageOptions,
 ) {
     let history_path = path.join("History");
     if history_path.is_file() {
@@ -214,8 +255,10 @@ fn triage_chromium_profile(
         if let Ok(mut ind) = browser_forensic_integrity::check_database_integrity(&history_path) {
             integrity.append(&mut ind);
         }
-        if let Ok(result) = browser_forensic_carve::carve_sqlite_free_pages(&history_path) {
-            carved.extend(result.records);
+        if opts.carve {
+            if let Ok(result) = browser_forensic_carve::carve_sqlite_free_pages(&history_path) {
+                carved.extend(result.records);
+            }
         }
     }
 
@@ -322,6 +365,7 @@ fn triage_firefox_profile(
     events: &mut Vec<BrowserEvent>,
     integrity: &mut Vec<IntegrityIndicator>,
     carved: &mut Vec<CarvedRecord>,
+    opts: TriageOptions,
 ) {
     let places_path = path.join("places.sqlite");
     if places_path.is_file() {
@@ -344,8 +388,10 @@ fn triage_firefox_profile(
         if let Ok(mut ind) = browser_forensic_integrity::check_database_integrity(&places_path) {
             integrity.append(&mut ind);
         }
-        if let Ok(result) = browser_forensic_carve::carve_sqlite_free_pages(&places_path) {
-            carved.extend(result.records);
+        if opts.carve {
+            if let Ok(result) = browser_forensic_carve::carve_sqlite_free_pages(&places_path) {
+                carved.extend(result.records);
+            }
         }
     }
 
@@ -393,6 +439,7 @@ fn triage_safari_profile(
     events: &mut Vec<BrowserEvent>,
     integrity: &mut Vec<IntegrityIndicator>,
     carved: &mut Vec<CarvedRecord>,
+    opts: TriageOptions,
 ) {
     let history_path = path.join("History.db");
     if history_path.is_file() {
@@ -408,8 +455,10 @@ fn triage_safari_profile(
         if let Ok(mut ind) = browser_forensic_integrity::check_database_integrity(&history_path) {
             integrity.append(&mut ind);
         }
-        if let Ok(result) = browser_forensic_carve::carve_sqlite_free_pages(&history_path) {
-            carved.extend(result.records);
+        if opts.carve {
+            if let Ok(result) = browser_forensic_carve::carve_sqlite_free_pages(&history_path) {
+                carved.extend(result.records);
+            }
         }
     }
 }
