@@ -14,12 +14,16 @@ thiserror = { workspace = true }
 browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
 url = { workspace = true }
 # memory-forensic (memf) framework — Volatility-class page-table translation,
-# process enumeration, and browser-heap walkers. Reused rather than reinvented.
+# kernel-object reading, and analysis bootstrap. Reused rather than reinvented.
+# memf-windows is deliberately NOT pulled: it hard-depends on yara-x → wasmtime,
+# dragging a large JIT with many RUSTSEC advisories (and a GPL-3.0 dual crate)
+# that browser-forensic never exercises. The _EPROCESS walk it would provide is
+# reimplemented here on memf-core's public ObjectReader (symbol-driven, no
+# hardcoded offsets), keeping the dependency tree clean and audit-green.
 memf-format = "0.2"
 memf-core = "0.2"
 memf-symbols = "0.2"
 memf-session = "0.3"
-memf-windows = "0.3"
 
 [dev-dependencies]
 tempfile = { workspace = true }

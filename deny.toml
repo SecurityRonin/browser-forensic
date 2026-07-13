@@ -29,6 +29,10 @@ allow = [
     "Zlib",
     "BSL-1.0",
     "MPL-2.0",
+    # webpki-roots (Mozilla CA bundle) relicensed to CDLA-Permissive-2.0 at 1.0.
+    # Pulled transitively by `ureq` under `memf-symbols` (kernel-PDB fetch). A
+    # permissive data license with no copyleft or patent traps.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
