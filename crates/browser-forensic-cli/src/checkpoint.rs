@@ -50,7 +50,7 @@ pub fn fingerprint(path: &Path) -> EvidenceFingerprint {
         .to_string();
     let (len, mtime_ns) = match std::fs::metadata(path) {
         Ok(md) => {
-            let len = md.is_file().then(|| md.len());
+            let len = md.is_file().then_some(md.len());
             let mtime_ns = md
                 .modified()
                 .ok()
