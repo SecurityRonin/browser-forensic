@@ -1,0 +1,25 @@
+[package]
+name = "browser-forensic-webcache"
+version = "0.2.0"
+description = "IE / Edge-Legacy WebCacheV01.dat (ESE) browser artifact parser"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+serde_json = { workspace = true }
+# ESE reading is owned by the fleet `ese-core` crate — this crate NEVER parses
+# ESE itself. Pinned to the ese-forensic git revision that carries fuzz fixes
+# (catalog pgnoFDP+1 overflow saturation) not yet in the crates.io 0.1.0 release.
+ese-core = { git = "https://github.com/SecurityRonin/ese-forensic.git", rev = "4b00e7dbe7e5298471b3fff3e47765891d1d369e" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# Dev-only ESE fixture builder from the same git source (never ships).
+ese-test-fixtures = { git = "https://github.com/SecurityRonin/ese-forensic.git", rev = "4b00e7dbe7e5298471b3fff3e47765891d1d369e" }
+
+[lints]
+workspace = true

@@ -14,6 +14,7 @@ members = [
     "crates/browser-forensic-search",
     "crates/browser-forensic-memory",
     "crates/browser-forensic-storage",
+    "crates/browser-forensic-webcache",
     "crates/browser-forensic-manifest",
     "crates/browser-forensic-triage",
     "crates/browser-forensic-image",

@@ -44,3 +44,9 @@ wildcards = "allow"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# The fleet ESE reader (ese-core) and its dev-only fixture builder are consumed
+# from the ese-forensic git repo, pinned by rev in
+# browser-forensic-webcache/Cargo.toml — this pulls fuzz fixes not yet in the
+# crates.io 0.1.0 release. WebCache parsing reuses ese-core rather than
+# reimplementing ESE.
+allow-git = ["https://github.com/SecurityRonin/ese-forensic"]
