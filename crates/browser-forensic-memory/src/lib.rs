@@ -1,5 +1,22 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
-//! Browser memory scanning — extract browser artifacts from raw byte buffers.
+//! Browser memory forensics.
+//!
+//! Two layers, from most to least structured:
+//!
+//! - [`carve_memory_image`] — process-attributed carving from a full memory
+//!   image, riding on the fleet `memf` framework (page-table translation,
+//!   `_EPROCESS` walk, per-process browser-heap scan). Each event is tagged with
+//!   the owning pid/process. See the [`carve`] module.
+//! - [`scan_bytes_for_urls`] / [`scan_bytes_for_cookies`] — a raw whole-buffer
+//!   byte scan, the documented fallback for raw buffers with no process
+//!   structure (or when symbols are unavailable).
+
+pub mod carve;
+
+pub use carve::{
+    browser_family_for_process, browser_processes, carve_memory_image,
+    carve_memory_image_with_symbols, MemoryCarveError,
+};
 
 use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
 use url::Url;

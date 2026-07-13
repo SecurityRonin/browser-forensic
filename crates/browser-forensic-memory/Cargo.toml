@@ -1,7 +1,7 @@
 [package]
 name = "browser-forensic-memory"
 version = "0.2.0"
-description = "Browser memory scanning — extract browser artifacts from raw byte buffers"
+description = "Browser memory forensics — process-attributed artifact carving from memory images (memf) plus raw byte-scan fallback"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -10,8 +10,16 @@ repository.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
 url = { workspace = true }
+# memory-forensic (memf) framework — Volatility-class page-table translation,
+# process enumeration, and browser-heap walkers. Reused rather than reinvented.
+memf-format = "0.2"
+memf-core = "0.2"
+memf-symbols = "0.2"
+memf-session = "0.3"
+memf-windows = "0.3"
 
 [dev-dependencies]
 tempfile = { workspace = true }
