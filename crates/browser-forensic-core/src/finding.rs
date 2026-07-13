@@ -187,7 +187,12 @@ impl Provenance {
         timestamp_basis: TimestampBasis,
         user_action_claim: UserActionClaim,
     ) -> Self {
-        unimplemented!("Provenance::new — implemented in GREEN")
+        Self {
+            source,
+            state,
+            timestamp_basis,
+            user_action_claim,
+        }
     }
 }
 
@@ -238,31 +243,46 @@ impl Finding {
         provenance: Provenance,
         evidence: impl Into<String>,
     ) -> Self {
-        unimplemented!("Finding::new — implemented in GREEN")
+        Self {
+            priority,
+            confidence,
+            rule_id: rule_id.into(),
+            interpretation: interpretation.into(),
+            provenance,
+            user: None,
+            profile: None,
+            browser: None,
+            evidence: evidence.into(),
+            next: None,
+        }
     }
 
     /// Stamp the originating user (SID or name) (D9).
     #[must_use]
     pub fn with_user(mut self, user: impl Into<String>) -> Self {
-        unimplemented!("Finding::with_user — implemented in GREEN")
+        self.user = Some(user.into());
+        self
     }
 
     /// Stamp the originating browser profile (D9).
     #[must_use]
     pub fn with_profile(mut self, profile: impl Into<String>) -> Self {
-        unimplemented!("Finding::with_profile — implemented in GREEN")
+        self.profile = Some(profile.into());
+        self
     }
 
     /// Stamp the originating browser family (D9).
     #[must_use]
     pub fn with_browser(mut self, browser: BrowserFamily) -> Self {
-        unimplemented!("Finding::with_browser — implemented in GREEN")
+        self.browser = Some(browser);
+        self
     }
 
     /// Attach a drill-down "next step" command pointer.
     #[must_use]
     pub fn with_next(mut self, next: impl Into<String>) -> Self {
-        unimplemented!("Finding::with_next — implemented in GREEN")
+        self.next = Some(next.into());
+        self
     }
 
     /// Render the finding as a multi-line, court-safe block.
@@ -274,7 +294,55 @@ impl Finding {
     /// conclusion. (RFC 0001 D5.)
     #[must_use]
     pub fn render(&self) -> String {
-        unimplemented!("Finding::render — implemented in GREEN")
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        // Writing to a String is infallible; the `_ =` keeps that explicit.
+        let _ = writeln!(
+            out,
+            "Priority:       {}  (look here first — a triage attention cue)",
+            self.priority
+        );
+        let _ = writeln!(
+            out,
+            "Confidence:     {}  (rule {})",
+            self.confidence, self.rule_id
+        );
+        let _ = writeln!(out, "Interpretation: {}", self.interpretation);
+        let _ = writeln!(out, "Rule:           {}", self.rule_id);
+        let p = &self.provenance;
+        let _ = writeln!(
+            out,
+            "Provenance:     {} · {} · time {} · {}",
+            p.source, p.state, p.timestamp_basis, p.user_action_claim
+        );
+        if let Some(origin) = self.origin_line() {
+            let _ = writeln!(out, "Origin:         {origin}");
+        }
+        let _ = writeln!(out, "Evidence:       {}", self.evidence);
+        if let Some(next) = &self.next {
+            let _ = writeln!(out, "Next:           {next}");
+        }
+        out
+    }
+
+    /// Compose the D9 origin line from whichever of browser/profile/user are
+    /// known. Returns `None` when the finding carries no origin stamp.
+    fn origin_line(&self) -> Option<String> {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(browser) = &self.browser {
+            parts.push(browser.to_string());
+        }
+        if let Some(profile) = &self.profile {
+            parts.push(profile.clone());
+        }
+        if let Some(user) = &self.user {
+            parts.push(format!("user {user}"));
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" · "))
+        }
     }
 }
 
