@@ -233,11 +233,16 @@ fn text_output_is_markdown_table_without_box_drawing() {
         .stdout
         .clone();
     let text = String::from_utf8(out).unwrap();
-    assert!(text.contains("| TERM |"), "markdown header row: {text}");
-    assert!(
-        text.contains("SOURCE") && text.contains("STATE"),
-        "provenance columns"
-    );
+    let header = text.lines().next().unwrap_or_default();
+    assert!(header.starts_with("| TERM"), "markdown header row: {text}");
+    for col in ["SOURCE", "STATE", "CONF", "RULE", "USER-ACTION", "MATCH"] {
+        assert!(
+            header.contains(col),
+            "provenance column {col} missing: {text}"
+        );
+    }
+    // A markdown rule row separates the header (pipe-delimited dashes).
+    assert!(text.contains("| ---"), "markdown rule row: {text}");
     // Full values, never ellipsized; no box-drawing characters (paste-safe).
     for boxc in ['┌', '┐', '└', '┘', '│', '─', '┼'] {
         assert!(!text.contains(boxc), "box-drawing char {boxc} leaked");

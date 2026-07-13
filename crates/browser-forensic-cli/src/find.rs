@@ -216,8 +216,9 @@ pub fn provenance_for(artifact: &ArtifactKind) -> Provenance {
         // A domain recovered from a network/state artifact after a history wipe —
         // contact is inferred, never a recorded visit (D4).
         A::RecoveredDomain => (Src::Recovered, St::Inferred, Tb::None, Ua::Unknown),
-        // A record carved from a deallocated SQLite page / WAL — deleted, recovered.
-        A::Carved => (Src::Carved, St::Deleted, Tb::None, Ua::Unknown),
+        // A record carved from a deallocated SQLite page / WAL — recovery may be
+        // partial, so it carries the weakest liveness state and low confidence.
+        A::Carved => (Src::Carved, St::Carved, Tb::None, Ua::Unknown),
         // A string carved from a memory image.
         A::Memory => (Src::Memory, St::Carved, Tb::None, Ua::ObservedString),
     };

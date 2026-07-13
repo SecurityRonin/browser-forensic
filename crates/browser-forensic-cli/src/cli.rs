@@ -24,6 +24,8 @@ use browser_forensic_core::reconstruct::{
 };
 use browser_forensic_core::BrowserEvent;
 use browser_forensic_discovery::discover_profiles;
+
+use crate::find::{FindHit, FIND_HEADERS};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
@@ -91,6 +93,46 @@ enum Command {
         /// Ignore any existing checkpoint and start a clean run (alias: --no-resume).
         #[arg(long, visible_alias = "no-resume")]
         restart: bool,
+    },
+    /// Find a term across ALL sources — "did they visit / download / search X?"
+    /// (RFC 0001 P4). TERM is auto-classified by shape (domain / url / ipv4 /
+    /// ipv6 / md5|sha1|sha256 hash) or given explicitly with `--regex` /
+    /// `--term` / `--terms-file`; `@file` reads a term list. Each hit is a
+    /// provenance-tagged row — a live history visit, a recovered domain, and a
+    /// carved deleted record are DISTINCT rows (source · state · confidence ·
+    /// time-basis · user-action · match), never collapsed. TTY renders a
+    /// markdown-clean table; a pipe emits JSONL carrying every axis.
+    Find {
+        /// The term to search for (auto-classified). Omit when using `--regex` /
+        /// `--term` / `--terms-file`. Prefix with `@` to read a term-list file.
+        #[arg(value_name = "TERM")]
+        term: Option<String>,
+        /// A profile directory or home/evidence directory to search.
+        #[arg(value_name = "PATH")]
+        path: Option<PathBuf>,
+        /// Treat the pattern as a linear-time regex (no shape classification).
+        #[arg(long, value_name = "PAT")]
+        regex: Option<String>,
+        /// Treat the value as a literal term — disambiguates a `-`-leading or
+        /// otherwise ambiguous term (accepts a leading `-`).
+        #[arg(long = "term", value_name = "LITERAL", allow_hyphen_values = true)]
+        literal: Option<String>,
+        /// Read one term per line from this file (`#` comments allowed).
+        #[arg(long, value_name = "FILE")]
+        terms_file: Option<PathBuf>,
+        /// Inclusive lower time bound (RFC3339, `YYYY-MM-DD`, or Unix nanos).
+        #[arg(long, value_name = "TS")]
+        from: Option<String>,
+        /// Inclusive upper time bound (RFC3339, `YYYY-MM-DD`, or Unix nanos).
+        #[arg(long, value_name = "TS")]
+        to: Option<String>,
+        /// Restrict to these evidence sources (repeatable; default: all).
+        #[arg(long = "source", value_enum, value_name = "KIND")]
+        sources: Vec<SourceKind>,
+        /// Output format. Auto-detected when omitted: a TTY gets the provenance
+        /// table, a pipe gets JSONL (announced once on stderr).
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
     },
     /// Parse a single browser artifact by name — the power / discovery layer.
     /// `br4n6 artifact --list` tabulates every primitive; `br4n6 artifact <NAME>
@@ -557,6 +599,27 @@ where
             format,
             checkpoint.as_deref(),
             restart,
+        ),
+        Some(Command::Find {
+            term,
+            path,
+            regex,
+            literal,
+            terms_file,
+            from,
+            to,
+            sources,
+            format,
+        }) => run_find(
+            term.as_deref(),
+            path.as_deref(),
+            regex.as_deref(),
+            literal.as_deref(),
+            terms_file.as_deref(),
+            from.as_deref(),
+            to.as_deref(),
+            &sources,
+            format,
         ),
         Some(Command::Artifact { list, kind }) => run_artifact_command(list, kind),
         Some(Command::Chains {
@@ -1305,6 +1368,38 @@ pub enum OutputFormat {
     Jsonl,
     /// Comma-separated values with a header row.
     Csv,
+}
+
+/// An evidence-source scope for `br4n6 find --source <KIND>` (RFC 0001 P4). The
+/// names mirror the provenance `SOURCE` column so one term names one concept
+/// across the flag, the table, and JSONL.
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+pub enum SourceKind {
+    History,
+    Cache,
+    Cookie,
+    Download,
+    Carved,
+    Memory,
+    Recovered,
+    Extension,
+}
+
+impl SourceKind {
+    /// The P0 [`EvidenceSource`] this scope selects.
+    fn evidence_source(self) -> browser_forensic_core::finding::EvidenceSource {
+        use browser_forensic_core::finding::EvidenceSource as E;
+        match self {
+            Self::History => E::History,
+            Self::Cache => E::Cache,
+            Self::Cookie => E::Cookie,
+            Self::Download => E::Download,
+            Self::Carved => E::Carved,
+            Self::Memory => E::Memory,
+            Self::Recovered => E::Recovered,
+            Self::Extension => E::Extension,
+        }
+    }
 }
 
 /// Entity-graph output format for `br4n6 graph`.
@@ -2651,6 +2746,319 @@ fn parse_timestamp_ns(s: &str) -> Result<i64> {
         return Ok(ns);
     }
     anyhow::bail!("unrecognized timestamp {s:?} (want RFC3339, YYYY-MM-DD, or Unix nanoseconds)")
+}
+
+/// One resolved search term: the string to display and its compiled pattern.
+struct TermPat {
+    display: String,
+    pattern: browser_forensic_search::Pattern,
+}
+
+/// Read a term-list file: one term per line, blanks and `#` comments removed.
+fn read_terms_file(file: &Path) -> Result<Vec<String>> {
+    let text = std::fs::read_to_string(file)
+        .with_context(|| format!("reading term list {}", file.display()))?;
+    Ok(text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(ToString::to_string)
+        .collect())
+}
+
+/// The SQLite history databases discovered under `path` (per profile, with a
+/// single-profile fallback) — the substrate the bounded carve pass reads.
+fn history_dbs(path: &Path) -> Vec<PathBuf> {
+    let mut dbs = Vec::new();
+    for profile in browser_forensic_discovery::discover_profiles(path) {
+        if let Some(hf) = history_file_for(&profile.path, profile.browser.clone()) {
+            dbs.push(hf);
+        }
+    }
+    if dbs.is_empty() {
+        if let Some(family) = profile_family(path) {
+            if let Some(hf) = history_file_for(path, family) {
+                dbs.push(hf);
+            }
+        }
+    }
+    dbs
+}
+
+/// Bounded carve for `find`: recover deleted records from every discovered
+/// history DB's free pages and WAL (the same engines `carve` uses) and return a
+/// carved hit for each record whose fields match `pattern`. Carved records are
+/// stamped `carved`/`carved` — never live or visited (D4).
+fn find_carve_hits(
+    path: &Path,
+    term: &str,
+    pattern: &browser_forensic_search::Pattern,
+) -> Vec<FindHit> {
+    let mut hits = Vec::new();
+    for db in history_dbs(path) {
+        let mut records = Vec::new();
+        if let Ok(r) = browser_forensic_carve::carve_sqlite_free_pages(&db) {
+            records.extend(r.records);
+        }
+        if let Ok(r) = browser_forensic_carve::recover_from_wal(&db) {
+            records.extend(r.records);
+        }
+        for rec in &records {
+            let mut matched: Option<String> = None;
+            for (key, value) in &rec.fields {
+                if let Some(s) = value.as_str() {
+                    if pattern.is_match(s) {
+                        matched = Some(s.to_string());
+                        if key.eq_ignore_ascii_case("url") {
+                            break;
+                        }
+                    }
+                }
+            }
+            if matched.is_none() {
+                let serialized = serde_json::to_string(&rec.fields).unwrap_or_default();
+                if pattern.is_match(&serialized) {
+                    matched = Some(serialized);
+                }
+            }
+            if let Some(value) = matched {
+                let provenance =
+                    crate::find::provenance_for(&browser_forensic_core::ArtifactKind::Carved);
+                let confidence = crate::find::confidence_for(provenance.state);
+                let rule_id = crate::find::rule_for(&provenance);
+                hits.push(FindHit {
+                    term: term.to_string(),
+                    confidence,
+                    rule_id,
+                    provenance,
+                    match_value: value,
+                    timestamp_ns: 0,
+                    browser: None,
+                    profile: None,
+                    user: None,
+                });
+            }
+        }
+    }
+    hits
+}
+
+/// `br4n6 find <TERM> <PATH>` — the RFC 0001 P4 provenance-first lookup verb.
+///
+/// Auto-classifies TERM by shape (or takes it from `--regex`/`--term`/
+/// `--terms-file`/`@file`), searches across live artifacts, recovered domains,
+/// and bounded deleted-record carving, and emits one *provenance-tagged* row per
+/// hit — a live visit, a recovered domain, and a carved record stay distinct
+/// (D4), never collapsed. TTY renders a markdown-clean table; a pipe emits JSONL
+/// carrying every axis. An empty result proves it looked (D10).
+///
+/// # Errors
+/// Returns an error for a missing/ambiguous PATH, an invalid regex or timestamp,
+/// an unreadable term list, or a collection failure.
+#[allow(clippy::too_many_arguments)]
+pub fn run_find(
+    term: Option<&str>,
+    path: Option<&Path>,
+    regex: Option<&str>,
+    literal: Option<&str>,
+    terms_file: Option<&Path>,
+    from: Option<&str>,
+    to: Option<&str>,
+    sources: &[SourceKind],
+    format: Option<OutputFormat>,
+) -> Result<()> {
+    use browser_forensic_core::finding::EvidenceSource;
+    use browser_forensic_search::{filter_events, EventQuery, Pattern};
+
+    // Resolve the PATH: when the term comes from a flag, the single positional is
+    // the PATH; otherwise the canonical `find <TERM> <PATH>` two-positional form.
+    let flag_mode = regex.is_some() || literal.is_some() || terms_file.is_some();
+    let evidence_path: PathBuf = if flag_mode {
+        match (term, path) {
+            (Some(p), None) => PathBuf::from(p),
+            (None, Some(p)) => p.to_path_buf(),
+            (Some(_), Some(_)) => anyhow::bail!(
+                "with --regex/--term/--terms-file, pass only the PATH (the term comes from the flag)"
+            ),
+            (None, None) => anyhow::bail!("missing PATH: br4n6 find <PATH> --regex <PAT>"),
+        }
+    } else {
+        match (term, path) {
+            (Some(_), Some(p)) => p.to_path_buf(),
+            _ => anyhow::bail!(
+                "usage: br4n6 find <TERM> <PATH>  (or --regex/--term/--terms-file with <PATH>)"
+            ),
+        }
+    };
+
+    // Build the (display, pattern) term set and the classification announcement.
+    let mut terms: Vec<TermPat> = Vec::new();
+    let announce: String;
+    if let Some(pat) = regex {
+        let pattern = Pattern::regex(pat).with_context(|| format!("invalid regex: {pat}"))?;
+        announce = format!(
+            "Searching with regex /{pat}/ in {} …",
+            evidence_path.display()
+        );
+        terms.push(TermPat {
+            display: pat.to_string(),
+            pattern,
+        });
+    } else if let Some(lit) = literal {
+        announce = format!(
+            "Searching for literal term \"{lit}\" in {} …",
+            evidence_path.display()
+        );
+        terms.push(TermPat {
+            display: lit.to_string(),
+            pattern: Pattern::substring(lit),
+        });
+    } else if let Some(file) = terms_file {
+        let list = read_terms_file(file)?;
+        announce = format!(
+            "Searching for {} term(s) from {} in {} …",
+            list.len(),
+            file.display(),
+            evidence_path.display()
+        );
+        for t in list {
+            terms.push(TermPat {
+                pattern: Pattern::substring(&t),
+                display: t,
+            });
+        }
+    } else {
+        let raw = term.unwrap_or_default();
+        if let Some(fname) = raw.strip_prefix('@') {
+            let file = Path::new(fname);
+            let list = read_terms_file(file)?;
+            announce = format!(
+                "Searching for {} term(s) from {} in {} …",
+                list.len(),
+                file.display(),
+                evidence_path.display()
+            );
+            for t in list {
+                terms.push(TermPat {
+                    pattern: Pattern::substring(&t),
+                    display: t,
+                });
+            }
+        } else {
+            let kind = crate::find::classify_term(raw);
+            announce = format!(
+                "Searching for {} \"{raw}\" in {} …",
+                crate::find::describe_term(&kind),
+                evidence_path.display()
+            );
+            terms.push(TermPat {
+                display: raw.to_string(),
+                pattern: Pattern::substring(raw),
+            });
+        }
+    }
+    if terms.is_empty() {
+        anyhow::bail!(
+            "no search terms (the @file / --terms-file was empty after removing blanks/comments)"
+        );
+    }
+    eprintln!("{announce}");
+
+    let output_format = crate::output::resolve_stdout(format);
+    let from_ns = from.map(parse_timestamp_ns).transpose()?;
+    let to_ns = to.map(parse_timestamp_ns).transpose()?;
+
+    // Source scoping (empty = all sources).
+    let allowed: Vec<EvidenceSource> = sources.iter().map(|s| s.evidence_source()).collect();
+    let source_allowed = |src: &EvidenceSource| allowed.is_empty() || allowed.contains(src);
+    let carved_wanted = allowed.is_empty() || allowed.contains(&EvidenceSource::Carved);
+
+    // Live artifacts + recovered domains (triage folds recovered-domain artifacts
+    // into the event stream); each hit's provenance is derived from its artifact.
+    let events = collect_profile_events(&evidence_path)?;
+    let mut hits: Vec<FindHit> = Vec::new();
+    for tp in &terms {
+        let query = EventQuery {
+            pattern: Some(tp.pattern.clone()),
+            fields: Vec::new(),
+            from_ns,
+            to_ns,
+        };
+        for e in filter_events(&events, &query) {
+            let hit = FindHit::from_event(&tp.display, e);
+            if source_allowed(&hit.provenance.source) {
+                hits.push(hit);
+            }
+        }
+    }
+    // Bounded deleted-record carving.
+    if carved_wanted {
+        for tp in &terms {
+            hits.extend(find_carve_hits(&evidence_path, &tp.display, &tp.pattern));
+        }
+    }
+
+    emit_find_hits(&hits, output_format);
+
+    if hits.is_empty() {
+        let mut searched = vec![
+            "live history",
+            "downloads",
+            "bookmarks",
+            "cookies",
+            "recovered domains",
+        ];
+        if carved_wanted {
+            searched.push("deleted SQLite records");
+        }
+        eprintln!(
+            "{}",
+            crate::output::negative_result(
+                &searched,
+                &[
+                    "encrypted cookies (add --keys)",
+                    "memory",
+                    "whole-image carving"
+                ],
+            )
+        );
+    }
+    Ok(())
+}
+
+/// Render `find` hits: a markdown-clean provenance table on a TTY, faithful JSONL
+/// (every axis, one object per line) on a pipe, and CSV when forced.
+fn emit_find_hits(hits: &[FindHit], format: OutputFormat) {
+    match format {
+        OutputFormat::Text => {
+            if hits.is_empty() {
+                return;
+            }
+            let rows: Vec<Vec<String>> = hits.iter().map(FindHit::row).collect();
+            print!("{}", crate::output::markdown_table(&FIND_HEADERS, &rows));
+        }
+        OutputFormat::Jsonl => {
+            for h in hits {
+                let mut v = serde_json::to_value(h).unwrap_or_else(|_| json!({}));
+                if h.timestamp_ns != 0 {
+                    if let Some(map) = v.as_object_mut() {
+                        map.insert("timestamp".to_string(), json!(format_ts(h.timestamp_ns)));
+                    }
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string())
+                );
+            }
+        }
+        OutputFormat::Csv => {
+            println!("{}", FIND_HEADERS.join(","));
+            for h in hits {
+                let row: Vec<String> = h.row().iter().map(|c| csv_escape(c)).collect();
+                println!("{}", row.join(","));
+            }
+        }
+    }
 }
 
 /// `br4n6 extract-iocs` — extract candidate entities from collected events.
