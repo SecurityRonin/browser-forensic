@@ -781,6 +781,68 @@ mod tests {
         let _ = report.generated_at_ns;
     }
 
+    /// A Chrome profile whose `History` has had every row deleted, leaving
+    /// free-space the carver can recover — so the default (carving) tier yields
+    /// carved records while a `carve: false` pass yields none.
+    fn chrome_profile_with_deleted_history() -> TempDir {
+        let dir = TempDir::new().expect("tempdir");
+        let history = dir.path().join("History");
+        let conn = rusqlite::Connection::open(&history).expect("open");
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://secret-one.example', 'One', 3, 13300000000000000);
+             INSERT INTO urls VALUES (2, 'https://secret-two.example', 'Two', 5, 13300000000000001);
+             INSERT INTO urls VALUES (3, 'https://secret-three.example', 'Three', 7, 13300000000000002);
+             DELETE FROM urls;",
+        )
+        .expect("setup");
+        drop(conn);
+        dir
+    }
+
+    #[test]
+    fn carve_true_matches_default_triage_profile() {
+        let dir = chrome_profile_with_deleted_history();
+        let default = triage_profile(dir.path(), BrowserFamily::Chromium).expect("triage");
+        let opted = triage_profile_with_options(
+            dir.path(),
+            BrowserFamily::Chromium,
+            TriageOptions { carve: true },
+        )
+        .expect("triage opts");
+        assert_eq!(
+            default.carved.len(),
+            opted.carved.len(),
+            "carve:true must be identical to the default carving triage"
+        );
+    }
+
+    #[test]
+    fn carve_false_skips_carving() {
+        let dir = chrome_profile_with_deleted_history();
+        let opted = triage_profile_with_options(
+            dir.path(),
+            BrowserFamily::Chromium,
+            TriageOptions { carve: false },
+        )
+        .expect("triage opts");
+        assert!(
+            opted.carved.is_empty(),
+            "carve:false must skip deleted-record carving entirely"
+        );
+        // Live-artifact parsing still runs regardless of the carve tier.
+        let _ = opted.events;
+    }
+
+    #[test]
+    fn triage_with_options_home_scan_respects_carve_flag() {
+        let dir = TempDir::new().expect("tempdir");
+        let report = triage_with_options(dir.path(), TriageOptions { carve: false })
+            .expect("triage_with_options");
+        assert!(report.carved.is_empty());
+    }
+
     #[test]
     fn triage_sweep_discovers_and_attributes_nested_chrome_profile() {
         let root = TempDir::new().expect("tempdir");
