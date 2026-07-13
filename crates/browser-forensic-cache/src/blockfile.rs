@@ -266,8 +266,8 @@ pub(crate) fn parse_entry_store(b: &[u8]) -> Option<EntryStore> {
 
 /// A loaded `data_N` block file: its per-block size plus raw bytes.
 pub(crate) struct BlockData {
-    entry_size: usize,
-    bytes: Vec<u8>,
+    pub(crate) entry_size: usize,
+    pub(crate) bytes: Vec<u8>,
 }
 
 /// Lazily-loaded set of `data_N` block files, keyed by file selector.
@@ -359,7 +359,11 @@ fn read_capped_file(path: &Path) -> Option<Vec<u8>> {
 
 /// Recover an entry's key (the request URL): inline in the `EntryStore`, or via
 /// the long-key address for keys too long to store inline.
-pub(crate) fn resolve_key(es: &EntryStore, entry_block: &[u8], cache: &mut BlockFiles) -> Option<String> {
+pub(crate) fn resolve_key(
+    es: &EntryStore,
+    entry_block: &[u8],
+    cache: &mut BlockFiles,
+) -> Option<String> {
     let key_len = usize::try_from(es.key_len).ok()?;
     if es.long_key.is_initialized() {
         let data = cache.read_addr(es.long_key)?;

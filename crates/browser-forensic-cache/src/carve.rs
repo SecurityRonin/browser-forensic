@@ -323,8 +323,60 @@ fn dangling_sparse_resource(path: &Path, hash: u64, body: Vec<u8>) -> RecoveredR
 /// (live) blocks are skipped, so a live entry is never double-reported.
 /// Best-effort and panic-free; every offset is bounds-checked.
 #[must_use]
-pub fn carve_blockfile_free(_cache_dir: &Path) -> Vec<RecoveredResource> {
-    Vec::new()
+pub fn carve_blockfile_free(cache_dir: &Path) -> Vec<RecoveredResource> {
+    let limits = DecompressLimits::default();
+    let index_path = cache_dir.join("index");
+    let mut out = Vec::new();
+
+    for selector in 0..=MAX_BLOCK_FILE_SELECTOR {
+        let Some(bd) = load_block_file(cache_dir, selector) else {
+            continue;
+        };
+        // Only 256-byte block files hold `EntryStore`s; larger blocks are body
+        // and header data, `data_0` is 36-byte rankings.
+        if bd.entry_size != ENTRY_BLOCK_SIZE {
+            continue;
+        }
+        let slots = bd.bytes.len().saturating_sub(BLOCK_HEADER_SIZE) / ENTRY_BLOCK_SIZE;
+        let slots = slots.min(MAX_BLOCKS_IN_BITMAP);
+
+        // A dedicated reader for resolving each recovered entry's streams.
+        let mut cache = BlockFiles::new(cache_dir);
+        for block in 0..slots {
+            if block_allocated(&bd.bytes, block) {
+                continue; // allocated == live; never double-report it
+            }
+            let start = BLOCK_HEADER_SIZE + block * ENTRY_BLOCK_SIZE;
+            let Some(bytes) = bd.bytes.get(start..start + ENTRY_BLOCK_SIZE) else {
+                continue;
+            };
+            let Some(es) = parse_entry_store(bytes) else {
+                continue;
+            };
+            let Some(url) = resolve_key(&es, bytes, &mut cache) else {
+                continue;
+            };
+            // Structural filter: a real cache key is a URL. This rejects freed
+            // body/header blocks that happen to decode into an EntryStore shape.
+            if !url.contains("://") {
+                continue;
+            }
+            let res = build_resource(&es, url, &index_path, &mut cache, &limits);
+            let quality = grade(&res);
+            let note = format!(
+                "recovered from a FREE Blockfile block (allocation-map bit clear at data_{selector} \
+                 block {block}); consistent with the entry having been evicted but not yet \
+                 overwritten, not proof of deliberate deletion"
+            );
+            out.push(RecoveredResource {
+                resource: res,
+                mechanism: RecoveryMechanism::BlockfileFreeIntact,
+                quality,
+                note,
+            });
+        }
+    }
+    out
 }
 
 #[cfg(test)]
