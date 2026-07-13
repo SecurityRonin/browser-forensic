@@ -18,13 +18,23 @@ end-to-end against a real Windows profile.** Each path is validated as below;
 vectors live in `crates/browser-forensic-decrypt/tests/data/win_dpapi_vectors.json`
 (generator + provenance in `tests/data/README.md`).
 
+**The DPAPI format + crypto is delegated to the fleet `dpapi-core` crate**
+(`dpapi-forensic`, Apache-2.0): the master-key file KDF, blob parse + session-key
+derivation, and `Local State` base64/`DPAPI`-prefix strip all run in that audited,
+fuzz-hardened, impacket-validated crate rather than hand-rolled here (DRY). This
+crate keeps only thin glue — type-preserving wrappers, the
+`DpapiError`→`DecryptError` mapping, and the `Local State` JSON extraction — plus
+its own AES-256-GCM `v10`/`v11` value decryption and the `v20` App-Bound refusal.
+`dpapi-core` additionally validates the `[MS-DPAPI]` provider GUID
+(`df9d8cd0-1501-11d1-8c7a-00c04fc297eb`) in each blob, which the vectors now carry.
+
 | Path | Primitive | Validation | Tier |
 |---|---|---|---|
 | `decrypt_chromium_value_win` (`v10`/`v11`) | AES-256-GCM | RustCrypto `aes-gcm` (audited) decrypts a PyCryptodome-oracle value under an externally-fixed key → known plaintext; a flipped tag → `Err`. | 2 |
 | AES-256-GCM primitive | AES-256-GCM | NIST CAVP KAT (`gcmEncryptExtIV256`, empty PT/AAD, published tag `bdc1ac88…76f0`) verifies; a flipped tag → `Err`. | 1 (primitive) |
-| `decrypt_masterkey_file` | Microsoft iterated-HMAC-SHA512 KDF + AES-256-CBC + HMAC | A synthetic master-key file built to the `[MS-DPAPI]` layout is decrypted by **impacket** (`dpapi.py`, independent third-party) to the same 64-byte key; the same bytes are decrypted by this Rust code to the same key. Wrong password → `WrongDpapiPassword` (rejected by impacket too). | 2 |
-| `decrypt_dpapi_blob` | HMAC-SHA512 session key + AES-256-CBC + PKCS7 + signature | impacket decrypts the same synthetic blob to the same 32-byte Chromium key; this Rust code independently recovers it; tampering → `Err`. | 2 |
-| `decrypt_chromium_key_dpapi` (Local State) | base64 + `DPAPI` prefix + blob | End-to-end: `base64("DPAPI"+blob)` from a synthetic `Local State` → the 32-byte key, via a supplied master key and via password+SID+master-key file. | 2 |
+| `decrypt_masterkey_file` (→ `dpapi-core`) | Microsoft iterated-HMAC-SHA512 KDF + AES-256-CBC + HMAC | A synthetic master-key file built to the `[MS-DPAPI]` layout is decrypted by **impacket** (`dpapi.py`, independent third-party) to the same 64-byte key; the same bytes are decrypted by `dpapi-core` (via this wrapper) to the same key. Wrong password → `WrongDpapiPassword` (rejected by impacket too). | 2 |
+| `decrypt_dpapi_blob` (→ `dpapi-core`) | HMAC-SHA512 session key + AES-256-CBC + PKCS7 + signature | impacket decrypts the same synthetic blob to the same 32-byte Chromium key; `dpapi-core` independently recovers it; tampering → `Err`. | 2 |
+| `decrypt_chromium_key_dpapi` (Local State, → `dpapi-core`) | base64 + `DPAPI` prefix + blob | End-to-end: `base64("DPAPI"+blob)` from a synthetic `Local State` → the 32-byte key, via a supplied master key and via password+SID+master-key file. | 2 |
 | `v20` App-Bound detection | — | Refused with `AppBoundUnsupported` (needs the SYSTEM key); never fabricated. | 2 |
 
 ### What "tier-2, impacket-confirmed" means here
@@ -33,7 +43,8 @@ The DPAPI encoder in `tests/data/gen_win.py` is written to the `[MS-DPAPI]` spec
 impacket's decrypt path is unrelated third-party code; that it recovers the known
 master key and Chromium key from our synthetic artifacts — and rejects a wrong
 password — confirms the artifacts are genuine DPAPI structures for that password.
-This Rust implementation then independently recovers the same values. This is
+The `dpapi-core` crate this code now delegates to then independently recovers the
+same values (and is itself impacket-validated in its own repository). This is
 **not** a real-Windows-profile validation (tier 1); it is *"implemented to spec +
 cross-checked against impacket on synthetic vectors."*
 
@@ -45,11 +56,11 @@ cross-checked against impacket on synthetic vectors."*
 * Legacy 3DES/SHA1 DPAPI blobs are out of scope and rejected with a clear
   `UnsupportedAlgorithm` diagnostic rather than decrypted.
 * The blob signature is verified with the standard HMAC construction used by
-  modern Windows; the master-key iteration count is capped (`MAX_ITERATIONS`) so
-  a hostile file is a loud error, not a hang.
+  modern Windows; the master-key KDF (in `dpapi-core`) uses bounded arithmetic
+  (saturating iteration loop), so a hostile file cannot overflow or panic.
 * Robustness: the DPAPI blob + Local State parsers are exercised by the
-  `fuzz_decrypt_dpapi` cargo-fuzz target (must-not-panic; 10.5M runs / 91s clean
-  at time of writing).
+  `fuzz_decrypt_dpapi` cargo-fuzz target (must-not-panic) through this crate's
+  wrappers; `dpapi-core` carries its own fuzz targets upstream.
 
 ## macOS Chromium cookie domain-hash prefix (Milestone 2c)
 
