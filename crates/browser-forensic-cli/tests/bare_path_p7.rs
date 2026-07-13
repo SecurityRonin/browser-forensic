@@ -52,10 +52,11 @@ fn bare_existing_path_runs_investigate() {
         String::from_utf8_lossy(&out.get_output().stdout),
         String::from_utf8_lossy(&out.get_output().stderr)
     );
-    // The standard-tier skipped-work footer is investigate's fingerprint.
+    // The layered detection header is investigate's fingerprint and survives the
+    // TTY-vs-pipe format switch (it is always on stderr).
     assert!(
-        combined.contains("investigate --deep"),
-        "bare path ran investigate (standard tier footer present): {combined}"
+        combined.contains("Detected: Chromium History (SQLite)"),
+        "bare path routed to investigate (its detection header is present): {combined}"
     );
 }
 

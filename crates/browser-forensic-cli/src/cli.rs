@@ -38,6 +38,57 @@ pub struct Cli {
     command: Option<Command>,
 }
 
+/// The outcome of the pre-parse bare-path guard (RFC 0001 D3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BarePath {
+    /// The single token is both a command name and an existing path — refuse
+    /// with a diagnostic rather than silently pick one.
+    Ambiguous(String),
+    /// A bare existing path that is not a command — run `investigate` over it.
+    Investigate(PathBuf),
+    /// Not a bare-path invocation — let clap parse normally.
+    Fallthrough,
+}
+
+/// Every br4n6 subcommand name + alias, derived from the clap command tree so it
+/// never drifts from the actual surface (no hand-maintained list to fall stale).
+fn command_names() -> Vec<String> {
+    use clap::CommandFactory as _;
+    Cli::command()
+        .get_subcommands()
+        .flat_map(|c| {
+            std::iter::once(c.get_name().to_string())
+                .chain(c.get_all_aliases().map(ToString::to_string))
+        })
+        .collect()
+}
+
+/// Classify a raw argument vector (program name already stripped) for the
+/// bare-path guard. Only a *single-token* invocation is a candidate: `<TOKEN>`
+/// (no leading `-`), or `-- <TOKEN>` which forces path interpretation for an
+/// awkward (e.g. dash-leading) name. Everything else falls through to clap.
+fn classify_bare_path(args: &[String]) -> BarePath {
+    // `-- <TOKEN>`: the examiner explicitly marks the token as a path, so the
+    // command-name check is bypassed (existence is validated by `investigate`).
+    if args.len() == 2 && args[0] == "--" {
+        return BarePath::Investigate(PathBuf::from(&args[1]));
+    }
+    // A lone non-flag token: could be a bare path, a command, or both.
+    if args.len() == 1 && !args[0].starts_with('-') {
+        let token = &args[0];
+        let is_command = command_names().iter().any(|c| c == token);
+        let exists = Path::new(token).exists();
+        return match (is_command, exists) {
+            (true, true) => BarePath::Ambiguous(token.clone()),
+            (false, true) => BarePath::Investigate(PathBuf::from(token)),
+            // A command with no matching path (`br4n6 schema`) or a nonexistent
+            // non-command token — both are clap's job (run it, or error).
+            (_, false) => BarePath::Fallthrough,
+        };
+    }
+    BarePath::Fallthrough
+}
+
 /// Shared `PATH` + `--format` arguments for the single-artifact subcommands.
 #[derive(Args, Debug)]
 struct ArtifactArgs {
@@ -534,6 +585,34 @@ where
     F: FnOnce(Option<PathBuf>) -> std::result::Result<(), E>,
     E: std::error::Error + Send + Sync + 'static,
 {
+    // Guarded bare-path convenience (RFC 0001 D3): `br4n6 <PATH>` runs
+    // `investigate <PATH>` — but ONLY when the single token is an existing path
+    // and not a command name. A token that is both fails with a specific
+    // ambiguity diagnostic; anything else falls through to clap unchanged. clap
+    // alone cannot disambiguate a subcommand name from a same-named path, so this
+    // thin arg-inspection runs before dispatch.
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    match classify_bare_path(&raw_args) {
+        BarePath::Ambiguous(token) => {
+            anyhow::bail!(
+                "Ambiguous: \"{token}\" is both a br4n6 command and a path.\n\
+                 Use: br4n6 investigate ./{token}   |   or: br4n6 {token} <args...>"
+            );
+        }
+        BarePath::Investigate(path) => {
+            return run_investigate(
+                &path,
+                crate::investigate::Tier::Standard,
+                None,
+                None,
+                false,
+                None,
+                None,
+            );
+        }
+        BarePath::Fallthrough => {}
+    }
+
     let cli = Cli::parse();
     match cli.command {
         None => launch_tui(None).map_err(anyhow::Error::from),
