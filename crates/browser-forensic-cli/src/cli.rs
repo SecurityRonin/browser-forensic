@@ -145,26 +145,55 @@ enum Command {
         #[command(subcommand)]
         kind: Option<ArtifactKind>,
     },
-    /// Reconstruct navigation: referrer + redirect chains and inferred sessions.
-    Chains {
-        /// A history file, or a profile directory containing one.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Idle-gap threshold (minutes) for inferring session boundaries.
-        #[arg(long, value_name = "MINUTES", default_value_t = DEFAULT_IDLE_GAP_MINUTES)]
-        idle_gap: i64,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
-    },
     /// Launch the interactive terminal viewer (session state).
     Tui {
         /// A `Sessions` directory to view (defaults to the local profile).
         #[arg(value_name = "SESSIONS_DIR")]
         path: Option<PathBuf>,
     },
-    /// Parse browser history into a chronological timeline.
-    Timeline(ArtifactArgs),
+    /// Unified cross-artifact chronology for a profile/home (RFC 0001 P5a): the
+    /// timed sequence of events across every browser artifact, with a per-host
+    /// rollup. `PATH` is a profile directory, a home/evidence directory, or a
+    /// single history file. `--around <WHEN> --window <DUR>` pivots on a moment;
+    /// `--tz <IANA>` renders timestamps in a zone. This verb absorbs the former
+    /// standalone `correlate` (default view), `chains` (`--chains`: referrer /
+    /// redirect / inferred-session reconstruction), and `graph` (`--graph
+    /// <json|dot>`: the registrable-host entity graph) commands. Correlation is
+    /// co-occurrence by URL/host/time — never proof of intent or causation.
+    Timeline {
+        /// A profile directory, a home/evidence directory, or a history file.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// Pivot the chronology on this moment (RFC3339, `YYYY-MM-DD`, or Unix
+        /// nanos); only events within `--window` on either side are shown.
+        #[arg(long, value_name = "WHEN")]
+        around: Option<String>,
+        /// Half-width of the `--around` window: an integer with a `s`/`m`/`h`/`d`
+        /// suffix (bare number = seconds). Ignored without `--around`.
+        #[arg(long, value_name = "DUR", default_value = "1h")]
+        window: String,
+        /// Render timestamps in this IANA timezone (e.g. `America/New_York`).
+        #[arg(long = "tz", visible_alias = "timezone", value_name = "IANA")]
+        tz: Option<String>,
+        /// Reconstruction view: referrer + redirect chains and inferred sessions
+        /// (the former `chains` command) instead of the unified chronology.
+        #[arg(long, group = "mode")]
+        chains: bool,
+        /// Idle-gap threshold (minutes) for inferring session boundaries in the
+        /// `--chains` view.
+        #[arg(long, value_name = "MINUTES", default_value_t = DEFAULT_IDLE_GAP_MINUTES)]
+        idle_gap: i64,
+        /// Entity-graph view: registrable-host nodes with referrer/redirect and
+        /// co-occurrence edges (the former `graph` command), as `json` or `dot`.
+        #[arg(long, group = "mode", value_name = "FMT", num_args = 0..=1, default_missing_value = "json")]
+        graph: Option<GraphFormat>,
+        /// Co-occurrence window (seconds) for `--graph` edges (<= 0 disables them).
+        #[arg(long, value_name = "SECONDS", default_value_t = browser_forensic_correlate::graph::DEFAULT_COOCCURRENCE_WINDOW_SECS)]
+        graph_window: i64,
+        /// Output format. Defaults to a human render on a TTY, JSONL when piped.
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
+    },
     /// Recover deleted/orphaned/evicted Chromium cache entries the live index no
     /// longer references (orphaned SimpleCache `[hash]_0`, dangling `[hash]_s`,
     /// free-but-intact Blockfile). `PATH` is a `Cache`/`Cache_Data` directory.
@@ -368,36 +397,6 @@ enum Command {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
-    },
-    /// Correlate all collected events into a unified cross-artifact / cross-browser
-    /// timeline and a per-host (registrable-domain) rollup. `PATH` is a profile or
-    /// home directory. Correlation is co-occurrence by URL/host/time — not proof of
-    /// intent or causation.
-    Correlate {
-        /// A profile directory or home directory to collect events from.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
-    },
-    /// Build an entity graph over registrable hosts: referrer/redirect edges from
-    /// recorded visit chains (M3) plus time-windowed co-occurrence edges. `PATH` is
-    /// a profile or home directory. A co-occurrence edge means "same window", never
-    /// deliberate navigation.
-    Graph {
-        /// A profile directory or home directory to collect events from.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = GraphFormat::Json)]
-        format: GraphFormat,
-        /// Output file (defaults to stdout).
-        #[arg(long = "out", short = 'o', value_name = "FILE")]
-        out: Option<PathBuf>,
-        /// Co-occurrence window in seconds (<= 0 disables co-occurrence edges).
-        #[arg(long, value_name = "SECONDS", default_value_t = browser_forensic_correlate::graph::DEFAULT_COOCCURRENCE_WINDOW_SECS)]
-        window: i64,
     },
     /// Print the JSON Schema (draft 2020-12) for the `BrowserEvent` records this
     /// tool emits, derived from the Rust types so it never drifts from the
@@ -623,12 +622,27 @@ where
             format,
         ),
         Some(Command::Artifact { list, kind }) => run_artifact_command(list, kind),
-        Some(Command::Chains {
+        Some(Command::Timeline {
             path,
+            around,
+            window,
+            tz,
+            chains,
             idle_gap,
+            graph,
+            graph_window,
             format,
-        }) => run_chains(&path, idle_gap, format),
-        Some(Command::Timeline(a)) => run_artifact(&a.path, ArtifactType::History, a.format),
+        }) => run_timeline(
+            &path,
+            around.as_deref(),
+            &window,
+            tz.as_deref(),
+            chains,
+            idle_gap,
+            graph,
+            graph_window,
+            format,
+        ),
         Some(Command::CacheCarve(a)) => run_cache_carve(&a.path, a.format),
         Some(Command::Reconstruct {
             path,
@@ -709,13 +723,6 @@ where
             snapshot,
             format,
         }) => run_image(&path, snapshot, format),
-        Some(Command::Correlate { path, format }) => run_correlate(&path, format),
-        Some(Command::Graph {
-            path,
-            format,
-            out,
-            window,
-        }) => run_graph(&path, format, out.as_deref(), window),
         Some(Command::Schema) => run_schema(),
     }
 }
@@ -1529,11 +1536,25 @@ pub fn run_history(
     search: Option<&str>,
     format: OutputFormat,
 ) -> Result<()> {
+    let mut visits = read_history_events(path, no_collapse)?;
+    if let Some(needle) = search {
+        filter_in_place(&mut visits, needle);
+    }
+    emit_events(&visits, format);
+    Ok(())
+}
+
+/// Resolve `PATH` to a concrete history store and parse it into chronological
+/// [`BrowserEvent`]s for the auto-detected family (Chromium redirect-collapsed by
+/// default). Shared by `artifact history` and the single-file `timeline` path.
+///
+/// # Errors
+/// Returns an actionable error (D10) if the history store cannot be opened or
+/// queried — a locked / dirty-WAL / corrupt open is mapped to a recovery
+/// suggestion instead of a bare SQLITE_* code, without swallowing the cause.
+fn read_history_events(path: &Path, no_collapse: bool) -> Result<Vec<BrowserEvent>> {
     let (family, history) = resolve_history(path)?;
-    // Actionable errors (D10): a locked / dirty-WAL / corrupt open is mapped to a
-    // recovery suggestion instead of a bare SQLITE_* code, without swallowing the
-    // underlying error.
-    let mut visits = (|| -> Result<Vec<BrowserEvent>> {
+    (|| -> Result<Vec<BrowserEvent>> {
         Ok(match family {
             Family::Chromium => {
                 let mut v = parse_visits(&history).with_context(|| {
@@ -1550,12 +1571,7 @@ pub fn run_history(
                 .with_context(|| format!("reading Safari history from {}", history.display()))?,
         })
     })()
-    .map_err(|e| crate::output::actionable_db_error(e, &history))?;
-    if let Some(needle) = search {
-        filter_in_place(&mut visits, needle);
-    }
-    emit_events(&visits, format);
-    Ok(())
+    .map_err(|e| crate::output::actionable_db_error(e, &history))
 }
 
 /// Reconstruct navigation for a history file: parse the per-visit table for the
@@ -1589,13 +1605,123 @@ pub fn reconstruct_history(path: &Path, idle_gap_minutes: i64) -> Result<Vec<Bro
     Ok(visits)
 }
 
-/// `br4n6 chains` — reconstruct and emit the enriched navigation timeline.
+/// Collect a profile/home directory's unified event stream, or a single history
+/// file's chronology (RFC 0001 P5a `timeline`). A directory routes through the
+/// per-visit-enriched correlation collector; a lone file parses just that history.
 ///
 /// # Errors
-/// Propagates [`reconstruct_history`] errors.
-pub fn run_chains(path: &Path, idle_gap_minutes: i64, format: OutputFormat) -> Result<()> {
-    let events = reconstruct_history(path, idle_gap_minutes)?;
-    emit_events(&events, format);
+/// Propagates the underlying collection / parse error.
+fn collect_timeline_events(path: &Path) -> Result<Vec<BrowserEvent>> {
+    if path.is_dir() {
+        return collect_correlation_events(path);
+    }
+    // A lone history file: the `urls`-table chronology (matching the historic
+    // single-file `timeline`), not the per-visit `visits` table `artifact history`
+    // reconstruction needs — so a `visits`-less export still times out cleanly.
+    let (family, history) = resolve_history(path)?;
+    let mut events = match family {
+        Family::Chromium => browser_forensic_chrome::parse_history(&history),
+        Family::Firefox => browser_forensic_firefox::parse_history(&history),
+        Family::Safari => browser_forensic_safari::parse_history(&history),
+    }
+    .map_err(|e| crate::output::actionable_db_error(e, &history))?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    Ok(events)
+}
+
+/// Parse a `s`/`m`/`h`/`d`-suffixed duration into nanoseconds (a bare number is
+/// seconds). The half-width of the `timeline --around` window.
+///
+/// # Errors
+/// Returns an error on a non-numeric magnitude or an unrecognized unit suffix.
+fn parse_duration_ns(s: &str) -> Result<i64> {
+    let s = s.trim();
+    let split = s
+        .find(|c: char| !c.is_ascii_digit() && c != '-')
+        .unwrap_or(s.len());
+    let (num, unit) = s.split_at(split);
+    let magnitude: i64 = num
+        .parse()
+        .with_context(|| format!("invalid duration magnitude in {s:?}"))?;
+    let per_unit_ns: i64 = match unit.trim() {
+        "" | "s" => 1_000_000_000,
+        "m" => 60 * 1_000_000_000,
+        "h" => 3_600 * 1_000_000_000,
+        "d" => 86_400 * 1_000_000_000,
+        other => anyhow::bail!("unrecognized duration unit {other:?} (want s/m/h/d) in {s:?}"),
+    };
+    Ok(magnitude.saturating_mul(per_unit_ns))
+}
+
+/// Keep only events within `window_ns` on either side of `pivot_ns` (RFC 0001
+/// P5a `timeline --around`). Untimed events (`timestamp_ns == 0`) drop out of a
+/// pivoted view.
+fn retain_around(events: &mut Vec<BrowserEvent>, pivot_ns: i64, window_ns: i64) {
+    let lo = pivot_ns.saturating_sub(window_ns);
+    let hi = pivot_ns.saturating_add(window_ns);
+    events.retain(|e| e.timestamp_ns >= lo && e.timestamp_ns <= hi);
+}
+
+/// `br4n6 timeline PATH [--around WHEN --window DUR] [--tz IANA] [--chains |
+/// --graph <json|dot>] [--format …]` — the RFC 0001 P5a unified chronology verb.
+///
+/// The default view is the unified cross-artifact timeline + per-host rollup
+/// (formerly `correlate`). `--chains` switches to referrer/redirect/session
+/// reconstruction (formerly `chains`); `--graph <json|dot>` emits the entity
+/// graph (formerly `graph`). `--around`/`--window` narrow every view to a pivot
+/// moment; `--tz` renders timestamps in an IANA zone.
+///
+/// # Errors
+/// Returns a loud error if the path does not exist, a timestamp/duration/timezone
+/// is invalid, or event collection fails.
+#[allow(clippy::too_many_arguments)] // one arg per timeline flag; a struct would only shuffle them
+pub fn run_timeline(
+    path: &Path,
+    around: Option<&str>,
+    window: &str,
+    tz: Option<&str>,
+    chains: bool,
+    idle_gap: i64,
+    graph: Option<GraphFormat>,
+    graph_window: i64,
+    format: Option<OutputFormat>,
+) -> Result<()> {
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
+    let tz = parse_tz(tz)?;
+    let around_ns = around.map(parse_timestamp_ns).transpose()?;
+    let window_ns = parse_duration_ns(window)?;
+    let apply_around = |events: &mut Vec<BrowserEvent>| {
+        if let Some(pivot) = around_ns {
+            retain_around(events, pivot, window_ns);
+        }
+    };
+
+    // Entity-graph view (formerly `graph`): timestamps carry no display, so `--tz`
+    // does not apply; it renders to stdout (redirect for a file).
+    if let Some(graph_format) = graph {
+        let mut events = collect_timeline_events(path)?;
+        apply_around(&mut events);
+        print!("{}", graph_output(&events, graph_format, graph_window));
+        return Ok(());
+    }
+
+    let resolved = crate::output::resolve_stdout(format);
+
+    // Reconstruction view (formerly `chains`): referrer/redirect/session-enriched
+    // per-visit navigation.
+    if chains {
+        let mut events = reconstruct_history(path, idle_gap)?;
+        apply_around(&mut events);
+        emit_events(&events, resolved);
+        return Ok(());
+    }
+
+    // Default: the unified cross-artifact chronology + per-host rollup.
+    let mut events = collect_timeline_events(path)?;
+    apply_around(&mut events);
+    print!("{}", correlate_output(&events, resolved, tz));
     Ok(())
 }
 
@@ -1861,6 +1987,20 @@ fn format_ts(ns: i64) -> String {
     let nanos = u32::try_from(ns.rem_euclid(1_000_000_000)).unwrap_or(0);
     DateTime::<Utc>::from_timestamp(secs, nanos)
         .map_or_else(|| "invalid".to_string(), |d| d.to_rfc3339())
+}
+
+/// Format a Unix-nanoseconds timestamp as RFC 3339, in `tz` when given (the
+/// `timeline --tz <IANA>` render), otherwise UTC ([`format_ts`]).
+fn format_ts_tz(ns: i64, tz: Option<chrono_tz::Tz>) -> String {
+    let Some(tz) = tz else {
+        return format_ts(ns);
+    };
+    let secs = ns.div_euclid(1_000_000_000);
+    let nanos = u32::try_from(ns.rem_euclid(1_000_000_000)).unwrap_or(0);
+    chrono::DateTime::from_timestamp(secs, nanos).map_or_else(
+        || "invalid".to_string(),
+        |utc| utc.with_timezone(&tz).to_rfc3339(),
+    )
 }
 
 fn csv_escape(s: &str) -> String {
@@ -4435,11 +4575,11 @@ fn event_host(e: &BrowserEvent) -> String {
 }
 
 /// A unified-timeline event as a human-readable line (tagged browser / artifact
-/// / host).
-fn correlate_row_text(e: &BrowserEvent) -> String {
+/// / host). `tz` renders the timestamp in an IANA zone when given.
+fn correlate_row_text(e: &BrowserEvent, tz: Option<chrono_tz::Tz>) -> String {
     format!(
         "[{ts}] {browser}/{artifact} {host}  {desc}\n",
-        ts = format_ts(e.timestamp_ns),
+        ts = format_ts_tz(e.timestamp_ns, tz),
         browser = e.browser,
         artifact = e.artifact,
         host = event_host(e),
@@ -4447,12 +4587,13 @@ fn correlate_row_text(e: &BrowserEvent) -> String {
     )
 }
 
-/// A unified-timeline event as one JSONL object (`record":"event"`).
-fn correlate_row_json(e: &BrowserEvent) -> String {
+/// A unified-timeline event as one JSONL object (`record":"event"`). The numeric
+/// `timestamp_ns` is always UTC-faithful; the human `timestamp` honors `tz`.
+fn correlate_row_json(e: &BrowserEvent, tz: Option<chrono_tz::Tz>) -> String {
     let obj = json!({
         "record": "event",
         "timestamp_ns": e.timestamp_ns,
-        "timestamp": format_ts(e.timestamp_ns),
+        "timestamp": format_ts_tz(e.timestamp_ns, tz),
         "browser": e.browser.to_string(),
         "artifact": e.artifact.to_string(),
         "host": event_host(e),
@@ -4464,10 +4605,10 @@ fn correlate_row_json(e: &BrowserEvent) -> String {
 }
 
 /// A unified-timeline event as one CSV row.
-fn correlate_row_csv(e: &BrowserEvent) -> String {
+fn correlate_row_csv(e: &BrowserEvent, tz: Option<chrono_tz::Tz>) -> String {
     format!(
         "{},{},{},{},{},{},{}\n",
-        csv_escape(&format_ts(e.timestamp_ns)),
+        csv_escape(&format_ts_tz(e.timestamp_ns, tz)),
         csv_escape(&e.browser.to_string()),
         csv_escape(&e.artifact.to_string()),
         csv_escape(&event_host(e)),
@@ -4478,7 +4619,8 @@ fn correlate_row_csv(e: &BrowserEvent) -> String {
 }
 
 /// Render the unified cross-artifact timeline and per-host rollup for
-/// `br4n6 correlate`.
+/// `br4n6 timeline` (RFC 0001 P5a; formerly `correlate`). `tz` renders human
+/// timestamps in an IANA zone; numeric `timestamp_ns` stays UTC-faithful.
 ///
 /// - `text`: a human timeline section (untimed rows grouped) followed by the
 ///   per-host rollup.
@@ -4487,7 +4629,11 @@ fn correlate_row_csv(e: &BrowserEvent) -> String {
 /// - `csv`: the unified timeline rows only (one clean schema); use `jsonl`/`text`
 ///   for the rollup.
 #[must_use]
-pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String {
+pub fn correlate_output(
+    events: &[BrowserEvent],
+    format: OutputFormat,
+    tz: Option<chrono_tz::Tz>,
+) -> String {
     use browser_forensic_correlate::rollup::host_rollups;
     use browser_forensic_correlate::timeline::unified_timeline;
 
@@ -4505,12 +4651,12 @@ pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String
                 dups = tl.duplicates_removed,
             ));
             for e in &tl.timed {
-                out.push_str(&correlate_row_text(e));
+                out.push_str(&correlate_row_text(e, tz));
             }
             if !tl.untimed.is_empty() {
                 out.push_str(&format!("-- untimed ({}) --\n", tl.untimed.len()));
                 for e in &tl.untimed {
-                    out.push_str(&correlate_row_text(e));
+                    out.push_str(&correlate_row_text(e, tz));
                 }
             }
             out.push_str(&format!(
@@ -4526,7 +4672,9 @@ pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String
                     .join(" ");
                 let browsers = r.browsers.iter().cloned().collect::<Vec<_>>().join(", ");
                 let span = match (r.first_seen_ns, r.last_seen_ns) {
-                    (Some(f), Some(l)) => format!("{}..{}", format_ts(f), format_ts(l)),
+                    (Some(f), Some(l)) => {
+                        format!("{}..{}", format_ts_tz(f, tz), format_ts_tz(l, tz))
+                    }
                     _ => "(untimed)".to_string(),
                 };
                 out.push_str(&format!(
@@ -4549,7 +4697,7 @@ pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String
                 serde_json::to_string(&summary).unwrap_or_else(|_| "{}".to_string())
             ));
             for e in tl.timed.iter().chain(tl.untimed.iter()) {
-                out.push_str(&correlate_row_json(e));
+                out.push_str(&correlate_row_json(e, tz));
                 out.push('\n');
             }
             for r in &rollups {
@@ -4564,7 +4712,7 @@ pub fn correlate_output(events: &[BrowserEvent], format: OutputFormat) -> String
         OutputFormat::Csv => {
             out.push_str("timestamp,browser,artifact,host,source,description,url\n");
             for e in tl.timed.iter().chain(tl.untimed.iter()) {
-                out.push_str(&correlate_row_csv(e));
+                out.push_str(&correlate_row_csv(e, tz));
             }
         }
     }
@@ -4585,41 +4733,6 @@ pub fn graph_output(events: &[BrowserEvent], format: GraphFormat, window_secs: i
         GraphFormat::Json => browser_forensic_correlate::render::to_json(&g),
         GraphFormat::Dot => browser_forensic_correlate::render::to_dot(&g),
     }
-}
-
-/// `br4n6 correlate PATH` — unified cross-artifact timeline + per-host rollup.
-///
-/// # Errors
-/// Returns an error if the path does not exist or event collection fails.
-pub fn run_correlate(path: &Path, format: OutputFormat) -> Result<()> {
-    let events = collect_correlation_events(path)?;
-    print!("{}", correlate_output(&events, format));
-    Ok(())
-}
-
-/// `br4n6 graph PATH` — entity graph (hosts + referrer/redirect/co-occurrence
-/// edges) as JSON or Graphviz DOT, written to `out` or stdout.
-///
-/// # Errors
-/// Returns an error if the path does not exist, event collection fails, or the
-/// output file cannot be written.
-pub fn run_graph(
-    path: &Path,
-    format: GraphFormat,
-    out: Option<&Path>,
-    window_secs: i64,
-) -> Result<()> {
-    let events = collect_correlation_events(path)?;
-    let rendered = graph_output(&events, format, window_secs);
-    match out {
-        Some(p) => {
-            std::fs::write(p, &rendered)
-                .with_context(|| format!("writing entity graph to {}", p.display()))?;
-            eprintln!("wrote entity graph to {}", p.display());
-        }
-        None => print!("{rendered}"),
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -4647,7 +4760,7 @@ mod tests {
                 "https://example.com/b",
             ),
         ];
-        let out = correlate_output(&events, OutputFormat::Text);
+        let out = correlate_output(&events, OutputFormat::Text, None);
         assert!(out.contains("Unified cross-artifact timeline"));
         assert!(out.contains("Per-host rollup"));
         assert!(out.contains("example.com"));
@@ -4662,7 +4775,7 @@ mod tests {
             ArtifactKind::History,
             "https://www.example.com/a",
         )];
-        let out = correlate_output(&events, OutputFormat::Jsonl);
+        let out = correlate_output(&events, OutputFormat::Jsonl, None);
         let mut kinds = std::collections::HashSet::new();
         for line in out.lines() {
             let v: serde_json::Value = serde_json::from_str(line).unwrap();
@@ -4681,7 +4794,7 @@ mod tests {
             ArtifactKind::History,
             "https://www.example.com/a",
         )];
-        let out = correlate_output(&events, OutputFormat::Csv);
+        let out = correlate_output(&events, OutputFormat::Csv, None);
         assert!(out.starts_with("timestamp,browser,artifact,host,source,description,url\n"));
         assert!(out.contains(",example.com,"));
     }
