@@ -430,8 +430,11 @@ enum ArtifactKind {
     Bookmarks(ArtifactArgs),
     /// Parse browser extensions.
     Extensions(ArtifactArgs),
-    /// Parse browser login data (passwords NEVER exposed unless explicitly
-    /// opted in with `--decrypt --include-passwords`).
+    /// Parse browser login data. Passwords are double-gated (RFC 0001 P6 / D7):
+    /// `--keys <PATH>` decrypts using NSS key material auto-located within the
+    /// evidence root, and `--reveal-secrets <FILE>` materializes password
+    /// plaintext to a FILE only — never the terminal. Usernames show; passwords
+    /// render as a placeholder unless written to a file.
     #[command(name = "logins")]
     Logins {
         /// A `logins.json`/`key4.db`/`Login Data` file, or a profile directory.
@@ -440,17 +443,22 @@ enum ArtifactKind {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
-        /// OPT-IN: decrypt saved usernames (Firefox NSS). Needs the profile's
-        /// `key4.db`. Off by default (values stay `ENCRYPTED`).
+        /// Decrypt using NSS key material (`key4.db`) AUTO-LOCATED **within** this
+        /// evidence root and never outside it. Usually the profile directory.
+        #[arg(long, value_name = "PATH")]
+        keys: Option<PathBuf>,
+        /// Read the Firefox master password once from stdin (empty when none is
+        /// set). NEVER pass a password on argv — it leaks to shell history + `ps`.
         #[arg(long)]
-        decrypt: bool,
-        /// Firefox master password (empty when none is set). Used with `--decrypt`.
-        #[arg(long, value_name = "PASSWORD", default_value = "")]
-        master_password: String,
-        /// EXTRA OPT-IN: also decrypt and show plaintext passwords (crown jewel).
-        /// Requires `--decrypt`. Default output never contains a password.
-        #[arg(long)]
-        include_passwords: bool,
+        password_stdin: bool,
+        /// Materialize decrypted PASSWORD plaintext to this FILE only (never the
+        /// terminal — scrollback/tmux/screen-share leak PII). Without it, the
+        /// password renders as `[decrypted — write with --reveal-secrets <file>]`.
+        #[arg(long, value_name = "FILE")]
+        reveal_secrets: Option<PathBuf>,
+        /// Also write a chain-of-custody manifest (the key sources used) here.
+        #[arg(long, value_name = "PATH")]
+        manifest: Option<PathBuf>,
     },
     /// Parse browser autofill data.
     Autofill(ArtifactArgs),
@@ -1326,10 +1334,18 @@ fn dispatch_artifact(kind: ArtifactKind) -> Result<()> {
         ArtifactKind::Logins {
             path,
             format,
-            decrypt,
-            master_password,
-            include_passwords,
-        } => dispatch_login_data(&path, format, decrypt, &master_password, include_passwords),
+            keys,
+            password_stdin,
+            reveal_secrets,
+            manifest,
+        } => dispatch_logins(
+            &path,
+            format,
+            keys.as_deref(),
+            password_stdin,
+            reveal_secrets.as_deref(),
+            manifest.as_deref(),
+        ),
         ArtifactKind::Autofill(a) => run_artifact(&a.path, ArtifactType::Autofill, a.format),
         ArtifactKind::Session(a) => run_artifact(&a.path, ArtifactType::Session, a.format),
         ArtifactKind::Cache(a) => run_artifact(&a.path, ArtifactType::Cache, a.format),
@@ -2466,12 +2482,29 @@ pub fn decrypt_firefox_credentials(
     master_password: &str,
     include_passwords: bool,
 ) -> Result<Vec<BrowserEvent>> {
+    let (key4_db, logins_json) = resolve_firefox_profile(path)?;
+    decrypt_firefox_logins_with_key4(&key4_db, &logins_json, master_password, include_passwords)
+}
+
+/// Decrypt Firefox credentials with an explicit `key4.db` + `logins.json` (the
+/// seam the `--keys` UX uses: `key4.db` located within the evidence root, the
+/// `logins.json` read from the artifact path). Usernames are always returned; a
+/// password only when `include_passwords`.
+///
+/// # Errors
+/// Returns an error when the master password is wrong or a blob cannot be
+/// decrypted (never a fabricated value).
+pub fn decrypt_firefox_logins_with_key4(
+    key4_db: &Path,
+    logins_json: &Path,
+    master_password: &str,
+    include_passwords: bool,
+) -> Result<Vec<BrowserEvent>> {
     use browser_forensic_core::{ArtifactKind, BrowserFamily};
 
-    let (key4_db, logins_json) = resolve_firefox_profile(path)?;
     let logins = browser_forensic_decrypt::decrypt_firefox_logins(
-        &key4_db,
-        &logins_json,
+        key4_db,
+        logins_json,
         master_password,
         include_passwords,
     )
@@ -2485,12 +2518,15 @@ pub fn decrypt_firefox_credentials(
                 || json!("(not decrypted — pass --include-passwords)"),
                 serde_json::Value::String,
             );
+            // The username is shown (D7); it rides the description so it appears
+            // on the human/text render, not only in JSONL attrs.
+            let desc = format!("{} \u{2014} {}", login.username, login.hostname);
             BrowserEvent::new(
                 0,
                 BrowserFamily::Firefox,
                 ArtifactKind::LoginData,
                 &source,
-                login.hostname.clone(),
+                desc,
             )
             .with_attr("hostname", json!(login.hostname))
             .with_attr("username", json!(login.username))
@@ -2895,43 +2931,140 @@ fn read_stdin_password(enabled: bool) -> Result<Option<String>> {
     Ok(Some(trimmed))
 }
 
-/// Route `login-data`: opt-in Firefox credential decryption, else the plain
-/// parser. `--include-passwords` is meaningless without `--decrypt`.
-fn dispatch_login_data(
+/// The placeholder shown for a decrypted password on the terminal — the plaintext
+/// is materialized to a file via `--reveal-secrets`, never printed (RFC 0001 D7).
+const SECRET_PLACEHOLDER: &str = "[decrypted \u{2014} write with --reveal-secrets <file>]";
+
+/// Route `logins` (RFC 0001 P6 / D7): with `--keys`, decrypt via NSS key material
+/// located within the evidence root; without it, the plain metadata parser.
+fn dispatch_logins(
     path: &Path,
     format: OutputFormat,
-    decrypt: bool,
-    master_password: &str,
-    include_passwords: bool,
+    keys: Option<&Path>,
+    password_stdin: bool,
+    reveal_secrets: Option<&Path>,
+    manifest_out: Option<&Path>,
 ) -> Result<()> {
-    if decrypt {
-        run_credentials_decrypt(path, master_password, include_passwords, format)
-    } else if include_passwords {
-        anyhow::bail!("--include-passwords requires --decrypt")
-    } else {
-        run_artifact(path, ArtifactType::LoginData, format)
+    match keys {
+        Some(root) => run_logins_decrypt(
+            path,
+            root,
+            password_stdin,
+            reveal_secrets,
+            manifest_out,
+            format,
+        ),
+        None => run_artifact(path, ArtifactType::LoginData, format),
     }
 }
 
-/// `br4n6 login-data PATH --decrypt` handler: warn, decrypt, render.
-fn run_credentials_decrypt(
+/// `br4n6 artifact logins PATH --keys <ROOT>` handler: locate `key4.db` within the
+/// evidence root, decrypt, and render. Usernames show; passwords NEVER reach the
+/// terminal — they render as a placeholder, and materialize to `--reveal-secrets
+/// <FILE>` only.
+fn run_logins_decrypt(
     path: &Path,
-    master_password: &str,
-    include_passwords: bool,
+    root: &Path,
+    password_stdin: bool,
+    reveal_secrets: Option<&Path>,
+    manifest_out: Option<&Path>,
     format: OutputFormat,
 ) -> Result<()> {
+    let master = read_stdin_password(password_stdin)?.unwrap_or_default();
+    let (key4_db, mut audit) = crate::keys::locate_firefox_key4(root)?;
     eprintln!(
-        "[decrypt] opt-in credential decryption enabled — output contains sensitive plaintext{}",
-        if include_passwords {
-            " INCLUDING PASSWORDS"
-        } else {
-            ""
-        }
+        "Keys: Firefox NSS key4.db ({}) \u{2192} loaded",
+        key4_db.display()
     );
-    let mut events = decrypt_firefox_credentials(path, master_password, include_passwords)?;
+    let logins_json = resolve_firefox_logins_json(path)?;
+
+    // Decrypt password plaintext only when it is bound for a file; otherwise
+    // usernames-only, so no plaintext is ever materialized in memory needlessly.
+    let want_secrets = reveal_secrets.is_some();
+    let mut events =
+        decrypt_firefox_logins_with_key4(&key4_db, &logins_json, &master, want_secrets)?;
+
+    // Secrets to file ONLY (never the terminal), then redact the in-memory events
+    // so stdout/JSONL can never carry a password.
+    let decrypted = if let Some(file) = reveal_secrets {
+        let n = write_secrets_file(file, &events)?;
+        eprintln!("wrote {n} decrypted secret(s) to {}", file.display());
+        n
+    } else {
+        events.len()
+    };
+    redact_login_passwords(&mut events);
+    for ks in &mut audit {
+        ks.decrypted_items = decrypted as u64;
+    }
+
     events.sort_by_key(|e| e.timestamp_ns);
     print_events(&events, format);
+
+    if let Some(mp) = manifest_out {
+        write_keyed_manifest(mp, &logins_json, &audit)?;
+        eprintln!("wrote chain-of-custody manifest to {}", mp.display());
+    }
     Ok(())
+}
+
+/// Resolve a Firefox `logins.json` from the artifact path (a profile dir, the
+/// `logins.json` itself, or a sibling file).
+fn resolve_firefox_logins_json(path: &Path) -> Result<PathBuf> {
+    let candidate = if path.is_dir() {
+        path.join("logins.json")
+    } else if path.file_name().and_then(|n| n.to_str()) == Some("logins.json") {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map_or_else(|| PathBuf::from("logins.json"), |p| p.join("logins.json"))
+    };
+    if !candidate.exists() {
+        anyhow::bail!("no logins.json found at {}", candidate.display());
+    }
+    Ok(candidate)
+}
+
+/// Write decrypted secrets (host, username, password) to a file, one JSON object
+/// per line. The FILE is the only place plaintext passwords are ever written.
+fn write_secrets_file(file: &Path, events: &[BrowserEvent]) -> Result<usize> {
+    let mut out = String::new();
+    let mut count = 0usize;
+    for ev in events {
+        let password = ev.attrs.get("password").and_then(|v| v.as_str());
+        // Only rows that actually carry a decrypted password (not the
+        // usernames-only placeholder) are materialized.
+        let Some(pw) = password.filter(|p| !p.starts_with("(not decrypted")) else {
+            continue;
+        };
+        let record = json!({
+            "hostname": ev.attrs.get("hostname"),
+            "username": ev.attrs.get("username"),
+            "password": pw,
+        });
+        out.push_str(&record.to_string());
+        out.push('\n');
+        count += 1;
+    }
+    std::fs::write(file, out.as_bytes())
+        .with_context(|| format!("writing secrets file {}", file.display()))?;
+    Ok(count)
+}
+
+/// Replace every event's `password` attr with the file-output placeholder so no
+/// password plaintext can reach stdout/JSONL (RFC 0001 D7 — terminal is never a
+/// secrets sink).
+fn redact_login_passwords(events: &mut [BrowserEvent]) {
+    for ev in events.iter_mut() {
+        if ev.attrs.contains_key("password") {
+            ev.attrs
+                .insert("password".to_string(), json!(SECRET_PLACEHOLDER));
+            // TEXT render shows only the description, so surface the placeholder
+            // there too: usernames show, the password reads as the file-output
+            // placeholder — never plaintext on the terminal (RFC 0001 D7).
+            ev.description = format!("{} {SECRET_PLACEHOLDER}", ev.description);
+        }
+    }
 }
 
 /// Detect a browser family from the artifact files directly inside a single

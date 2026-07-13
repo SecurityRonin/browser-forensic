@@ -112,6 +112,33 @@ pub fn resolve_chromium_keys(
     )
 }
 
+/// Locate the Firefox NSS key database (`key4.db`) **within** `root`, returning
+/// its path and a manifest audit record. The `logins.json` it protects is read
+/// separately from the artifact path by the caller.
+///
+/// # Errors
+/// Fails loudly when no `key4.db` is found within the root — a `key4.db` outside
+/// the evidence root is never read.
+pub fn locate_firefox_key4(root: &Path) -> Result<(PathBuf, Vec<KeySource>)> {
+    let base = if root.is_dir() {
+        root.to_path_buf()
+    } else {
+        root.parent().unwrap_or(root).to_path_buf()
+    };
+    let key4 = collect_files_within(&base)
+        .into_iter()
+        .find(|p| p.file_name().and_then(|n| n.to_str()) == Some("key4.db"))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no key4.db (Firefox NSS key database) found within {} — a key4.db outside the \
+                 evidence root is not read. Point --keys at the profile that holds it.",
+                base.display()
+            )
+        })?;
+    let audit = vec![key_source_file("Firefox NSS key4.db", &key4, None)];
+    Ok((key4, audit))
+}
+
 /// Recover the Windows AES-256-GCM profile key: unwrap the `Local State` key with
 /// a DPAPI masterkey located under `.../Protect/<SID>/` **within the root**.
 fn resolve_windows(
