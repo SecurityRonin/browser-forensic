@@ -98,14 +98,72 @@ pub struct FindHit {
 /// a domain. Anything unrecognized is a [`TermKind::Literal`] substring.
 #[must_use]
 pub fn classify_term(term: &str) -> TermKind {
-    unimplemented!("classify_term (P4 GREEN)")
+    let t = term.trim();
+    if t.contains("://") {
+        return TermKind::Url;
+    }
+    if t.parse::<std::net::Ipv4Addr>().is_ok() {
+        return TermKind::Ipv4;
+    }
+    if t.parse::<std::net::Ipv6Addr>().is_ok() {
+        return TermKind::Ipv6;
+    }
+    if !t.is_empty() && t.bytes().all(|b| b.is_ascii_hexdigit()) {
+        match t.len() {
+            32 => return TermKind::Hash(HashKind::Md5),
+            40 => return TermKind::Hash(HashKind::Sha1),
+            64 => return TermKind::Hash(HashKind::Sha256),
+            _ => {}
+        }
+    }
+    if looks_like_domain(t) {
+        return TermKind::Domain;
+    }
+    TermKind::Literal
+}
+
+/// True when `s` has the shape of a bare domain / hostname: dot-separated labels
+/// of `[A-Za-z0-9-]` (not leading/trailing a hyphen), no whitespace or path, and
+/// a final label (the TLD) that is at least two ASCII letters.
+fn looks_like_domain(s: &str) -> bool {
+    if s.is_empty() || s.len() > 253 || s.contains(char::is_whitespace) {
+        return false;
+    }
+    let labels: Vec<&str> = s.split('.').collect();
+    if labels.len() < 2 {
+        return false;
+    }
+    let Some(tld) = labels.last() else {
+        return false;
+    };
+    if tld.len() < 2 || !tld.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    labels.iter().all(|label| {
+        !label.is_empty()
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    })
 }
 
 /// A short human label for a classified TERM, for the *"Searching for domain
 /// …"* announcement.
 #[must_use]
 pub fn describe_term(kind: &TermKind) -> &'static str {
-    unimplemented!("describe_term (P4 GREEN)")
+    match kind {
+        TermKind::Domain => "domain",
+        TermKind::Url => "URL",
+        TermKind::Ipv4 => "IPv4 address",
+        TermKind::Ipv6 => "IPv6 address",
+        TermKind::Hash(HashKind::Md5) => "MD5 hash",
+        TermKind::Hash(HashKind::Sha1) => "SHA-1 hash",
+        TermKind::Hash(HashKind::Sha256) => "SHA-256 hash",
+        TermKind::Regex => "regex",
+        TermKind::Literal => "literal term",
+    }
 }
 
 /// Derive the four-axis [`Provenance`] for an event by its artifact kind (D4).
@@ -113,7 +171,57 @@ pub fn describe_term(kind: &TermKind) -> &'static str {
 /// source/state/action tuples so their courtroom value is never conflated.
 #[must_use]
 pub fn provenance_for(artifact: &ArtifactKind) -> Provenance {
-    unimplemented!("provenance_for (P4 GREEN)")
+    use ArtifactKind as A;
+    use EvidenceSource as Src;
+    use EvidenceState as St;
+    use TimestampBasis as Tb;
+    use UserActionClaim as Ua;
+
+    let (source, state, basis, action) = match artifact {
+        // A recorded navigation the user made — the strongest "visited" evidence.
+        A::History | A::Favicon | A::TopSite | A::Session | A::MediaPlayback => {
+            (Src::History, St::Live, Tb::Explicit, Ua::Visited)
+        }
+        // A saved bookmark the user chose to keep — a deliberate visit.
+        A::Bookmarks => (Src::History, St::Live, Tb::Explicit, Ua::Visited),
+        // A bookmark present only in a backup — consistent with later deletion.
+        A::RecoveredBookmark => (Src::History, St::Deleted, Tb::Inferred, Ua::Visited),
+        // A string the user typed into the omnibox / address bar — typed intent.
+        A::Shortcut | A::TypedInput | A::NetworkPrediction => {
+            (Src::History, St::Live, Tb::Explicit, Ua::Searched)
+        }
+        // A file the browser downloaded.
+        A::Downloads => (Src::Download, St::Live, Tb::Explicit, Ua::Downloaded),
+        // A stored cookie — presence shows contact, not a deliberate visit.
+        A::Cookies => (Src::Cookie, St::Live, Tb::Explicit, Ua::ObservedString),
+        // A cached resource — a stored string; time is the surrounding page's.
+        A::Cache => (
+            Src::Cache,
+            St::Live,
+            Tb::SurroundingPage,
+            Ua::ObservedString,
+        ),
+        // An installed extension.
+        A::Extensions => (Src::Extension, St::Live, Tb::Explicit, Ua::Unknown),
+        // Other live profile stores where the term merely appears as a string.
+        A::LoginData
+        | A::Autofill
+        | A::LocalStorage
+        | A::Permission
+        | A::CreditCard
+        | A::AuthToken
+        | A::Annotation
+        | A::Preferences
+        | A::Integrity => (Src::History, St::Live, Tb::Explicit, Ua::ObservedString),
+        // A domain recovered from a network/state artifact after a history wipe —
+        // contact is inferred, never a recorded visit (D4).
+        A::RecoveredDomain => (Src::Recovered, St::Inferred, Tb::None, Ua::Unknown),
+        // A record carved from a deallocated SQLite page / WAL — deleted, recovered.
+        A::Carved => (Src::Carved, St::Deleted, Tb::None, Ua::Unknown),
+        // A string carved from a memory image.
+        A::Memory => (Src::Memory, St::Carved, Tb::None, Ua::ObservedString),
+    };
+    Provenance::new(source, state, basis, action)
 }
 
 /// Map an evidence [`EvidenceState`] to the confidence its interpretation carries
@@ -121,13 +229,31 @@ pub fn provenance_for(artifact: &ArtifactKind) -> Provenance {
 /// low.
 #[must_use]
 pub fn confidence_for(state: EvidenceState) -> Confidence {
-    unimplemented!("confidence_for (P4 GREEN)")
+    match state {
+        EvidenceState::Live => Confidence::High,
+        EvidenceState::Deleted | EvidenceState::Reconstructed => Confidence::Medium,
+        EvidenceState::Carved | EvidenceState::Inferred => Confidence::Low,
+    }
 }
 
 /// The rule id for a provenance record: `find.<source>.<state>.v1`.
 #[must_use]
 pub fn rule_for(provenance: &Provenance) -> String {
-    unimplemented!("rule_for (P4 GREEN)")
+    format!("find.{}.{}.v1", provenance.source, provenance.state)
+}
+
+/// The most specific locator an event carries for the MATCH column: its URL,
+/// else a recovered/contacted domain, else a download target, else its
+/// description.
+fn best_match_value(event: &BrowserEvent) -> String {
+    for key in ["url", "domain", "origin", "target_path"] {
+        if let Some(s) = event.attrs.get(key).and_then(serde_json::Value::as_str) {
+            if !s.is_empty() {
+                return s.to_string();
+            }
+        }
+    }
+    event.description.clone()
 }
 
 impl FindHit {
@@ -136,13 +262,37 @@ impl FindHit {
     /// event carries (its URL / domain / target, else its description).
     #[must_use]
     pub fn from_event(term: &str, event: &BrowserEvent) -> Self {
-        unimplemented!("FindHit::from_event (P4 GREEN)")
+        let provenance = provenance_for(&event.artifact);
+        let confidence = confidence_for(provenance.state);
+        let rule_id = rule_for(&provenance);
+        Self {
+            term: term.to_string(),
+            confidence,
+            rule_id,
+            provenance,
+            match_value: best_match_value(event),
+            timestamp_ns: event.timestamp_ns,
+            browser: Some(event.browser.to_string()),
+            profile: None,
+            user: None,
+        }
     }
 
     /// Project the hit to a [`FIND_HEADERS`]-ordered table row for the human view.
+    /// Every axis is rendered in full (never ellipsized); the lowercase Display of
+    /// each provenance enum is the human label.
     #[must_use]
     pub fn row(&self) -> Vec<String> {
-        unimplemented!("FindHit::row (P4 GREEN)")
+        vec![
+            self.term.clone(),
+            self.provenance.source.to_string(),
+            self.provenance.state.to_string(),
+            self.confidence.to_string(),
+            self.rule_id.clone(),
+            self.provenance.timestamp_basis.to_string(),
+            self.provenance.user_action_claim.to_string(),
+            self.match_value.clone(),
+        ]
     }
 }
 
