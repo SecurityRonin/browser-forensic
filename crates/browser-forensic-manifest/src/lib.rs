@@ -31,7 +31,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use browser_forensic_core::BrowserFamily;
+use browser_forensic_core::{BrowserFamily, Confidence};
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use md5::Md5;
@@ -160,6 +160,38 @@ pub struct FileDigest {
     pub mtime_utc: Option<String>,
 }
 
+/// One auto-detection result, recorded for court defensibility (RFC 0001 D8).
+///
+/// Detection is layered (magic bytes → schema probe → directory markers →
+/// container probe); this records what each input was detected as, how confident
+/// that call was, and the human-readable basis behind it.
+#[derive(Debug, Clone, Serialize)]
+pub struct DetectionRecord {
+    /// Absolute path of the input the detector classified.
+    pub path: String,
+    /// The detected artifact kind, as a human string
+    /// (e.g. `Chromium History (SQLite)`).
+    pub detected_kind: String,
+    /// Confidence in the classification (shares the [`Confidence`] axis with the
+    /// finding model).
+    pub confidence: Confidence,
+    /// The layered basis for the call
+    /// (e.g. `SQLite header + urls/visits schema + parent path .../Default/History`).
+    pub basis: String,
+}
+
+/// A rule identifier paired with its version (RFC 0001 D11).
+///
+/// Recorded so a finding can be tied to the exact rule that produced it. A sorted
+/// `Vec`, never a map, to keep the manifest deterministic.
+#[derive(Debug, Clone, Serialize)]
+pub struct RuleVersion {
+    /// The rule identifier (e.g. `integrity.history.rowid_gap.v1`).
+    pub rule_id: String,
+    /// The rule's version string.
+    pub version: String,
+}
+
 /// A complete chain-of-custody manifest.
 #[derive(Debug, Clone, Serialize)]
 pub struct Manifest {
@@ -171,6 +203,22 @@ pub struct Manifest {
     pub run: RunMetadata,
     /// Every hashed input, sorted by path for determinism.
     pub inputs: Vec<InputFile>,
+    /// Per-input auto-detection basis + confidence (RFC 0001 D8). Omitted from
+    /// the JSON when empty, so a run that does not populate it serializes exactly
+    /// as before.
+    pub detection_basis: Vec<DetectionRecord>,
+    /// Sources that were skipped or whose parsers failed (RFC 0001 D8/D11).
+    pub skipped_sources: Vec<String>,
+    /// The producing tool's version, when recorded separately from [`RunMetadata`].
+    pub tool_version: Option<String>,
+    /// Versions of the rules that ran, for reproducibility (RFC 0001 D11).
+    pub rule_versions: Vec<RuleVersion>,
+    /// Build hash of the tool, when available (RFC 0001 D11).
+    pub build_hash: Option<String>,
+    /// The timezone conversion rule applied to timestamps (RFC 0001 D11).
+    pub timezone_rule: Option<String>,
+    /// Schema version of the tool's output records (RFC 0001 D11).
+    pub output_schema_version: Option<String>,
 }
 
 /// Hash a single file, streaming its bytes through SHA-256 and MD5.
@@ -267,6 +315,13 @@ pub fn build_manifest(inputs: &[PathBuf], run: RunMetadata) -> Manifest {
         about: ManifestAbout::default(),
         run,
         inputs: files,
+        detection_basis: Vec::new(),
+        skipped_sources: Vec::new(),
+        tool_version: None,
+        rule_versions: Vec::new(),
+        build_hash: None,
+        timezone_rule: None,
+        output_schema_version: None,
     }
 }
 
@@ -463,6 +518,89 @@ mod tests {
         assert!(m1.inputs[1].path.ends_with("b_file"));
         let m2 = build_manifest(&inputs, fixed_run());
         assert_eq!(to_json(&m1).unwrap(), to_json(&m2).unwrap());
+    }
+
+    #[test]
+    fn empty_audit_fields_are_omitted_preserving_existing_output() {
+        // A run that populates none of the D8/D11 audit fields must serialize
+        // exactly as before — the new keys are absent, not empty arrays/nulls.
+        let d = TempDir::new().unwrap();
+        let p = write_file(d.path(), "abc", b"abc");
+        let m = build_manifest(&[p], fixed_run());
+        let json = to_json(&m).unwrap();
+        for key in [
+            "detection_basis",
+            "skipped_sources",
+            "tool_version",
+            "rule_versions",
+            "build_hash",
+            "timezone_rule",
+            "output_schema_version",
+        ] {
+            assert!(
+                !json.contains(key),
+                "unpopulated audit field `{key}` must be omitted from the JSON, got: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn detection_basis_serializes_when_populated() {
+        let d = TempDir::new().unwrap();
+        let p = write_file(d.path(), "History", b"abc");
+        let mut m = build_manifest(&[p], fixed_run());
+        m.detection_basis.push(DetectionRecord {
+            path: "/ev/Default/History".to_string(),
+            detected_kind: "Chromium History (SQLite)".to_string(),
+            confidence: Confidence::High,
+            basis: "SQLite header + urls/visits schema + parent path .../Default/History"
+                .to_string(),
+        });
+        let json = to_json(&m).unwrap();
+        assert!(json.contains("detection_basis"));
+        assert!(json.contains("Chromium History (SQLite)"));
+        assert!(json.contains("urls/visits schema"));
+        assert!(json.contains("High"), "confidence axis serialized");
+    }
+
+    #[test]
+    fn skipped_sources_serialize_when_populated() {
+        let d = TempDir::new().unwrap();
+        let p = write_file(d.path(), "History", b"abc");
+        let mut m = build_manifest(&[p], fixed_run());
+        m.skipped_sources.push("encrypted cookies".to_string());
+        m.skipped_sources.push("memory".to_string());
+        let json = to_json(&m).unwrap();
+        assert!(json.contains("skipped_sources"));
+        assert!(json.contains("encrypted cookies"));
+        assert!(json.contains("memory"));
+    }
+
+    #[test]
+    fn versions_build_hash_and_rules_serialize_when_populated() {
+        let d = TempDir::new().unwrap();
+        let p = write_file(d.path(), "History", b"abc");
+        let mut m = build_manifest(&[p], fixed_run());
+        m.tool_version = Some("2.0.0".to_string());
+        m.build_hash = Some("deadbeef".to_string());
+        m.timezone_rule = Some("UTC, no DST conversion".to_string());
+        m.output_schema_version = Some("browser-forensic/finding/v1".to_string());
+        m.rule_versions.push(RuleVersion {
+            rule_id: "integrity.history.rowid_gap.v1".to_string(),
+            version: "1".to_string(),
+        });
+        let json = to_json(&m).unwrap();
+        assert!(json.contains("2.0.0"), "tool_version");
+        assert!(json.contains("deadbeef"), "build_hash");
+        assert!(json.contains("UTC, no DST conversion"), "timezone_rule");
+        assert!(
+            json.contains("browser-forensic/finding/v1"),
+            "output_schema_version"
+        );
+        assert!(
+            json.contains("integrity.history.rowid_gap.v1"),
+            "rule_versions rule_id"
+        );
     }
 
     #[test]
