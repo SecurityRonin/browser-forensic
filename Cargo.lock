@@ -396,6 +396,7 @@ dependencies = [
  "rusty-leveldb",
  "serde",
  "serde_json",
+ "sha2",
  "snss-core",
  "tempfile",
  "url",

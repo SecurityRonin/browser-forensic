@@ -90,10 +90,14 @@ fn synthetic_manifest(dir: &Path) -> browser_forensic_manifest::Manifest {
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
     let mut h = Sha256::new();
     h.update(bytes);
     let d = h.finalize();
-    d.iter().map(|b| format!("{b:02x}")).collect()
+    d.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
 }
 
 // ---- pure bundle-writer tests ---------------------------------------------
@@ -165,13 +169,27 @@ fn sidecar_hashes_match_the_actual_bundle_bytes() {
 }
 
 #[test]
-fn html_with_no_findings_is_byte_identical_to_plain_report() {
-    // The single-file `report --format html` path must be unchanged: rendering
-    // with an empty finding set equals the historic renderer exactly.
+fn single_file_report_has_no_findings_section_but_bundle_always_states_d5() {
+    // The single-file `report --format html` path is unchanged — it renders NO
+    // ranked-findings section. The bundle renderer always states the D5 cue, even
+    // with zero findings (every bundle output states it once, per the RFC).
     let events = [history_event()];
     let plain = to_html_report(&events, &meta());
+    assert!(
+        !plain.contains("Ranked findings"),
+        "single-file mode adds no findings section"
+    );
     let with_empty = to_html_report_with_findings(&events, &meta(), &[]);
-    assert_eq!(plain, with_empty);
+    assert!(
+        with_empty.contains("Ranked findings"),
+        "bundle renders the section"
+    );
+    assert!(
+        with_empty
+            .to_lowercase()
+            .contains("not a finding of malice"),
+        "bundle states the D5 cue even with no findings"
+    );
 }
 
 #[test]

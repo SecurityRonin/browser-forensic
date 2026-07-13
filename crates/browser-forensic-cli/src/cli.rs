@@ -372,14 +372,25 @@ enum Command {
     },
     /// Write a DFIR-interop / court-ready report for a profile/home directory:
     /// a TSK bodyfile, plaso l2t_csv, or a self-contained HTML report.
+    ///
+    /// With `--bundle`, write instead a reproducible court/exam BUNDLE to the
+    /// `-o <DIR>` directory (RFC 0001 P8 / D10): a self-contained HTML summary
+    /// with ranked, court-safe findings, the machine timeline (xlsx + jsonl), the
+    /// chain-of-custody manifest (D11), and a SHA-256 sidecar hashing the bundle's
+    /// own outputs so it self-verifies with `sha256sum -c SHA256SUMS.txt`.
     Report {
         /// A profile directory or home directory to collect events from.
         #[arg(value_name = "PATH")]
         path: PathBuf,
-        /// Report format.
+        /// Report format (single-file modes; ignored with `--bundle`).
         #[arg(long, value_enum, default_value_t = crate::report::ReportFormat::Html)]
         format: crate::report::ReportFormat,
-        /// Output file (defaults to stdout).
+        /// Write a reproducible bundle to the `-o <DIR>` directory instead of a
+        /// single file (RFC 0001 P8). Requires `-o <DIR>`.
+        #[arg(long)]
+        bundle: bool,
+        /// Output file for the single-file modes, or (with `--bundle`) the output
+        /// DIRECTORY. Single-file modes default to stdout.
         #[arg(long = "out", short = 'o', value_name = "FILE")]
         output: Option<PathBuf>,
         /// Render timestamps in this IANA timezone (e.g. `America/New_York`).
@@ -786,6 +797,7 @@ where
         Some(Command::Report {
             path,
             format,
+            bundle,
             output,
             timezone,
             manifest,
@@ -795,6 +807,7 @@ where
         }) => run_report(
             &path,
             format,
+            bundle,
             output.as_deref(),
             timezone.as_deref(),
             manifest.as_deref(),
@@ -4034,9 +4047,11 @@ pub fn run_export(
 /// # Errors
 /// Returns an error if the timezone is unknown, collection fails, or writing
 /// the output file fails.
+#[allow(clippy::too_many_arguments)] // one param per RFC 0001 report concern; a 1:1 CLI mapping
 pub fn run_report(
     path: &Path,
     format: crate::report::ReportFormat,
+    bundle: bool,
     output: Option<&Path>,
     timezone: Option<&str>,
     manifest_out: Option<&Path>,
@@ -4045,6 +4060,14 @@ pub fn run_report(
     use std::io::Write as _;
 
     use crate::report::{self, ReportFormat};
+
+    // `--bundle` writes the reproducible directory deliverable (RFC 0001 P8),
+    // not a single file; `-o <DIR>` is then the output directory (required).
+    if bundle {
+        let dir = output
+            .context("--bundle writes a directory: pass -o <DIR> for the reproducible bundle")?;
+        return run_report_bundle(path, dir, timezone, selectors);
+    }
 
     let tz = parse_tz(timezone)?;
 
@@ -4100,6 +4123,120 @@ pub fn run_report(
         eprintln!("wrote chain-of-custody manifest to {}", mp.display());
     }
     Ok(())
+}
+
+/// `br4n6 report --bundle -o <DIR>` — the RFC 0001 P8 reproducible court/exam
+/// deliverable. Drives the same standard-tier investigation as `investigate`
+/// (so the bundle's ranked findings match the golden path), then hands the
+/// events, ranked findings, report meta, and a fully-populated chain-of-custody
+/// manifest to [`crate::bundle::write_bundle`], which serializes the HTML
+/// summary, the machine timeline (xlsx + jsonl), the manifest, and a SHA-256
+/// sidecar hashing them all. Read-only over the evidence.
+///
+/// # Errors
+/// Returns a loud error if the path does not exist (a bootstrap failure is never
+/// absorbed into an empty bundle), the timezone is unknown, no recognized
+/// evidence is found, or writing any bundle file fails.
+fn run_report_bundle(
+    path: &Path,
+    dir: &Path,
+    timezone: Option<&str>,
+    selectors: &crate::selectors::Selectors,
+) -> Result<()> {
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
+    let tz = parse_tz(timezone)?;
+
+    // Same bounded standard-tier investigation as the golden path, so the
+    // bundle's ranked findings are exactly what `investigate <PATH>` shows.
+    // Silent progress (bundle is a one-shot write, not an interactive run); no
+    // checkpoint (a read-only tool never writes into evidence unasked).
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let progress = crate::progress::Progress::select(false, false);
+    let mut checkpoint = None;
+    let tier = crate::investigate::Tier::Standard;
+    let (profiles, mut report, findings, _interrupted) =
+        collect_investigation(path, tier, &progress, &cancel, &mut checkpoint, selectors)?;
+    let findings = crate::investigate::rank_findings(findings);
+
+    let mut events = std::mem::take(&mut report.events);
+    events.sort_by_key(|e| e.timestamp_ns);
+
+    // Layered detection basis for every input (RFC 0001 D8), recorded into the
+    // manifest for court defensibility.
+    let detections = investigation_detections(path, &profiles, None);
+    let manifest = build_bundle_manifest(path, tz, &findings, &detections)?;
+
+    let meta = crate::report::ReportMeta {
+        case: None,
+        examiner: None,
+        tool: "br4n6".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        timezone: tz.map_or_else(|| "UTC".to_string(), |t| t.name().to_string()),
+        generated_at_ns: report.generated_at_ns,
+        flags: report_flags(&report),
+    };
+
+    let bundle = crate::bundle::Bundle {
+        events: &events,
+        findings: &findings,
+        meta: &meta,
+        manifest: &manifest,
+        tz,
+    };
+    let written = crate::bundle::write_bundle(dir, &bundle)?;
+    eprintln!(
+        "wrote reproducible report bundle to {} ({} events, {} finding(s); files: {})",
+        dir.display(),
+        events.len(),
+        findings.len(),
+        written.join(", "),
+    );
+    Ok(())
+}
+
+/// Build the bundle's chain-of-custody manifest with every RFC 0001 D11 audit
+/// field populated: hashed inputs, the exact command line (via [`RunMetadata`]),
+/// per-input detection basis + confidence (D8), the rule versions that ran, the
+/// timezone-conversion rule, the tool/build/schema versions.
+///
+/// # Errors
+/// Returns an error if no recognized evidence is found under `path` or manifest
+/// serialization fails.
+fn build_bundle_manifest(
+    path: &Path,
+    tz: Option<chrono_tz::Tz>,
+    findings: &[browser_forensic_core::finding::Finding],
+    detections: &[(PathBuf, crate::detect::Detection)],
+) -> Result<browser_forensic_manifest::Manifest> {
+    let inputs = browser_forensic_manifest::enumerate_evidence(path);
+    if inputs.is_empty() {
+        anyhow::bail!(
+            "no recognized browser evidence files found under {}",
+            path.display()
+        );
+    }
+    let args: Vec<String> = std::env::args().collect();
+    let run = browser_forensic_manifest::RunMetadata::capture(
+        "br4n6",
+        env!("CARGO_PKG_VERSION"),
+        &args,
+        tz,
+    );
+    let mut manifest = browser_forensic_manifest::build_manifest(&inputs, run);
+    manifest.detection_basis = detections
+        .iter()
+        .map(|(p, det)| crate::detect::to_record(p, det))
+        .collect();
+    manifest.rule_versions = crate::bundle::rule_versions_from_findings(findings);
+    manifest.tool_version = Some(env!("CARGO_PKG_VERSION").to_string());
+    manifest.build_hash = option_env!("VERGEN_GIT_SHA")
+        .or(option_env!("GIT_HASH"))
+        .map(str::to_string);
+    manifest.timezone_rule = Some(crate::bundle::timezone_rule(tz));
+    manifest.output_schema_version = Some("browser-forensic/finding/v1".to_string());
+    Ok(manifest)
 }
 
 /// Parse an optional IANA timezone name into a `chrono_tz::Tz`.

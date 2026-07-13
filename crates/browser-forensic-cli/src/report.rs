@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+use browser_forensic_core::finding::Finding;
 use browser_forensic_core::{ArtifactKind, BrowserEvent};
 use chrono_tz::Tz;
 use clap::ValueEnum;
@@ -337,9 +338,36 @@ const HTML_TIMELINE_ROWS: usize = 1000;
 /// conclusions.
 #[must_use]
 pub fn to_html_report(events: &[BrowserEvent], meta: &ReportMeta) -> String {
+    render_html(events, meta, None)
+}
+
+/// Serialize the same court-presentable HTML report as [`to_html_report`], plus a
+/// ranked-findings section (RFC 0001 P8 report bundle). Each finding is rendered
+/// by the canonical [`Finding::render`] — the only finding renderer, so no HTML
+/// path can collapse the three D5 axes into a bare verdict — and every value is
+/// HTML-escaped. The section always states once that Priority is a triage
+/// attention cue, not a finding of malice (D5), even when `findings` is empty.
+/// The single-file [`to_html_report`] renders NO findings section, so that mode
+/// is unchanged.
+#[must_use]
+pub fn to_html_report_with_findings(
+    events: &[BrowserEvent],
+    meta: &ReportMeta,
+    findings: &[Finding],
+) -> String {
+    render_html(events, meta, Some(findings))
+}
+
+/// The shared HTML renderer. `findings` is `None` for the single-file report
+/// (no section, output unchanged) and `Some(_)` for the bundle (always renders
+/// the D5-framed findings section, even when the slice is empty).
+fn render_html(events: &[BrowserEvent], meta: &ReportMeta, findings: Option<&[Finding]>) -> String {
     let mut h = String::new();
     html_open(&mut h, meta);
     html_meta_table(&mut h, events, meta);
+    if let Some(findings) = findings {
+        html_findings(&mut h, findings);
+    }
     html_counts(&mut h, events);
     html_domains(&mut h, events);
     html_flags(&mut h, meta);
@@ -347,6 +375,34 @@ pub fn to_html_report(events: &[BrowserEvent], meta: &ReportMeta) -> String {
     h.push_str(CAPTION);
     h.push_str("</body>\n</html>\n");
     h
+}
+
+/// The once-per-report note framing Priority as a triage attention cue, not a
+/// verdict (RFC 0001 D5). Stated once, in the ranked-findings section.
+pub const PRIORITY_CUE_NOTE: &str = "Priority ranks where to look first — a triage \
+attention cue, not a finding of malice. Confidence and Interpretation are separate axes.";
+
+/// The ranked-findings section: the canonical court-safe render of each finding
+/// in a `<pre>` block (values HTML-escaped), preceded once by the D5 priority-cue
+/// note (always present). Findings are rendered in the order given (rank first).
+fn html_findings(h: &mut String, findings: &[Finding]) {
+    h.push_str("<h2>Ranked findings</h2>\n");
+    let _ = writeln!(
+        h,
+        "<p class=\"note\">{}</p>",
+        html_escape(PRIORITY_CUE_NOTE)
+    );
+    if findings.is_empty() {
+        h.push_str("<p>No ranked findings from the parsed artifacts at this tier.</p>\n");
+        return;
+    }
+    for f in findings {
+        let _ = writeln!(
+            h,
+            "<pre class=\"finding\">{}</pre>",
+            html_escape(&f.render())
+        );
+    }
 }
 
 /// Document preamble: doctype, head, inlined styles, and the `<h1>`.
@@ -508,4 +564,4 @@ fn render_rfc3339_tz(ns: i64, tz: Option<Tz>) -> String {
 const CAPTION: &str = "<p class=\"caption\">This report lists browser artifacts recovered from the collected data and records what was observed — the presence, timing, and attributes of each artifact — together with its evidentiary limits. It does not assert intent or authorship.</p>\n";
 
 /// Inlined stylesheet keeping the report self-contained and legible in print.
-const STYLE: &str = "<style>\nbody{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:2rem;color:#111;line-height:1.4}\nh1{font-size:1.5rem;border-bottom:2px solid #333;padding-bottom:.3rem}\nh2{font-size:1.15rem;margin-top:1.6rem}\ntable{border-collapse:collapse;margin:.5rem 0;width:100%}\nth,td{border:1px solid #bbb;padding:.3rem .5rem;text-align:left;vertical-align:top;font-size:.9rem}\nth{background:#f0f0f0}\ntable.meta{width:auto}\ntable.meta th{width:9rem}\n.timeline td:nth-child(4){word-break:break-all}\n.caption,.note{font-size:.8rem;color:#555;margin-top:1rem}\n.flags li{margin:.2rem 0}\n</style>\n";
+const STYLE: &str = "<style>\nbody{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:2rem;color:#111;line-height:1.4}\nh1{font-size:1.5rem;border-bottom:2px solid #333;padding-bottom:.3rem}\nh2{font-size:1.15rem;margin-top:1.6rem}\ntable{border-collapse:collapse;margin:.5rem 0;width:100%}\nth,td{border:1px solid #bbb;padding:.3rem .5rem;text-align:left;vertical-align:top;font-size:.9rem}\nth{background:#f0f0f0}\ntable.meta{width:auto}\ntable.meta th{width:9rem}\n.timeline td:nth-child(4){word-break:break-all}\n.caption,.note{font-size:.8rem;color:#555;margin-top:1rem}\n.flags li{margin:.2rem 0}\npre.finding{background:#f7f7f7;border:1px solid #ddd;border-left:3px solid #999;padding:.5rem .7rem;font-size:.85rem;white-space:pre-wrap;word-break:break-all}\n</style>\n";

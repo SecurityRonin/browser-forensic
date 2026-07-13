@@ -11,6 +11,7 @@ use snss::{Nav, Source, SourceKind, Tab, Window};
 mod render;
 pub use render::draw;
 
+pub mod bundle;
 pub mod checkpoint;
 pub mod cli;
 pub mod detect;
