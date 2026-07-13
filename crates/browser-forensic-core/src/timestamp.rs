@@ -108,4 +108,41 @@ mod tests {
         );
         assert_eq!(unix_secs_f64_to_nanos(0.0), 0);
     }
+
+    #[test]
+    fn filetime_at_unix_epoch_returns_zero() {
+        // FILETIME == epoch offset represents 1970-01-01 00:00:00 UTC.
+        assert_eq!(filetime_to_unix_nanos(FILETIME_EPOCH_OFFSET), 0);
+    }
+
+    #[test]
+    fn filetime_one_second_after_unix_epoch() {
+        // +1 second = +10,000,000 ticks of 100 ns.
+        let ft = FILETIME_EPOCH_OFFSET + 10_000_000;
+        assert_eq!(filetime_to_unix_nanos(ft), 1_000_000_000);
+    }
+
+    #[test]
+    fn filetime_preserves_100ns_precision() {
+        // One 100 ns tick past the epoch = 100 ns, not truncated to a second.
+        let ft = FILETIME_EPOCH_OFFSET + 1;
+        assert_eq!(filetime_to_unix_nanos(ft), 100);
+    }
+
+    #[test]
+    fn filetime_known_value_2023_01_01() {
+        // 2023-01-01T00:00:00Z: Unix secs 1_672_531_200.
+        // FILETIME = (1_672_531_200 + 11_644_473_600) * 10_000_000.
+        let ft = (1_672_531_200u64 + 11_644_473_600u64) * 10_000_000;
+        assert_eq!(filetime_to_unix_nanos(ft), 1_672_531_200_000_000_000);
+    }
+
+    #[test]
+    fn filetime_adversarial_extremes_never_panic() {
+        // Untrusted WebCache records can carry extreme FILETIMEs; conversion
+        // must clamp, never overflow-panic (never-panic invariant for parsers).
+        assert_eq!(filetime_to_unix_nanos(u64::MAX), i64::MAX);
+        // FILETIME 0 ("not set") pre-dates 1970 by far → clamps to i64::MIN.
+        assert_eq!(filetime_to_unix_nanos(0), i64::MIN);
+    }
 }

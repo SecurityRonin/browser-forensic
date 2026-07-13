@@ -366,6 +366,15 @@ mod tests {
     }
 
     #[test]
+    fn browser_family_display_ie_and_edge_legacy() {
+        assert_eq!(
+            format!("{}", BrowserFamily::InternetExplorer),
+            "Internet Explorer"
+        );
+        assert_eq!(format!("{}", BrowserFamily::EdgeLegacy), "Edge (Legacy)");
+    }
+
+    #[test]
     fn artifact_kind_display() {
         assert_eq!(format!("{}", ArtifactKind::History), "History");
         assert_eq!(format!("{}", ArtifactKind::Cookies), "Cookies");
