@@ -1,0 +1,26 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "browser-forensic"
+version = "0.1.0"
+description = "Python bindings for browser-forensic (br4n6): discover browser profiles and parse artifacts into BrowserEvents"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Security Ronin Ltd", email = "albert@securityronin.com" }]
+keywords = ["forensics", "browser", "chrome", "firefox", "safari", "dfir"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "License :: OSI Approved :: Apache Software License",
+]
+
+[project.urls]
+Repository = "https://github.com/SecurityRonin/browser-forensic"
+
+[tool.maturin]
+# Build the loadable CPython extension (abi3 → one wheel for 3.8+). Turning this
+# on here keeps `cargo check`/`clippy` (which don't link) libpython-free.
+features = ["pyo3/extension-module"]

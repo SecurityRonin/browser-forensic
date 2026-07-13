@@ -1,0 +1,12 @@
+# Rust build output
+/target/
+
+# Python build / test cruft
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.so
+*.pyd
+/dist/
+*.egg-info/
+.venv/

@@ -1,0 +1,48 @@
+[package]
+name = "browser-forensic-py"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+repository = "https://github.com/SecurityRonin/browser-forensic"
+description = "Python bindings for browser-forensic (br4n6): discover browser profiles and parse artifacts into BrowserEvents"
+
+# EXCLUDED from the parent workspace (see the root Cargo.toml `exclude`). A PyO3
+# cdylib links libpython when built without `extension-module`; keeping it out of
+# `cargo build/test --workspace` guarantees the pure-Rust build stays green on
+# any host. Built via maturin; the extension-module feature (undefined-symbol
+# linkage, resolved by the interpreter at load) is turned on for the wheel.
+
+# Own single-package workspace root: stops cargo from attaching this excluded
+# crate to the parent workspace (or the outer repo above it) and gives it an
+# independent Cargo.lock, resolved by maturin.
+[workspace]
+
+[lib]
+name = "browser_forensic"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["abi3-py38"] }
+pythonize = "0.29"
+serde = "1"
+serde_json = "1"
+browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-triage = { version = "0.2.0", path = "../browser-forensic-triage" }
+browser-forensic-discovery = { version = "0.2.0", path = "../browser-forensic-discovery" }
+
+[features]
+# Turned on by maturin (see pyproject.toml) to build the loadable extension.
+# Off for `cargo check`/`clippy`, which don't link and so need no libpython.
+extension-module = ["pyo3/extension-module"]
+
+[lints.rust]
+# This crate is excluded from the workspace, so it does not inherit the
+# workspace `forbid(unsafe_code)`. PyO3's #[pymodule]/#[pyfunction] macros expand
+# to a small amount of generated unsafe (the PyInit entrypoint); `deny` lets that
+# through while still forbidding any hand-written unsafe in this crate.
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }

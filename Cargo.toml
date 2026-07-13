@@ -21,6 +21,12 @@ members = [
     "crates/browser-forensic-cli",
     "crates/browser-forensic-mcp",
 ]
+# browser-forensic-py is a PyO3 cdylib. It is deliberately EXCLUDED from the
+# workspace so `cargo build/test --workspace` never tries to link libpython
+# (which would break the pure-Rust build on any host without a discoverable
+# Python). It is built/tested on its own via maturin + pytest; see its
+# Cargo.toml / pyproject.toml.
+exclude = ["crates/browser-forensic-py"]
 resolver = "2"
 
 [workspace.package]
