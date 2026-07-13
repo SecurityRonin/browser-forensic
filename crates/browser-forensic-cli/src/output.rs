@@ -237,7 +237,7 @@ pub fn actionable_db_error(err: anyhow::Error, path: &Path) -> anyhow::Error {
     if is_db_open_failure(&chain) {
         anyhow::anyhow!(
             "evidence database at {p} looks locked or corrupt (dirty WAL / not a database) — \
-             try recovering deleted and WAL records: br4n6 carve {p}\n(underlying: {chain})",
+             try recovering deleted and WAL records: br4n6 recover {p}\n(underlying: {chain})",
             p = path.display(),
         )
     } else {

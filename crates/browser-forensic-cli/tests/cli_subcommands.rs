@@ -68,14 +68,14 @@ fn br4n6() -> Command {
 
 #[test]
 fn every_subcommand_help_exits_0() {
-    // Verbs / orchestration commands kept at top level in RFC 0001 P1.
+    // Verbs / orchestration commands kept at top level. `carve` and `memory`
+    // were absorbed into the `recover` orchestrator in RFC 0001 P5b (clean break).
     for sub in [
         "timeline",
         "profiles",
         "analyze",
         "integrity",
-        "carve",
-        "memory",
+        "recover",
         "triage",
         "browsers",
     ] {
@@ -220,10 +220,10 @@ fn integrity_on_cleared_history_reports_indicators() {
     );
 }
 
-// ---- carve ----
+// ---- recover (absorbs the former standalone `carve` command, P5b) ----
 
 #[test]
-fn carve_on_valid_db_succeeds() {
+fn recover_on_valid_db_succeeds() {
     let f = NamedTempFile::new().expect("tempfile");
     let conn = Connection::open(f.path()).expect("open");
     conn.execute_batch(
@@ -233,11 +233,13 @@ fn carve_on_valid_db_succeeds() {
     .expect("setup");
     drop(conn);
 
-    br4n6().arg("carve").arg(f.path()).assert().success();
+    // A single SQLite database is the recover `Database` scope: deleted-record
+    // carving + tamper indicators over that one file.
+    br4n6().arg("recover").arg(f.path()).assert().success();
 }
 
 #[test]
-fn carve_jsonl_output_is_valid_json() {
+fn recover_jsonl_output_is_valid_json() {
     let f = NamedTempFile::new().expect("tempfile");
     let conn = Connection::open(f.path()).expect("open");
     conn.execute_batch("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);")
@@ -245,7 +247,7 @@ fn carve_jsonl_output_is_valid_json() {
     drop(conn);
 
     let output = br4n6()
-        .arg("carve")
+        .arg("recover")
         .arg(f.path())
         .arg("--format")
         .arg("jsonl")

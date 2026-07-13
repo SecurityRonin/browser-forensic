@@ -1,38 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! Humble-Object decision helpers in `browser_forensic_cli::cli`: carve-stat merging, the
-//! triage text summary, and filename-based browser inference. The CLI shells only
+//! Humble-Object decision helpers in `browser_forensic_cli::cli`: the triage
+//! text summary and filename-based browser inference. The CLI shells only
 //! `println!` what these return, so they carry the testable behavior.
 
 use std::path::Path;
 
-use browser_forensic_carve::CarveStats;
-use browser_forensic_cli::cli::{
-    infer_browser_from_filename, merge_carve_stats, triage_summary_lines,
-};
-
-#[test]
-fn merge_carve_stats_sums_every_field() {
-    let a = CarveStats {
-        bytes_scanned: 10,
-        pages_scanned: 1,
-        free_pages_found: 2,
-        records_recovered: 3,
-        records_partial: 4,
-    };
-    let b = CarveStats {
-        bytes_scanned: 100,
-        pages_scanned: 5,
-        free_pages_found: 6,
-        records_recovered: 7,
-        records_partial: 8,
-    };
-    let m = merge_carve_stats(&a, &b);
-    assert_eq!(m.bytes_scanned, 110);
-    assert_eq!(m.pages_scanned, 6);
-    assert_eq!(m.free_pages_found, 8);
-    assert_eq!(m.records_recovered, 10);
-    assert_eq!(m.records_partial, 12);
-}
+use browser_forensic_cli::cli::{infer_browser_from_filename, triage_summary_lines};
 
 #[test]
 fn triage_summary_lines_reports_the_counts() {

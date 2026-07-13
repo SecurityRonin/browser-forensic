@@ -600,41 +600,55 @@ fn create_pristine_history() -> (TempDir, PathBuf) {
     (dir, history)
 }
 
+// Tamper-check was absorbed into the `recover` orchestrator (RFC 0001 P5b): a
+// single history DB is the recover `Database` scope, which runs deleted-record
+// carving + tamper indicators. The court-safe framing (a tamper finding is
+// consistent-with, with an innocent alternative) is preserved through the
+// Finding render.
+
 #[test]
-fn br4n6_tamper_check_fires_on_tampered_db() {
+fn br4n6_recover_fires_tamper_finding_on_tampered_db() {
     let (_d, history) = create_tampered_history();
     let out = br4n6()
-        .args(["tamper-check", history.to_str().unwrap()])
+        .args(["recover", "--format", "text", history.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(
         out.status.success(),
-        "tamper-check should succeed; stderr: {}",
+        "recover should succeed; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let low = stdout.to_lowercase();
+    // A tampered DB surfaces a tamper finding hedged as consistent-with …
     assert!(
-        stdout.contains("indicator"),
-        "tampered DB should report indicators, got: {stdout}"
+        low.contains("consistent with"),
+        "tampered DB should surface a court-safe tamper finding, got: {stdout}"
     );
-    // Every finding must carry an innocent alternative (the framing rule).
+    // … and every such finding must carry an innocent alternative (framing rule).
     assert!(
-        stdout.to_lowercase().contains("innocent alternative"),
-        "each finding must show an innocent alternative, got: {stdout}"
+        low.contains("innocent alternative"),
+        "each tamper finding must show an innocent alternative, got: {stdout}"
     );
 }
 
 #[test]
-fn br4n6_tamper_check_clean_on_pristine_db() {
+fn br4n6_recover_clean_on_pristine_db() {
     let (_d, history) = create_pristine_history();
     let out = br4n6()
-        .args(["tamper-check", history.to_str().unwrap()])
+        .args(["recover", "--format", "text", history.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let low = stdout.to_lowercase();
+    // A pristine DB yields no recovered items, and no tamper finding fires.
     assert!(
-        stdout.to_lowercase().contains("no tampering"),
-        "pristine DB should report no indicators, got: {stdout}"
+        low.contains("no recoverable items"),
+        "pristine DB should recover nothing, got: {stdout}"
+    );
+    assert!(
+        !low.contains("innocent alternative"),
+        "a pristine DB must not fire a tamper finding, got: {stdout}"
     );
 }

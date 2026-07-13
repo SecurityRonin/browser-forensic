@@ -208,8 +208,8 @@ fn top_level_help_hides_moved_primitives_and_shows_artifact() {
         stdout.contains("artifact"),
         "top-level --help lacks `artifact`"
     );
-    // Kept verbs stay visible.
-    for kept in ["timeline", "triage", "carve", "reconstruct"] {
+    // Kept verbs stay visible (`carve` was absorbed into `recover` in P5b).
+    for kept in ["timeline", "triage", "recover", "reconstruct"] {
         assert!(stdout.contains(kept), "top-level --help lost verb `{kept}`");
     }
 }

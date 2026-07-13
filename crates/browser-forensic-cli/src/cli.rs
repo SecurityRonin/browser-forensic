@@ -224,13 +224,6 @@ enum Command {
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
     },
-    /// Recover deleted/orphaned/evicted Chromium cache entries the live index no
-    /// longer references (orphaned SimpleCache `[hash]_0`, dangling `[hash]_s`,
-    /// free-but-intact Blockfile). `PATH` is a `Cache`/`Cache_Data` directory.
-    /// Each recovered response is a *consistent-with* cached-then-evicted
-    /// artifact, tagged with the recovery mechanism and quality (full/partial);
-    /// deliberate user deletion is never asserted.
-    CacheCarve(ArtifactArgs),
     /// Reconstruct cached representations consistent with access to a URL, from
     /// browser cache. `PATH` is a cache directory or a whole profile. Writes a
     /// self-contained single-file HTML page, a replayable WARC, or a cached-image
@@ -253,11 +246,6 @@ enum Command {
         #[arg(long, value_enum, default_value_t = ReconstructFormat::Html)]
         format: ReconstructFormat,
     },
-    /// Recover domains contacted even after history is cleared, from
-    /// network/state artifacts (Network Persistent State, Reporting and NEL,
-    /// DIPS/BTM, TransportSecurity, Firefox HSTS). `PATH` is a profile directory
-    /// or a single such artifact file.
-    RecoveredDomains(ArtifactArgs),
     /// Export a correlated timeline for a profile/home to one file.
     Export {
         /// A profile directory or home directory to collect events from.
@@ -330,25 +318,6 @@ enum Command {
     },
     /// Run integrity checks on a browser artifact.
     Integrity(ArtifactArgs),
-    /// Check for anti-forensic / tampering indicators (history clearing,
-    /// timestamp anomalies, manual DB edits, incognito residue). Every finding is
-    /// consistent-with clearing/tampering, NOT proof of it, and is reported with
-    /// an innocent alternative. PATH may be a database file or a profile directory.
-    TamperCheck(ArtifactArgs),
-    /// Carve deleted records from a browser SQLite database.
-    Carve(ArtifactArgs),
-    /// Carve browser artifacts from a memory image (process-attributed via memf).
-    Memory {
-        /// A memory image (raw/LiME/AVML/crash-dump), or any buffer to byte-scan.
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        /// Volatility-3 ISF symbol file (offline symbols); otherwise auto-profiled.
-        #[arg(long, value_name = "ISF")]
-        symbols: Option<PathBuf>,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-        format: OutputFormat,
-    },
     /// Run full triage: discover profiles, parse, check integrity, carve.
     Triage {
         /// Home directory to scan for browser profiles.
@@ -624,14 +593,12 @@ where
             graph_window,
             format,
         ),
-        Some(Command::CacheCarve(a)) => run_cache_carve(&a.path, a.format),
         Some(Command::Reconstruct {
             path,
             out,
             url,
             format,
         }) => run_reconstruct(&path, &out, url.as_deref(), format),
-        Some(Command::RecoveredDomains(a)) => run_recovered_domains(&a.path, a.format),
         Some(Command::Export {
             path,
             format,
@@ -668,13 +635,6 @@ where
         Some(Command::Profiles { format }) => run_profiles(format),
         Some(Command::Analyze { path, cap }) => run_analyze(&path, cap),
         Some(Command::Integrity(a)) => run_integrity(&a.path, a.format),
-        Some(Command::TamperCheck(a)) => run_tamper_check(&a.path, a.format),
-        Some(Command::Carve(a)) => run_carve(&a.path, a.format),
-        Some(Command::Memory {
-            path,
-            symbols,
-            format,
-        }) => run_memory(&path, symbols.as_deref(), format),
         Some(Command::Triage { home, format }) => run_triage(home.as_deref(), format),
         Some(Command::Image {
             path,
@@ -2217,7 +2177,7 @@ fn csv_escape(s: &str) -> String {
 // carve / triage) keep `bw`'s exact machine-readable output contracts — the
 // `fmt` submodule below is the byte-for-byte `bw` event format (5-column CSV,
 // full-`serde` JSONL, `[ts] browser/artifact: desc` text). The Humble-Object decision
-// helpers (`merge_carve_stats`, `triage_summary_lines`, `infer_browser_from_filename`)
+// helpers (`triage_summary_lines`, `infer_browser_from_filename`)
 // stay pure and directly unit-testable.
 // ===========================================================================
 
@@ -2288,21 +2248,6 @@ pub mod fmt {
             csv_escape(&ev.source),
             csv_escape(&ev.description)
         )
-    }
-}
-
-/// Sum two carve passes (free-page + WAL) into one aggregate stat block.
-#[must_use]
-pub fn merge_carve_stats(
-    a: &browser_forensic_carve::CarveStats,
-    b: &browser_forensic_carve::CarveStats,
-) -> browser_forensic_carve::CarveStats {
-    browser_forensic_carve::CarveStats {
-        bytes_scanned: a.bytes_scanned + b.bytes_scanned,
-        pages_scanned: a.pages_scanned + b.pages_scanned,
-        free_pages_found: a.free_pages_found + b.free_pages_found,
-        records_recovered: a.records_recovered + b.records_recovered,
-        records_partial: a.records_partial + b.records_partial,
     }
 }
 
@@ -3688,31 +3633,6 @@ pub fn run_integrity(path: &Path, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-/// `br4n6 tamper-check PATH` — anti-forensic / tampering indicator sweep.
-///
-/// `PATH` may be a single database file or a profile directory. For a directory,
-/// every history database beneath it is checked and, in addition, network/state
-/// residue is compared against history for incognito-usage indicators. Every
-/// finding is an observation *consistent with* clearing/tampering, reported with
-/// an innocent alternative — never a conclusion.
-///
-/// # Errors
-/// Never fails on a per-artifact problem (best-effort); returns an error only if
-/// the path itself cannot be interpreted.
-pub fn run_tamper_check(path: &Path, format: OutputFormat) -> Result<()> {
-    let mut indicators = Vec::new();
-    if path.is_dir() {
-        gather_profile_tamper_indicators(path, &mut indicators);
-    } else {
-        let family = browser_forensic_core::detect_browser(path)
-            .or_else(|| infer_browser_from_filename(path))
-            .unwrap_or(BrowserFamily::Chromium);
-        gather_db_tamper_indicators(path, family, &mut indicators);
-    }
-    emit_tamper_findings(&indicators, path, format);
-    Ok(())
-}
-
 /// Run every single-database tamper indicator over `path`, absorbing per-check
 /// errors so one unreadable check never suppresses the others.
 fn gather_db_tamper_indicators(
@@ -3815,80 +3735,6 @@ fn tamper_host_of(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_string())
 }
 
-/// The serialized kind (enum variant name) of an indicator, taken from its JSON
-/// object key so it stays in sync with the type automatically.
-fn indicator_kind(ind: &browser_forensic_integrity::IntegrityIndicator) -> String {
-    match serde_json::to_value(ind) {
-        Ok(serde_json::Value::Object(map)) => map
-            .keys()
-            .next()
-            .cloned()
-            .unwrap_or_else(|| "Unknown".into()),
-        Ok(serde_json::Value::String(s)) => s,
-        _ => "Unknown".to_string(),
-    }
-}
-
-/// Render tamper findings with their observation and innocent alternative.
-fn emit_tamper_findings(
-    indicators: &[browser_forensic_integrity::IntegrityIndicator],
-    path: &Path,
-    format: OutputFormat,
-) {
-    if indicators.is_empty() {
-        match format {
-            OutputFormat::Text => {
-                println!("No tampering indicators detected in {}.", path.display());
-            }
-            OutputFormat::Jsonl => println!("{{\"status\":\"clean\"}}"),
-            OutputFormat::Csv => {
-                println!("kind,observation,innocent_alternative");
-            }
-        }
-        return;
-    }
-
-    match format {
-        OutputFormat::Text => {
-            println!(
-                "Found {} tampering indicator(s) in {} — each is consistent with \
-                 clearing/tampering, NOT proof of it:",
-                indicators.len(),
-                path.display()
-            );
-            for (n, ind) in indicators.iter().enumerate() {
-                println!("\n[{}] {}", n + 1, indicator_kind(ind));
-                println!("    observation: {}", ind.observation());
-                println!("    innocent alternative: {}", ind.innocent_alternative());
-            }
-        }
-        OutputFormat::Jsonl => {
-            for ind in indicators {
-                let obj = json!({
-                    "kind": indicator_kind(ind),
-                    "observation": ind.observation(),
-                    "innocent_alternative": ind.innocent_alternative(),
-                    "data": ind,
-                });
-                if let Ok(line) = serde_json::to_string(&obj) {
-                    println!("{line}");
-                }
-            }
-        }
-        OutputFormat::Csv => {
-            println!("kind,observation,innocent_alternative");
-            for ind in indicators {
-                println!(
-                    "{},{},{}",
-                    csv_field(&indicator_kind(ind)),
-                    csv_field(&ind.observation()),
-                    csv_field(ind.innocent_alternative()),
-                );
-            }
-        }
-    }
-}
-
 /// CSV-escape a field: neutralize a spreadsheet formula trigger, quote, and
 /// double any embedded quotes.
 fn csv_field(value: &str) -> String {
@@ -3985,27 +3831,12 @@ fn cachestorage_event(r: &browser_forensic_cache::CacheStorageResource) -> Brows
     ev
 }
 
-/// `br4n6 cache-carve PATH` — recover deleted/orphaned/evicted Chromium cache
-/// entries the live index no longer references. `PATH` is a `Cache`/`Cache_Data`
-/// directory. Each recovered response becomes one event tagged with the recovery
-/// mechanism and quality plus an honest, consistent-with provenance note.
-///
-/// # Errors
-/// Never fails on a malformed tree (best-effort recovery); returns `Ok` with the
-/// events that were recovered.
-pub fn run_cache_carve(path: &Path, format: OutputFormat) -> Result<()> {
-    let recovered = browser_forensic_cache::carve_cache_dir(path);
-    let mut events: Vec<BrowserEvent> = recovered.iter().map(cache_carve_event).collect();
-    events.sort_by_key(|e| e.timestamp_ns);
-    print_events(&events, format);
-    Ok(())
-}
-
 /// Map a [`RecoveredResource`](browser_forensic_cache::RecoveredResource) to a
 /// normalized [`BrowserEvent`], carrying the recovery provenance a live-index hit
 /// does not need: `recovered=true`, the carve mechanism, and its recovery quality
 /// (full/partial). The note keeps consistent-with framing — a carved entry is a
-/// recovered artifact, never asserted to be a deliberate user deletion.
+/// recovered artifact, never asserted to be a deliberate user deletion. Consumed
+/// by the `recover` orchestrator's orphaned-cache finding-generator.
 fn cache_carve_event(r: &browser_forensic_cache::RecoveredResource) -> BrowserEvent {
     let res = &r.resource;
     let ts = res.response_time_ns.or(res.request_time_ns).unwrap_or(0);
@@ -4324,154 +4155,6 @@ pub fn run_shortcuts(path: &Path, format: OutputFormat) -> Result<()> {
     events.sort_by_key(|e| e.timestamp_ns);
     print_events(&events, format);
     Ok(())
-}
-
-/// `br4n6 recovered-domains PATH` — recover domains the user contacted that
-/// survive a history clear, from network/state artifacts. `PATH` is a profile
-/// directory (every recovered-domain source beneath it is aggregated) or a
-/// single artifact file (`Network Persistent State`, `Reporting and NEL`,
-/// `DIPS`, `TransportSecurity`, or Firefox `SiteSecurityServiceState.txt`).
-///
-/// Read-only, no secrets. Chromium HSTS hosts are hashed and surfaced as
-/// non-enumerable; every other source yields cleartext hosts, labelled
-/// "contacted (may be a subresource/third-party), recovered independently of
-/// history".
-///
-/// # Errors
-/// Returns an error only for a single file whose name is not a recognized
-/// recovered-domain source. A directory with no such sources yields no events.
-pub fn run_recovered_domains(path: &Path, format: OutputFormat) -> Result<()> {
-    let mut events = if path.is_dir() {
-        browser_forensic_triage::collect_recovered_domains(path)
-    } else {
-        recovered_domains_for_file(path)?
-    };
-    events.sort_by_key(|e| e.timestamp_ns);
-    print_events(&events, format);
-    Ok(())
-}
-
-/// Dispatch a single recovered-domain artifact file to its parser by file name.
-fn recovered_domains_for_file(path: &Path) -> Result<Vec<BrowserEvent>> {
-    match file_name_lower(path).as_str() {
-        "network persistent state" => Ok(browser_forensic_chrome::parse_network_persistent_state(
-            path,
-        )?),
-        "reporting and nel" => Ok(browser_forensic_chrome::parse_reporting_and_nel(path)?),
-        "dips" => Ok(browser_forensic_chrome::parse_dips(path)?),
-        "transportsecurity" => Ok(browser_forensic_chrome::parse_transport_security(path)?),
-        "sitesecurityservicestate.txt" => Ok(browser_forensic_firefox::parse_site_security(path)?),
-        _ => anyhow::bail!(
-            "unrecognized recovered-domain source: {} (expected a profile directory, or one of: \
-             Network Persistent State / Reporting and NEL / DIPS / TransportSecurity / \
-             SiteSecurityServiceState.txt)",
-            path.display()
-        ),
-    }
-}
-
-/// `br4n6 carve PATH` — recover deleted records from free pages and the WAL.
-///
-/// # Errors
-/// Never errors today; returns `Result` for a uniform dispatcher signature.
-pub fn run_carve(path: &Path, format: OutputFormat) -> Result<()> {
-    let empty = || browser_forensic_carve::CarveResult {
-        records: Vec::new(),
-        integrity: Vec::new(),
-        stats: browser_forensic_carve::CarveStats::default(),
-    };
-    let free_result =
-        browser_forensic_carve::carve_sqlite_free_pages(path).unwrap_or_else(|_| empty());
-    let wal_result = browser_forensic_carve::recover_from_wal(path).unwrap_or_else(|_| empty());
-
-    let mut all_records = free_result.records;
-    all_records.extend(wal_result.records);
-
-    let total_stats = merge_carve_stats(&free_result.stats, &wal_result.stats);
-
-    match format {
-        OutputFormat::Text => {
-            println!(
-                "Carve stats: {} bytes scanned, {} pages, {} free pages, {} records recovered ({} partial)",
-                total_stats.bytes_scanned,
-                total_stats.pages_scanned,
-                total_stats.free_pages_found,
-                total_stats.records_recovered,
-                total_stats.records_partial,
-            );
-            for rec in &all_records {
-                println!(
-                    "  offset={} table={} method={:?} quality={:?} fields={}",
-                    rec.offset,
-                    rec.table,
-                    rec.method,
-                    rec.quality,
-                    serde_json::to_string(&rec.fields).unwrap_or_default(),
-                );
-            }
-        }
-        OutputFormat::Jsonl => {
-            if let Ok(json) = serde_json::to_string(&total_stats) {
-                println!("{json}");
-            }
-            for rec in &all_records {
-                if let Ok(json) = serde_json::to_string(rec) {
-                    println!("{json}");
-                }
-            }
-        }
-        OutputFormat::Csv => {
-            println!("offset,table,method,quality,fields");
-            for rec in &all_records {
-                println!(
-                    "{},{},{:?},{:?},{}",
-                    rec.offset,
-                    fmt::csv_escape(&rec.table),
-                    rec.method,
-                    rec.quality,
-                    fmt::csv_escape(&serde_json::to_string(&rec.fields).unwrap_or_default()),
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-/// `br4n6 memory PATH` — process-attributed browser-artifact carve from a memory
-/// image, riding on the memf framework. Prefers the structured carve (URLs and
-/// cookies tagged with their owning pid/process); on a raw buffer or non-Windows
-/// image it degrades — loudly, to stderr — to a whole-buffer byte scan. A hard
-/// bootstrap failure (unreadable image, or a Windows image with no usable
-/// profile) fails loud rather than reporting a false empty.
-///
-/// # Errors
-/// Propagates a non-degradable [`browser_forensic_memory::MemoryCarveError`]
-/// (open failure / no profile), or a read error in the fallback path.
-pub fn run_memory(path: &Path, symbols: Option<&Path>, format: OutputFormat) -> Result<()> {
-    match browser_forensic_memory::carve_memory_image_with_symbols(path, symbols) {
-        Ok(events) => {
-            let procs = browser_forensic_memory::browser_processes(&events);
-            eprintln!(
-                "br4n6 memory: structured carve — {} event(s) across {} browser process(es)",
-                events.len(),
-                procs.len()
-            );
-            emit_events(&events, format);
-            Ok(())
-        }
-        Err(e) if e.is_degradable() => {
-            eprintln!(
-                "br4n6 memory: {e}; falling back to a raw byte-scan (no process attribution)"
-            );
-            let bytes = std::fs::read(path)
-                .with_context(|| format!("cannot read memory buffer {}", path.display()))?;
-            let mut events = browser_forensic_memory::scan_bytes_for_urls(&bytes);
-            events.extend(browser_forensic_memory::scan_bytes_for_cookies(&bytes));
-            emit_events(&events, format);
-            Ok(())
-        }
-        Err(e) => Err(anyhow::Error::new(e)),
-    }
 }
 
 /// `br4n6 triage --home DIR` — discover profiles, parse, check integrity, and
@@ -5357,41 +5040,6 @@ mod tests {
     }
 
     #[test]
-    fn run_recovered_domains_dips_dir_all_formats() {
-        let dir = tempfile::tempdir().unwrap();
-        let conn = Connection::open(dir.path().join("DIPS")).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE bounces(site TEXT PRIMARY KEY NOT NULL, first_user_activation_time INTEGER, last_user_activation_time INTEGER, first_bounce_time INTEGER, last_bounce_time INTEGER, first_web_authn_assertion_time INTEGER, last_web_authn_assertion_time INTEGER);
-             INSERT INTO bounces (site, last_user_activation_time) VALUES ('recovered.example.com', 13300000000000000);",
-        )
-        .unwrap();
-        drop(conn);
-        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
-            run_recovered_domains(dir.path(), fmt).unwrap();
-        }
-    }
-
-    #[test]
-    fn run_recovered_domains_network_persistent_state_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("Network Persistent State");
-        std::fs::write(
-            &p,
-            br#"{"net":{"http_server_properties":{"servers":[{"server":"https://cdn.example.net"}]}}}"#,
-        )
-        .unwrap();
-        run_recovered_domains(&p, OutputFormat::Jsonl).unwrap();
-    }
-
-    #[test]
-    fn run_recovered_domains_unknown_file_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("random.dat");
-        std::fs::write(&p, b"x").unwrap();
-        assert!(run_recovered_domains(&p, OutputFormat::Text).is_err());
-    }
-
-    #[test]
     fn run_artifact_session_rejects_non_firefox() {
         let dir = chrome_history_dir();
         let p = chrome_history_path(&dir);
@@ -5446,43 +5094,6 @@ mod tests {
     }
 
     #[test]
-    fn run_tamper_check_all_formats_clean_and_dirty() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let clean = dir.path().join("clean.db");
-        let conn = Connection::open(&clean).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
-             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
-             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
-             INSERT INTO visits VALUES (1, 1, 13300000000000000, 0, 0);",
-        )
-        .unwrap();
-        drop(conn);
-        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
-            run_tamper_check(&clean, fmt).unwrap();
-        }
-
-        let dirty = dir.path().join("dirty.db");
-        let conn = Connection::open(&dirty).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
-             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
-             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
-             INSERT INTO visits VALUES (1, 1, 13300000000000000, 0, 0);
-             INSERT INTO visits VALUES (50, 1, 13300000001000000, 0, 0);",
-        )
-        .unwrap();
-        drop(conn);
-        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
-            run_tamper_check(&dirty, fmt).unwrap();
-        }
-
-        // A profile directory path exercises the directory arm + incognito residue.
-        run_tamper_check(dir.path(), OutputFormat::Text).unwrap();
-    }
-
-    #[test]
     fn csv_field_guards_formula_and_quotes() {
         assert_eq!(csv_field("=SUM(A1)"), "\"'=SUM(A1)\"");
         assert_eq!(csv_field("a,b"), "\"a,b\"");
@@ -5496,22 +5107,6 @@ mod tests {
             Some("sub.example.com".to_string())
         );
         assert_eq!(tamper_host_of("not a url"), None);
-    }
-
-    #[test]
-    fn run_carve_all_formats() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = dir.path().join("c.db");
-        let conn = Connection::open(&db).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT);
-             INSERT INTO urls VALUES (1, 'https://example.com');",
-        )
-        .unwrap();
-        drop(conn);
-        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
-            run_carve(&db, fmt).unwrap();
-        }
     }
 
     #[test]
@@ -5600,38 +5195,6 @@ mod tests {
             &json!("dangling_sparse_file")
         );
         assert_eq!(ev.attrs.get("recovery_quality").unwrap(), &json!("partial"));
-    }
-
-    #[test]
-    fn run_cache_carve_all_formats() {
-        let dir = tempfile::tempdir().unwrap();
-        // A `[hash]_s` sparse body with no companion `_0` is a dangling fragment;
-        // with a `the-real-index` present it is claimed recovered.
-        let hash: u64 = 0x0000_0000_dddd_4444;
-        std::fs::write(dir.path().join(format!("{hash:016x}_s")), b"sparse ranges").unwrap();
-        // Build an empty `the-real-index` pickle (no live hashes).
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&browser_forensic_cache::carve::INDEX_MAGIC.to_le_bytes());
-        payload.extend_from_slice(&9u32.to_le_bytes()); // version
-        payload.extend_from_slice(&0u64.to_le_bytes()); // entry_count
-        payload.extend_from_slice(&0u64.to_le_bytes()); // cache_size
-        payload.extend_from_slice(&0u32.to_le_bytes()); // reason
-        payload.extend_from_slice(&0i64.to_le_bytes()); // cache_modified
-        let mut idx = Vec::new();
-        idx.extend_from_slice(&(u32::try_from(payload.len()).unwrap()).to_le_bytes());
-        idx.extend_from_slice(&0u32.to_le_bytes()); // crc (not enforced)
-        idx.extend_from_slice(&payload);
-        let idx_dir = dir.path().join("index-dir");
-        std::fs::create_dir_all(&idx_dir).unwrap();
-        std::fs::write(idx_dir.join("the-real-index"), &idx).unwrap();
-
-        assert!(
-            !browser_forensic_cache::carve_cache_dir(dir.path()).is_empty(),
-            "the dangling sparse fragment should be recovered"
-        );
-        for fmt in [OutputFormat::Text, OutputFormat::Jsonl, OutputFormat::Csv] {
-            run_cache_carve(dir.path(), fmt).unwrap();
-        }
     }
 
     #[test]
@@ -5790,16 +5353,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_carve_stats_and_summary_helpers() {
-        let s = browser_forensic_carve::CarveStats {
-            bytes_scanned: 1,
-            pages_scanned: 2,
-            free_pages_found: 3,
-            records_recovered: 4,
-            records_partial: 5,
-        };
-        let m = merge_carve_stats(&s, &s);
-        assert_eq!(m.bytes_scanned, 2);
+    fn triage_summary_helpers() {
         let report = browser_forensic_triage::TriageReport {
             events: Vec::new(),
             carved: Vec::new(),
