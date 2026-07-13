@@ -60,6 +60,9 @@ tempfile = { workspace = true }
 lz4_flex = { workspace = true }
 calamine = { workspace = true }
 rusty-leveldb = "4"
+# Independent oracle for the P8 report-bundle SHA-256 sidecar test: re-hash each
+# listed file and compare, so a wrong sidecar cannot ship green.
+sha2 = { workspace = true }
 
 [lints]
 workspace = true
