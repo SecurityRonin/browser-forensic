@@ -611,6 +611,59 @@ mod tests {
     }
 
     #[test]
+    fn key_sources_omitted_when_unpopulated() {
+        // A run that used no decryption keys must not serialize a `key_sources`
+        // key at all (absent, not an empty array) — byte-for-byte as before.
+        let d = TempDir::new().unwrap();
+        let p = write_file(d.path(), "Cookies", b"abc");
+        let m = build_manifest(&[p], fixed_run());
+        let json = to_json(&m).unwrap();
+        assert!(
+            !json.contains("key_sources"),
+            "unpopulated key_sources must be omitted: {json}"
+        );
+    }
+
+    #[test]
+    fn key_sources_record_found_vs_decrypted() {
+        // D7/D11: the manifest hashes/identifies every key file used, and must
+        // distinguish "key found/unwrapped" from "decrypted N items with it".
+        let d = TempDir::new().unwrap();
+        let p = write_file(d.path(), "Cookies", b"abc");
+        let mut m = build_manifest(&[p], fixed_run());
+        m.key_sources.push(KeySource {
+            kind: "Local State (AES key, DPAPI-wrapped)".to_string(),
+            path: Some("/ev/Default/Local State".to_string()),
+            sha256: Some("aa11bb22".to_string()),
+            detail: None,
+            unwrapped: true,
+            decrypted_items: 0,
+        });
+        m.key_sources.push(KeySource {
+            kind: "DPAPI masterkey".to_string(),
+            path: Some("/ev/Protect/S-1-5-21-1/GUID".to_string()),
+            sha256: Some("cc33dd44".to_string()),
+            detail: Some("masterkey a1b2c3d4-....".to_string()),
+            unwrapped: true,
+            decrypted_items: 3,
+        });
+        let json = to_json(&m).unwrap();
+        assert!(
+            json.contains("key_sources"),
+            "key_sources serialized: {json}"
+        );
+        assert!(json.contains("Local State (AES key, DPAPI-wrapped)"));
+        assert!(json.contains("aa11bb22"), "key-file SHA-256 recorded");
+        assert!(json.contains("cc33dd44"), "masterkey SHA-256 recorded");
+        assert!(json.contains("unwrapped"), "found/unwrapped flag recorded");
+        assert!(json.contains("decrypted_items"), "decrypted count recorded");
+        // Found-vs-decrypted: the Local State was unwrapped (found) but decrypted
+        // nothing on its own (0); the masterkey path decrypted 3 items.
+        assert!(json.contains("\"decrypted_items\": 0"));
+        assert!(json.contains("\"decrypted_items\": 3"));
+    }
+
+    #[test]
     fn manifest_json_carries_schema_honesty_and_digests() {
         let d = TempDir::new().unwrap();
         let p = write_file(d.path(), "abc", b"abc");
