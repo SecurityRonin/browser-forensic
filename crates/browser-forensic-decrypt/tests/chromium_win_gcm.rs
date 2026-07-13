@@ -98,7 +98,7 @@ fn too_short_value_is_error_not_panic() {
     // Shorter than prefix(3)+nonce(12)+tag(16): must Err, never panic/slice-OOB.
     for len in 0..30usize {
         let mut b = b"v10".to_vec();
-        b.extend(std::iter::repeat(0u8).take(len));
+        b.extend(std::iter::repeat_n(0u8, len));
         let _ = decrypt_chromium_value_win(&b, &key); // must not panic
     }
 }

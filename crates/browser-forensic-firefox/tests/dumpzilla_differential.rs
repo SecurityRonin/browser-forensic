@@ -47,8 +47,7 @@ fn have_tool(bin: &str) -> bool {
     Command::new(bin)
         .arg("--version")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Copy a database plus any WAL/SHM sidecars into `dst_dir` so both tools see an
