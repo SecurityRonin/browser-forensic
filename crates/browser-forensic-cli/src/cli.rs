@@ -24,6 +24,7 @@ use browser_forensic_core::reconstruct::{
 };
 use browser_forensic_core::BrowserEvent;
 use browser_forensic_discovery::discover_profiles;
+use browser_forensic_triage::TriageProgress as _;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
@@ -653,29 +654,14 @@ fn tier_from_flags(quick: bool, _standard: bool, deep: bool) -> crate::investiga
     }
 }
 
-/// Drive the triage pipeline at `tier`, returning the discovered profiles and the
-/// consolidated report. Falls back from a home scan to a single-profile parse
-/// (the same shape as `export`/`report`), and augments the event stream with
-/// downloads + installed extensions — artifacts the triage stream omits — by
-/// reusing the existing parsers, without changing what `triage`/`report` emit.
-fn collect_investigation(
-    path: &Path,
-    tier: crate::investigate::Tier,
-) -> Result<(
-    Vec<browser_forensic_discovery::DiscoveredProfile>,
-    browser_forensic_triage::TriageReport,
-)> {
-    let opts = tier.triage_options();
-    let mut report = browser_forensic_triage::triage_with_options(path, opts)
-        .with_context(|| format!("investigating {}", path.display()))?;
-    let mut profiles = std::mem::take(&mut report.profiles);
-
-    if profiles.is_empty() && report.events.is_empty() {
+/// The profiles an investigation will scan under `path`: the canonical
+/// per-user discovery, falling back to a single synthetic profile when `path`
+/// is itself a profile directory (the `export`/`report` shape).
+fn investigation_profiles(path: &Path) -> Vec<browser_forensic_discovery::DiscoveredProfile> {
+    let mut profiles = browser_forensic_discovery::discover_profiles(path);
+    if profiles.is_empty() {
         if let Some(family) = profile_family(path) {
-            report =
-                browser_forensic_triage::triage_profile_with_options(path, family.clone(), opts)
-                    .with_context(|| format!("investigating profile {}", path.display()))?;
-            profiles = vec![browser_forensic_discovery::DiscoveredProfile {
+            profiles.push(browser_forensic_discovery::DiscoveredProfile {
                 browser: family,
                 name: path
                     .file_name()
@@ -683,26 +669,88 @@ fn collect_investigation(
                     .unwrap_or_default(),
                 path: path.to_path_buf(),
                 container: None,
-            }];
+            });
         }
     }
+    profiles
+}
 
-    for profile in &profiles {
-        if profile.browser == BrowserFamily::Chromium {
-            let history = profile.path.join("History");
-            if history.is_file() {
-                if let Ok(mut downloads) = browser_forensic_chrome::parse_downloads(&history) {
-                    report.events.append(&mut downloads);
-                }
+/// An empty [`TriageReport`] stamped with the current wall-clock time.
+fn empty_report_now() -> browser_forensic_triage::TriageReport {
+    let now_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as i64);
+    browser_forensic_triage::TriageReport {
+        events: Vec::new(),
+        carved: Vec::new(),
+        integrity: Vec::new(),
+        profiles: Vec::new(),
+        generated_at_ns: now_ns,
+    }
+}
+
+/// Triage one profile fragment at `tier`, reporting progress, and augment it with
+/// downloads + installed extensions (Chromium) — artifacts the triage stream
+/// omits — by reusing the existing parsers, matching the historic `investigate`
+/// event set without changing what `triage`/`report` emit.
+fn collect_one_profile(
+    profile: &browser_forensic_discovery::DiscoveredProfile,
+    tier: crate::investigate::Tier,
+    progress: &crate::progress::Progress,
+) -> Result<browser_forensic_triage::TriageReport> {
+    let opts = tier.triage_options();
+    let mut frag = browser_forensic_triage::triage_profile_with_options_progress(
+        &profile.path,
+        profile.browser.clone(),
+        opts,
+        progress,
+    )
+    .with_context(|| format!("investigating profile {}", profile.path.display()))?;
+
+    if profile.browser == BrowserFamily::Chromium {
+        let history = profile.path.join("History");
+        if history.is_file() {
+            progress.on_unit(&profile.name, "Downloads");
+            if let Ok(mut downloads) = browser_forensic_chrome::parse_downloads(&history) {
+                frag.events.append(&mut downloads);
             }
-            let ext_dir = profile.path.join("Extensions");
-            if ext_dir.is_dir() {
-                if let Ok(mut exts) = browser_forensic_chrome::parse_extensions(&ext_dir) {
-                    report.events.append(&mut exts);
-                }
+        }
+        let ext_dir = profile.path.join("Extensions");
+        if ext_dir.is_dir() {
+            progress.on_unit(&profile.name, "Extensions");
+            if let Ok(mut exts) = browser_forensic_chrome::parse_extensions(&ext_dir) {
+                frag.events.append(&mut exts);
             }
         }
     }
+    Ok(frag)
+}
+
+/// Drive the triage pipeline over each discovered profile at `tier`, reporting
+/// per-artifact progress to `progress`, returning the profiles and the merged
+/// consolidated report. The per-profile loop is the unit boundary the interrupt
+/// (P3b concern 2) and checkpoint (concern 3) engines hook into.
+fn collect_investigation(
+    path: &Path,
+    tier: crate::investigate::Tier,
+    progress: &crate::progress::Progress,
+) -> Result<(
+    Vec<browser_forensic_discovery::DiscoveredProfile>,
+    browser_forensic_triage::TriageReport,
+)> {
+    let profiles = investigation_profiles(path);
+    let total = profiles.len();
+    let mut report = empty_report_now();
+
+    for (index, profile) in profiles.iter().enumerate() {
+        progress.set_profile(index, total);
+        let mut frag = collect_one_profile(profile, tier, progress)?;
+        report.events.append(&mut frag.events);
+        report.integrity.append(&mut frag.integrity);
+        report.carved.append(&mut frag.carved);
+    }
+    progress.set_profile(total, total);
+    progress.finish();
 
     Ok((profiles, report))
 }
@@ -729,7 +777,14 @@ pub fn run_investigate(
         anyhow::bail!("path does not exist: {}", path.display());
     }
 
-    let (profiles, report) = collect_investigation(path, tier)?;
+    // stderr-only heartbeat, active only on a TTY so pipes/CI stay byte-clean
+    // (RFC 0001 P3b concern 1). `NO_COLOR` is honored via `color_enabled`.
+    let stderr_is_tty = std::io::stderr().is_terminal();
+    let progress = crate::progress::Progress::select(
+        stderr_is_tty,
+        crate::output::color_enabled(stderr_is_tty),
+    );
+    let (profiles, report) = collect_investigation(path, tier, &progress)?;
     let findings =
         crate::investigate::rank_findings(crate::investigate::findings_from_report(&report));
 

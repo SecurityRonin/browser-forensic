@@ -21,8 +21,8 @@ use browser_forensic_triage::TriageProgress;
 /// Whether a stderr heartbeat should be rendered: only when stderr is a terminal.
 /// A pipe / file / CI log gets no progress output so machine consumers stay clean.
 #[must_use]
-pub fn progress_enabled(_stderr_is_tty: bool) -> bool {
-    false // RED stub
+pub fn progress_enabled(stderr_is_tty: bool) -> bool {
+    stderr_is_tty
 }
 
 /// Format an extrapolated ETA from elapsed wall time and completed/total units.
@@ -31,22 +31,47 @@ pub fn progress_enabled(_stderr_is_tty: bool) -> bool {
 /// * `done >= total` → `0s`, work is complete.
 /// * otherwise → `elapsed / done * (total - done)`, rendered compactly.
 #[must_use]
-pub fn format_eta(_elapsed: Duration, _done: usize, _total: usize) -> String {
-    String::new() // RED stub
+pub fn format_eta(elapsed: Duration, done: usize, total: usize) -> String {
+    if done == 0 {
+        return "--".to_string();
+    }
+    if done >= total {
+        return "0s".to_string();
+    }
+    let remaining_units = (total - done) as u32;
+    // elapsed / done * remaining_units — integer math on whole seconds keeps the
+    // estimate coarse and stable (this is a heartbeat, not a stopwatch).
+    let per_unit = elapsed / done as u32;
+    let eta = per_unit * remaining_units;
+    format_duration(eta)
+}
+
+/// Render a [`Duration`] compactly as `Nh`, `Nm`, or `Ns` (largest whole unit).
+fn format_duration(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs >= 3600 {
+        format!("{}h", secs / 3600)
+    } else if secs >= 60 {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
 }
 
 /// Render one heartbeat line: `Parsing (2/4) | Default · History | ETA 12s`.
 /// The text is always plain; `color` adds an additive ANSI cue on the phase word.
 #[must_use]
 pub fn render_line(
-    _phase: &str,
-    _unit: &str,
-    _done: usize,
-    _total: usize,
-    _elapsed: Duration,
-    _color: bool,
+    phase: &str,
+    unit: &str,
+    done: usize,
+    total: usize,
+    elapsed: Duration,
+    color: bool,
 ) -> String {
-    String::new() // RED stub
+    let phase_cell = crate::output::paint(phase, crate::output::ANSI_CYAN, color);
+    let eta = format_eta(elapsed, done, total);
+    format!("{phase_cell} ({done}/{total}) | {unit} | ETA {eta}")
 }
 
 /// A stderr-rendering [`TriageProgress`]. The enclosing loop calls
@@ -87,8 +112,80 @@ impl StderrProgress {
 }
 
 impl TriageProgress for StderrProgress {
-    fn on_unit(&self, _profile: &str, _artifact: &str) {
-        // RED stub: no render yet.
+    fn on_unit(&self, profile: &str, artifact: &str) {
+        let done = self.done.load(Ordering::Relaxed);
+        let total = self.total.load(Ordering::Relaxed);
+        let unit = format!("{profile} · {artifact}");
+        let line = render_line(
+            "Parsing",
+            &unit,
+            done,
+            total,
+            self.start.elapsed(),
+            self.color,
+        );
+        // Carriage-return overwrite keeps the heartbeat to a single live line;
+        // pad to clear any longer previous line. stderr only — stdout stays clean.
+        let mut err = std::io::stderr();
+        let _ = write!(err, "\r{line}\u{1b}[K");
+        let _ = err.flush();
+    }
+}
+
+/// The CLI's investigation progress sink: an active stderr heartbeat on a TTY, or
+/// an inert one on a pipe / CI log (so machine output stays byte-clean). This is
+/// the concrete [`TriageProgress`] the investigate pipeline is driven with; it
+/// also carries the profile-level count that drives the ETA.
+pub struct Progress {
+    inner: Option<StderrProgress>,
+}
+
+impl Progress {
+    /// Select a sink from the terminal state: an active heartbeat only when
+    /// stderr is a TTY ([`progress_enabled`]); `color` further gates the ANSI cue
+    /// (the caller passes the `NO_COLOR`-aware decision).
+    #[must_use]
+    pub fn select(stderr_is_tty: bool, color: bool) -> Self {
+        let inner = if progress_enabled(stderr_is_tty) {
+            Some(StderrProgress::new(color))
+        } else {
+            None
+        };
+        Self { inner }
+    }
+
+    /// An always-inert sink (no heartbeat), for tests and non-interactive callers.
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self { inner: None }
+    }
+
+    /// Whether this sink renders a heartbeat (true only on a TTY).
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.inner.is_some()
+    }
+
+    /// Advance the profile-level completed/total count (drives the ETA).
+    pub fn set_profile(&self, done: usize, total: usize) {
+        if let Some(inner) = &self.inner {
+            inner.set_profile(done, total);
+        }
+    }
+
+    /// Clear the heartbeat line once the run finishes.
+    pub fn finish(&self) {
+        if let Some(inner) = &self.inner {
+            inner.finish();
+        }
+    }
+}
+
+impl TriageProgress for Progress {
+    fn on_unit(&self, profile: &str, artifact: &str) {
+        if let Some(inner) = &self.inner {
+            inner.on_unit(profile, artifact);
+        }
     }
 }
 
@@ -149,5 +246,17 @@ mod tests {
     fn render_line_colors_when_enabled() {
         let line = render_line("Parsing", "x", 1, 2, Duration::from_secs(1), true);
         assert!(line.contains('\u{1b}'), "ANSI cue when color on: {line:?}");
+    }
+
+    #[test]
+    fn sink_inert_on_non_tty() {
+        assert!(
+            !Progress::select(false, false).is_active(),
+            "a piped/CI run gets no heartbeat"
+        );
+        assert!(
+            Progress::select(true, false).is_active(),
+            "a terminal run gets a heartbeat"
+        );
     }
 }

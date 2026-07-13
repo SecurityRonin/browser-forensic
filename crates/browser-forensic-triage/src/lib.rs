@@ -79,6 +79,40 @@ pub fn triage_profile_with_options(
     browser: BrowserFamily,
     opts: TriageOptions,
 ) -> Result<TriageReport> {
+    let label = profile_label(profile_path);
+    triage_one(profile_path, &label, browser, opts, &NullProgress)
+}
+
+/// Triage a single profile at an explicit tier, reporting per-artifact progress
+/// to `progress` (RFC 0001 P3b). Behaves exactly like
+/// [`triage_profile_with_options`] but announces each parse unit as it starts.
+pub fn triage_profile_with_options_progress(
+    profile_path: &Path,
+    browser: BrowserFamily,
+    opts: TriageOptions,
+    progress: &dyn TriageProgress,
+) -> Result<TriageReport> {
+    let label = profile_label(profile_path);
+    triage_one(profile_path, &label, browser, opts, progress)
+}
+
+/// A human label for a profile directory (its final path component).
+fn profile_label(profile_path: &Path) -> String {
+    profile_path.file_name().map_or_else(
+        || profile_path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+/// Triage one profile into a report, dispatching by family and reporting each
+/// parse unit to `progress`. The shared core of both single-profile entry points.
+fn triage_one(
+    profile_path: &Path,
+    label: &str,
+    browser: BrowserFamily,
+    opts: TriageOptions,
+    progress: &dyn TriageProgress,
+) -> Result<TriageReport> {
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as i64);
@@ -89,16 +123,40 @@ pub fn triage_profile_with_options(
 
     match browser {
         BrowserFamily::Chromium => {
-            triage_chromium_profile(profile_path, &mut events, &mut integrity, &mut carved, opts);
+            triage_chromium_profile(
+                profile_path,
+                label,
+                &mut events,
+                &mut integrity,
+                &mut carved,
+                opts,
+                progress,
+            );
         }
         BrowserFamily::Firefox => {
-            triage_firefox_profile(profile_path, &mut events, &mut integrity, &mut carved, opts);
+            triage_firefox_profile(
+                profile_path,
+                label,
+                &mut events,
+                &mut integrity,
+                &mut carved,
+                opts,
+                progress,
+            );
         }
         BrowserFamily::Safari => {
-            triage_safari_profile(profile_path, &mut events, &mut integrity, &mut carved, opts);
+            triage_safari_profile(
+                profile_path,
+                label,
+                &mut events,
+                &mut integrity,
+                &mut carved,
+                opts,
+                progress,
+            );
         }
         BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
-            triage_webcache_profile(profile_path, &mut events);
+            triage_webcache_profile(profile_path, label, &mut events, progress);
         }
     }
 
@@ -111,19 +169,6 @@ pub fn triage_profile_with_options(
         profiles: Vec::new(),
         generated_at_ns: now_ns,
     })
-}
-
-/// Triage a single profile at an explicit tier, reporting per-artifact progress
-/// to `progress` (RFC 0001 P3b). Behaves exactly like
-/// [`triage_profile_with_options`] but announces each parse unit as it starts.
-pub fn triage_profile_with_options_progress(
-    profile_path: &Path,
-    browser: BrowserFamily,
-    opts: TriageOptions,
-    _progress: &dyn TriageProgress,
-) -> Result<TriageReport> {
-    // RED stub: the observer is not yet wired, so no unit fires. GREEN threads it.
-    triage_profile_with_options(profile_path, browser, opts)
 }
 
 /// Triage all browser profiles discovered under a home directory (carving enabled).
@@ -146,10 +191,13 @@ pub fn triage_with_options(home_dir: &Path, opts: TriageOptions) -> Result<Triag
 pub fn triage_with_options_progress(
     home_dir: &Path,
     opts: TriageOptions,
-    _progress: &dyn TriageProgress,
+    progress: &dyn TriageProgress,
 ) -> Result<TriageReport> {
-    // RED stub: the observer is not yet wired, so no unit fires. GREEN threads it.
-    triage_with_options(home_dir, opts)
+    Ok(triage_profiles_progress(
+        browser_forensic_discovery::discover_profiles(home_dir),
+        opts,
+        progress,
+    ))
 }
 
 /// Triage every Chromium/Firefox profile and embedded-Chromium container found
@@ -167,6 +215,16 @@ pub fn triage_sweep(root: &Path) -> Result<TriageReport> {
 
 /// Triage a set of already-discovered profiles into one consolidated report.
 fn triage_profiles(profiles: Vec<DiscoveredProfile>, opts: TriageOptions) -> TriageReport {
+    triage_profiles_progress(profiles, opts, &NullProgress)
+}
+
+/// Triage a set of already-discovered profiles into one consolidated report,
+/// reporting each parse unit to `progress` (RFC 0001 P3b).
+fn triage_profiles_progress(
+    profiles: Vec<DiscoveredProfile>,
+    opts: TriageOptions,
+    progress: &dyn TriageProgress,
+) -> TriageReport {
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as i64);
@@ -179,37 +237,44 @@ fn triage_profiles(profiles: Vec<DiscoveredProfile>, opts: TriageOptions) -> Tri
         let mut events = Vec::new();
         let mut integrity_vec = Vec::new();
         let mut carved_vec = Vec::new();
+        let label = &profile.name;
 
         match profile.browser {
             BrowserFamily::Chromium => {
                 triage_chromium_profile(
                     &profile.path,
+                    label,
                     &mut events,
                     &mut integrity_vec,
                     &mut carved_vec,
                     opts,
+                    progress,
                 );
             }
             BrowserFamily::Firefox => {
                 triage_firefox_profile(
                     &profile.path,
+                    label,
                     &mut events,
                     &mut integrity_vec,
                     &mut carved_vec,
                     opts,
+                    progress,
                 );
             }
             BrowserFamily::Safari => {
                 triage_safari_profile(
                     &profile.path,
+                    label,
                     &mut events,
                     &mut integrity_vec,
                     &mut carved_vec,
                     opts,
+                    progress,
                 );
             }
             BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
-                triage_webcache_profile(&profile.path, &mut events);
+                triage_webcache_profile(&profile.path, label, &mut events, progress);
             }
         }
 
@@ -283,13 +348,16 @@ pub fn collect_recovered_domains(profile: &Path) -> Vec<BrowserEvent> {
 
 fn triage_chromium_profile(
     path: &Path,
+    label: &str,
     events: &mut Vec<BrowserEvent>,
     integrity: &mut Vec<IntegrityIndicator>,
     carved: &mut Vec<CarvedRecord>,
     opts: TriageOptions,
+    progress: &dyn TriageProgress,
 ) {
     let history_path = path.join("History");
     if history_path.is_file() {
+        progress.on_unit(label, "History");
         if let Ok(mut evts) = browser_forensic_chrome::parse_history(&history_path) {
             events.append(&mut evts);
         }
@@ -311,6 +379,7 @@ fn triage_chromium_profile(
 
     let cookies_path = path.join("Cookies");
     if cookies_path.is_file() {
+        progress.on_unit(label, "Cookies");
         if let Ok(mut evts) = browser_forensic_chrome::parse_cookies(&cookies_path) {
             events.append(&mut evts);
         }
@@ -324,6 +393,7 @@ fn triage_chromium_profile(
 
     let ext_cookies_path = path.join("Extension Cookies");
     if ext_cookies_path.is_file() {
+        progress.on_unit(label, "Extension Cookies");
         if let Ok(mut evts) = browser_forensic_chrome::parse_extension_cookies(&ext_cookies_path) {
             events.append(&mut evts);
         }
@@ -331,6 +401,7 @@ fn triage_chromium_profile(
 
     let bookmarks_path = path.join("Bookmarks");
     if bookmarks_path.is_file() {
+        progress.on_unit(label, "Bookmarks");
         if let Ok(mut evts) = browser_forensic_chrome::parse_bookmarks(&bookmarks_path) {
             events.append(&mut evts);
         }
@@ -338,6 +409,7 @@ fn triage_chromium_profile(
 
     let favicons_path = path.join("Favicons");
     if favicons_path.is_file() {
+        progress.on_unit(label, "Favicons");
         if let Ok(mut evts) = browser_forensic_chrome::parse_favicons(&favicons_path) {
             events.append(&mut evts);
         }
@@ -345,6 +417,7 @@ fn triage_chromium_profile(
 
     let top_sites_path = path.join("Top Sites");
     if top_sites_path.is_file() {
+        progress.on_unit(label, "Top Sites");
         if let Ok(mut evts) = browser_forensic_chrome::parse_top_sites(&top_sites_path) {
             events.append(&mut evts);
         }
@@ -352,6 +425,7 @@ fn triage_chromium_profile(
 
     let shortcuts_path = path.join("Shortcuts");
     if shortcuts_path.is_file() {
+        progress.on_unit(label, "Shortcuts");
         if let Ok(mut evts) = browser_forensic_chrome::parse_shortcuts(&shortcuts_path) {
             events.append(&mut evts);
         }
@@ -359,6 +433,7 @@ fn triage_chromium_profile(
 
     let predictor_path = path.join("Network Action Predictor");
     if predictor_path.is_file() {
+        progress.on_unit(label, "Network Action Predictor");
         if let Ok(mut evts) =
             browser_forensic_chrome::parse_network_action_predictor(&predictor_path)
         {
@@ -368,6 +443,7 @@ fn triage_chromium_profile(
 
     let media_history_path = path.join("Media History");
     if media_history_path.is_file() {
+        progress.on_unit(label, "Media History");
         if let Ok(mut evts) = browser_forensic_chrome::parse_media_history(&media_history_path) {
             events.append(&mut evts);
         }
@@ -377,12 +453,14 @@ fn triage_chromium_profile(
     // failures are absorbed so triage stays best-effort.
     let login_data = path.join("Login Data");
     if login_data.is_file() {
+        progress.on_unit(label, "Login Data");
         if let Ok(mut evts) = browser_forensic_chrome::parse_login_data(&login_data) {
             events.append(&mut evts);
         }
     }
     let web_data = path.join("Web Data");
     if web_data.is_file() {
+        progress.on_unit(label, "Web Data");
         if let Ok(mut evts) = browser_forensic_chrome::parse_web_data(&web_data) {
             events.append(&mut evts);
         }
@@ -390,6 +468,7 @@ fn triage_chromium_profile(
     for prefs_name in ["Preferences", "Secure Preferences"] {
         let prefs = path.join(prefs_name);
         if prefs.is_file() {
+            progress.on_unit(label, prefs_name);
             if let Ok(mut evts) = browser_forensic_chrome::parse_preferences(&prefs) {
                 events.append(&mut evts);
             }
@@ -401,21 +480,26 @@ fn triage_chromium_profile(
 
     // Web storage: Local/Session Storage (LevelDB) and IndexedDB. Per-source
     // failures are absorbed inside the collector so triage stays best-effort.
+    progress.on_unit(label, "Web Storage");
     events.extend(browser_forensic_storage::collect_chromium_web_storage(path));
 
     // Recovered domains: network/state artifacts that outlive a history clear.
+    progress.on_unit(label, "Recovered Domains");
     events.extend(collect_recovered_domains(path));
 }
 
 fn triage_firefox_profile(
     path: &Path,
+    label: &str,
     events: &mut Vec<BrowserEvent>,
     integrity: &mut Vec<IntegrityIndicator>,
     carved: &mut Vec<CarvedRecord>,
     opts: TriageOptions,
+    progress: &dyn TriageProgress,
 ) {
     let places_path = path.join("places.sqlite");
     if places_path.is_file() {
+        progress.on_unit(label, "places.sqlite");
         if let Ok(mut evts) = browser_forensic_firefox::parse_history(&places_path) {
             events.append(&mut evts);
         }
@@ -444,6 +528,7 @@ fn triage_firefox_profile(
 
     let cookies_path = path.join("cookies.sqlite");
     if cookies_path.is_file() {
+        progress.on_unit(label, "cookies.sqlite");
         if let Ok(mut evts) = browser_forensic_firefox::parse_cookies(&cookies_path) {
             events.append(&mut evts);
         }
@@ -458,21 +543,25 @@ fn triage_firefox_profile(
     // Credential / account metadata (secrets never decrypted).
     let logins = path.join("logins.json");
     if logins.is_file() {
+        progress.on_unit(label, "logins.json");
         if let Ok(mut evts) = browser_forensic_firefox::parse_login_data(&logins) {
             events.append(&mut evts);
         }
     }
     let perms = path.join("permissions.sqlite");
     if perms.is_file() {
+        progress.on_unit(label, "permissions.sqlite");
         if let Ok(mut evts) = browser_forensic_firefox::parse_firefox_permissions(&perms) {
             events.append(&mut evts);
         }
     }
 
     // Web storage: webappsstore.sqlite (Local Storage) and IndexedDB SQLite.
+    progress.on_unit(label, "Web Storage");
     events.extend(browser_forensic_storage::collect_firefox_web_storage(path));
 
     // Recovered domains: Firefox HSTS (cleartext) survives a history clear.
+    progress.on_unit(label, "Recovered Domains");
     events.extend(collect_recovered_domains(path));
 
     // Deleted bookmarks: diff bookmarkbackups/*.jsonlz4 against current bookmarks.
@@ -483,13 +572,16 @@ fn triage_firefox_profile(
 
 fn triage_safari_profile(
     path: &Path,
+    label: &str,
     events: &mut Vec<BrowserEvent>,
     integrity: &mut Vec<IntegrityIndicator>,
     carved: &mut Vec<CarvedRecord>,
     opts: TriageOptions,
+    progress: &dyn TriageProgress,
 ) {
     let history_path = path.join("History.db");
     if history_path.is_file() {
+        progress.on_unit(label, "History.db");
         if let Ok(mut evts) = browser_forensic_safari::parse_history(&history_path) {
             events.append(&mut evts);
         }
@@ -515,7 +607,12 @@ fn triage_safari_profile(
 /// WebCache directory itself or a parent containing it. WebCache is ESE, not
 /// SQLite, so the SQLite integrity/carve steps do not apply. A parse failure is
 /// absorbed so one unreadable store never aborts a multi-profile triage.
-fn triage_webcache_profile(path: &Path, events: &mut Vec<BrowserEvent>) {
+fn triage_webcache_profile(
+    path: &Path,
+    label: &str,
+    events: &mut Vec<BrowserEvent>,
+    progress: &dyn TriageProgress,
+) {
     let candidates = [
         path.join("WebCacheV01.dat"),
         path.join("WebCache").join("WebCacheV01.dat"),
@@ -523,6 +620,7 @@ fn triage_webcache_profile(path: &Path, events: &mut Vec<BrowserEvent>) {
     ];
     for candidate in candidates {
         if candidate.is_file() {
+            progress.on_unit(label, "WebCacheV01.dat");
             if let Ok(mut evts) = browser_forensic_webcache::parse_webcache(&candidate) {
                 events.append(&mut evts);
             }
