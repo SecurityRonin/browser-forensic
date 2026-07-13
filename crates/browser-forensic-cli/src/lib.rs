@@ -13,6 +13,7 @@ pub use render::draw;
 
 pub mod cli;
 pub mod export;
+pub mod investigate;
 pub mod output;
 pub mod report;
 
