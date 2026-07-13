@@ -39,8 +39,9 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::decompress::DecompressLimits;
 use crate::error::CacheError;
-use crate::resource::CachedResource;
+use crate::resource::{resource_from_entry_bytes, CachedResource};
 
 /// `kSimpleIndexMagicNumber` — first 8 payload bytes of `the-real-index`.
 pub const INDEX_MAGIC: u64 = 0x656e_7465_7220_796f;
@@ -131,8 +132,69 @@ fn grade(res: &CachedResource) -> RecoveryQuality {
 /// [`CacheError::TooSmall`] if shorter than the fixed header, or
 /// [`CacheError::BadHeaderMagic`] (carrying the offending magic) if the leading
 /// `kSimpleIndexMagicNumber` is wrong.
-pub fn parse_real_index_hashes(_bytes: &[u8]) -> Result<HashSet<u64>, CacheError> {
-    Ok(HashSet::new())
+pub fn parse_real_index_hashes(bytes: &[u8]) -> Result<HashSet<u64>, CacheError> {
+    // Pickle header (8) + IndexMetadata (magic8 version4 entry_count8 cache_size8
+    // reason4 = 32) — the fixed prefix before the first hash_key.
+    const HEADER: usize = 8;
+    const META_END: usize = HEADER + 32; // first hash_key begins here (offset 40)
+    const ENTRY_STRIDE: usize = 24; // hash_key(8) + EntryMetadata(16)
+    const MAX_ENTRIES: u64 = 8 * 1024 * 1024;
+
+    if bytes.len() < META_END {
+        return Err(CacheError::TooSmall {
+            found: bytes.len(),
+            need: META_END,
+        });
+    }
+    let magic = rd_u64(bytes, HEADER).unwrap_or(0);
+    if magic != INDEX_MAGIC {
+        return Err(CacheError::BadHeaderMagic {
+            found: magic,
+            expected: INDEX_MAGIC,
+        });
+    }
+    let entry_count = rd_u64(bytes, HEADER + 12).unwrap_or(0);
+    // Bound the declared count against what the file can actually hold (the
+    // trailing i64 cache_modified sits after the last entry).
+    let available = bytes.len().saturating_sub(META_END).saturating_sub(8) / ENTRY_STRIDE;
+    let count = entry_count.min(MAX_ENTRIES).min(available as u64) as usize;
+
+    let mut set = HashSet::with_capacity(count);
+    for i in 0..count {
+        let off = META_END + i * ENTRY_STRIDE;
+        if let Some(hash) = rd_u64(bytes, off) {
+            set.insert(hash);
+        }
+    }
+    Ok(set)
+}
+
+/// Bounded little-endian `u64` read; `None` when out of range.
+fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
+    let end = off.checked_add(8)?;
+    let s = b.get(off..end)?;
+    let mut a = [0u8; 8];
+    a.copy_from_slice(s);
+    Some(u64::from_le_bytes(a))
+}
+
+/// Read `the-real-index` from a SimpleCache directory: the modern
+/// `index-dir/the-real-index`, falling back to a flattened `the-real-index`.
+fn read_real_index(cache_dir: &Path) -> Option<Vec<u8>> {
+    let modern = cache_dir.join("index-dir").join("the-real-index");
+    if let Ok(b) = std::fs::read(&modern) {
+        return Some(b);
+    }
+    std::fs::read(cache_dir.join("the-real-index")).ok()
+}
+
+/// Parse `[0-9a-f]{16}` from a `<hash>_<stream>` filename into the entry hash.
+fn hash_from_name(name: &str, suffix: &str) -> Option<u64> {
+    let stem = name.strip_suffix(suffix)?;
+    if stem.len() != 16 || !stem.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    u64::from_str_radix(stem, 16).ok()
 }
 
 /// Recover orphaned SimpleCache entries under `cache_dir`: `[hash]_0` files whose
@@ -144,8 +206,104 @@ pub fn parse_real_index_hashes(_bytes: &[u8]) -> Result<HashSet<u64>, CacheError
 /// positive); dangling `_s` detection still runs. Best-effort and panic-free: a
 /// malformed candidate is skipped.
 #[must_use]
-pub fn carve_orphaned_simple(_cache_dir: &Path) -> Vec<RecoveredResource> {
-    Vec::new()
+pub fn carve_orphaned_simple(cache_dir: &Path) -> Vec<RecoveredResource> {
+    let limits = DecompressLimits::default();
+    let live = read_real_index(cache_dir).and_then(|b| parse_real_index_hashes(&b).ok());
+
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return out;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !path.is_file() {
+            continue;
+        }
+
+        if let Some(hash) = hash_from_name(name, "_0") {
+            // Only claim a _0 orphan when the index is present and does NOT list
+            // the hash; without an index, liveness is unknown (no false claim).
+            let Some(live_set) = &live else { continue };
+            if live_set.contains(&hash) {
+                continue; // live entry — never double-report it
+            }
+            let Ok(data) = std::fs::read(&path) else {
+                continue;
+            };
+            let sparse = sparse_companion(&path);
+            let Ok(res) = resource_from_entry_bytes(&data, path.clone(), sparse, &limits) else {
+                continue; // malformed orphan — skip, never panic
+            };
+            let quality = grade(&res);
+            let note = format!(
+                "recovered from an orphaned SimpleCache entry (hash {hash:016x} absent from \
+                 the-real-index); consistent with the resource having been cached then \
+                 evicted/cleared, not proof of deliberate deletion"
+            );
+            out.push(RecoveredResource {
+                resource: res,
+                mechanism: RecoveryMechanism::OrphanedSimpleEntry,
+                quality,
+                note,
+            });
+        } else if let Some(hash) = hash_from_name(name, "_s") {
+            // A sparse body whose companion _0 is absent is a dangling fragment:
+            // the entry that held its URL and headers is gone, so the URL is
+            // unknown. Surface the bytes without fabricating a URL.
+            let entry0 = path.with_file_name(format!("{hash:016x}_0"));
+            if entry0.is_file() {
+                continue; // the entry exists; handled via its _0 above
+            }
+            let Ok(body) = std::fs::read(&path) else {
+                continue;
+            };
+            out.push(dangling_sparse_resource(&path, hash, body));
+        }
+    }
+    out
+}
+
+/// Given a `[hash]_0` path, return its `[hash]_s` companion if present.
+fn sparse_companion(entry_path: &Path) -> Option<std::path::PathBuf> {
+    let name = entry_path.file_name()?.to_str()?;
+    let stem = name.strip_suffix("_0")?;
+    let sparse = entry_path.with_file_name(format!("{stem}_s"));
+    sparse.is_file().then_some(sparse)
+}
+
+/// Build a [`RecoveredResource`] for a dangling `[hash]_s` sparse body: the URL
+/// is unknown (its `_0` is gone), so it is left empty and the note says so.
+fn dangling_sparse_resource(path: &Path, hash: u64, body: Vec<u8>) -> RecoveredResource {
+    let note = format!(
+        "recovered orphaned SimpleCache sparse body (hash {hash:016x}); the companion _0 entry \
+         holding its URL and headers is absent, so the request URL is unknown; consistent with \
+         a streamed/range response having been cached then evicted"
+    );
+    let resource = CachedResource {
+        url: String::new(),
+        http_status: None,
+        status_line: None,
+        headers: Vec::new(),
+        content_type: None,
+        content_encoding: None,
+        request_time_ns: None,
+        response_time_ns: None,
+        raw_body: body.clone(),
+        decoded_body: body,
+        body_decoded: false,
+        decode_note: Some("sparse range reassembly not performed".to_string()),
+        source_file: path.to_path_buf(),
+        sparse_file: Some(path.to_path_buf()),
+    };
+    RecoveredResource {
+        resource,
+        mechanism: RecoveryMechanism::DanglingSparseFile,
+        quality: RecoveryQuality::Partial,
+        note,
+    }
 }
 
 #[cfg(test)]
@@ -306,6 +464,6 @@ mod tests {
         .unwrap();
         write_index(dir.path(), &build_real_index(&[]));
         let recovered = carve_orphaned_simple(dir.path());
-        assert!(recovered.iter().all(|r| r.resource.url != ""));
+        assert!(recovered.iter().all(|r| !r.resource.url.is_empty()));
     }
 }
