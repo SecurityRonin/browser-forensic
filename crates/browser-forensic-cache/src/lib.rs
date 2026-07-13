@@ -13,6 +13,7 @@
 
 pub mod blockfile;
 pub mod cachestorage;
+pub mod carve;
 pub mod decompress;
 pub mod error;
 pub mod firefox;
@@ -29,6 +30,10 @@ pub use cachestorage::{
     parse_cachestorage_cache_dir, parse_cachestorage_dir, parse_cachestorage_dir_with,
     parse_cachestorage_index, parse_cachestorage_metadata, resource_from_cachestorage_entry,
     CacheEntry, CacheStorageIndex, CacheStorageMeta, CacheStorageResource,
+};
+pub use carve::{
+    carve_orphaned_simple, parse_real_index_hashes, RecoveredResource, RecoveryMechanism,
+    RecoveryQuality,
 };
 pub use decompress::{decode_body, DecodeOutcome, DecompressLimits};
 pub use error::CacheError;
