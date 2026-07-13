@@ -32,7 +32,7 @@ use std::path::Path;
 use anyhow::{Context as _, Result};
 use browser_forensic_core::timestamp::filetime_to_unix_nanos;
 use browser_forensic_core::{ArtifactKind, BrowserEvent, BrowserFamily};
-use ese_core::{decode_record, EseDatabase, EseValue};
+use ese_core::{decode_ese_record, decode_record, ColumnDef, EseDatabase, EseValue};
 
 /// Classify a `Containers.Name` value into the browsing [`ArtifactKind`] its
 /// `Container_#` table holds, or `None` for non-browsing / infrastructure
@@ -205,6 +205,28 @@ pub fn event_from_record(
     Some(ev)
 }
 
+/// Decode one ESE data-definition record using the layout that matches the
+/// database's on-disk format.
+///
+/// Real WebCacheV01.dat files use ESE's large-page (extended) format, where byte
+/// 1 of a record is the highest variable data-type id and the `Url`/`Filename`
+/// live in the tagged region (column id >= 256): these need
+/// [`decode_ese_record`] with `extended = true`. Small-page fixtures use the
+/// legacy layout ([`decode_record`], byte 1 = variable-column count). The
+/// discriminator is [`EseDatabase::is_extended_format`] — a structural property
+/// of the file, and the same fork `ese_core`'s own record cursor makes.
+fn decode_table_record(
+    data: &[u8],
+    columns: &[ColumnDef],
+    extended: bool,
+) -> Result<Vec<(String, EseValue)>, ese_core::EseError> {
+    if extended {
+        decode_ese_record(data, columns, true)
+    } else {
+        decode_record(data, columns)
+    }
+}
+
 /// Parse an IE / Edge-Legacy `WebCacheV01.dat` into browser events.
 ///
 /// Opens the ESE database via [`ese_core`], reads the `Containers` table, and
@@ -220,6 +242,9 @@ pub fn parse_webcache(path: &Path) -> Result<Vec<BrowserEvent>> {
     let db = EseDatabase::open(path)
         .with_context(|| format!("opening ESE WebCache database {}", path.display()))?;
     let source = path.display().to_string();
+    // Real WebCache files are large-page (extended) format; small-page fixtures
+    // are legacy. Pick the matching record decoder per this structural property.
+    let extended = db.is_extended_format();
 
     // Bootstrap: the Containers table lists every container. A failure to read
     // it is a real error, surfaced loud — never absorbed into an empty result.
@@ -235,7 +260,7 @@ pub fn parse_webcache(path: &Path) -> Result<Vec<BrowserEvent>> {
     for rec in container_cursor {
         // A single corrupt page/record degrades to skip; the cursor recovers.
         let Ok((_, _, data)) = rec else { continue };
-        let Ok(cols) = decode_record(&data, &container_cols) else {
+        let Ok(cols) = decode_table_record(&data, &container_cols, extended) else {
             continue;
         };
         let id = column(&cols, "ContainerId").and_then(|v| match v {
@@ -272,7 +297,7 @@ pub fn parse_webcache(path: &Path) -> Result<Vec<BrowserEvent>> {
         };
         for rec in cursor {
             let Ok((_, _, data)) = rec else { continue };
-            let Ok(record_cols) = decode_record(&data, &cols) else {
+            let Ok(record_cols) = decode_table_record(&data, &cols, extended) else {
                 continue;
             };
             if let Some(ev) = event_from_record(&record_cols, &kind, family.clone(), &source, &name)
