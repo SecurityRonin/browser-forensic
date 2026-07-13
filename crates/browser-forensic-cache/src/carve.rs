@@ -397,8 +397,76 @@ pub fn carve_blockfile_free(cache_dir: &Path) -> Vec<RecoveredResource> {
 /// provenance of every recovered resource. Bounds-checked and panic-free; a
 /// header with no valid entry is skipped.
 #[must_use]
-pub fn carve_signature(_buf: &[u8], _source: &Path) -> Vec<RecoveredResource> {
-    Vec::new()
+pub fn carve_signature(buf: &[u8], source: &Path) -> Vec<RecoveredResource> {
+    let limits = DecompressLimits::default();
+    let magic = HEADER_MAGIC.to_le_bytes();
+    let eof = EOF_MAGIC.to_le_bytes();
+
+    // One pass to locate every EOF-magic position, so each header's extent is
+    // resolved by lookup rather than a rescan.
+    let eof_positions: Vec<usize> = find_magic_positions(buf, eof);
+
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i + HEADER_SIZE + EOF_SIZE <= buf.len() {
+        if buf.get(i..i + 8) != Some(&magic[..]) {
+            i += 1;
+            continue;
+        }
+        let window_end = i.saturating_add(MAX_CARVE_ENTRY).min(buf.len());
+        let mut advanced = false;
+        for &e in &eof_positions {
+            if e < i + HEADER_SIZE {
+                continue;
+            }
+            let end = match e.checked_add(EOF_SIZE) {
+                Some(v) if v <= window_end => v,
+                _ => break, // positions are sorted; past the window
+            };
+            let Some(slice) = buf.get(i..end) else {
+                break;
+            };
+            if let Ok(res) = resource_from_entry_bytes(slice, source.to_path_buf(), None, &limits) {
+                let quality = grade(&res);
+                let note = format!(
+                    "recovered by SimpleCache signature carve (header magic at offset {i} in \
+                     {}); consistent with a cached response present in slack/unallocated space \
+                     that the live index no longer references",
+                    source.display()
+                );
+                out.push(RecoveredResource {
+                    resource: res,
+                    mechanism: RecoveryMechanism::SignatureCarve,
+                    quality,
+                    note,
+                });
+                i = end; // advance past the recovered entry
+                advanced = true;
+                break;
+            }
+        }
+        if !advanced {
+            i += 1;
+        }
+        if out.len() >= MAX_CARVED_ENTRIES {
+            break;
+        }
+    }
+    out
+}
+
+/// All byte offsets in `buf` where the 8-byte `needle` occurs (ascending).
+fn find_magic_positions(buf: &[u8], needle: [u8; 8]) -> Vec<usize> {
+    let mut positions = Vec::new();
+    if buf.len() < 8 {
+        return positions;
+    }
+    for off in 0..=buf.len() - 8 {
+        if buf.get(off..off + 8) == Some(&needle[..]) {
+            positions.push(off);
+        }
+    }
+    positions
 }
 
 /// Run the on-disk recovery mechanisms against a cache directory: orphaned

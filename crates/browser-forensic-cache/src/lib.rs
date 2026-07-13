@@ -32,8 +32,8 @@ pub use cachestorage::{
     CacheEntry, CacheStorageIndex, CacheStorageMeta, CacheStorageResource,
 };
 pub use carve::{
-    carve_orphaned_simple, parse_real_index_hashes, RecoveredResource, RecoveryMechanism,
-    RecoveryQuality,
+    carve_blockfile_free, carve_cache_dir, carve_orphaned_simple, carve_signature,
+    parse_real_index_hashes, RecoveredResource, RecoveryMechanism, RecoveryQuality,
 };
 pub use decompress::{decode_body, DecodeOutcome, DecompressLimits};
 pub use error::CacheError;
