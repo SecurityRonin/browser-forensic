@@ -18,6 +18,7 @@ pub mod find;
 pub mod investigate;
 pub mod output;
 pub mod progress;
+pub mod recover;
 pub mod report;
 
 /// The outcome of feeding one key to a single-line text prompt (the search and
