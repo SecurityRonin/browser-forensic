@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// A Chrome `History` seeded with an email (in a title), an IPv4 (in a URL), and
-/// a Google search term. Returns `(TempDir, home_dir)`. All visits are in 2023.
+/// a Google search term. Returns `(TempDir, profile_dir)`. All visits are in 2023.
 fn ioc_history() -> (TempDir, PathBuf) {
     let dir = TempDir::new().unwrap();
     let profile_dir = dir.path().join("google-chrome").join("Default");
@@ -40,9 +40,7 @@ fn ioc_history() -> (TempDir, PathBuf) {
           ('https://good.example.org/news', 'Good News', 1, 13327629000000000);",
     )
     .unwrap();
-    // Return the home directory (parent of google-chrome) so collection walks it.
-    let home = dir.path().to_path_buf();
-    (dir, home)
+    (dir, profile_dir)
 }
 
 fn br4n6() -> Command {
@@ -113,8 +111,9 @@ fn find_iocs_jsonl_carries_kind_value_source() {
         "provenance names the source event class: {line}"
     );
     // Enumerations are observed strings, never a claimed visit/search (honest).
+    // The machine JSONL carries the faithful serde variant name.
     assert_eq!(
-        v["provenance"]["user_action_claim"], "observed-string",
+        v["provenance"]["user_action_claim"], "ObservedString",
         "an enumerated IOC is an observed string: {line}"
     );
 }

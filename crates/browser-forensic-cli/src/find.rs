@@ -279,6 +279,32 @@ impl FindHit {
         }
     }
 
+    /// Build a hit from an enumerated IOC (`find --iocs`): the `kind_label` (an
+    /// IOC class such as `email`/`ipv4`) fills the TERM column, `value` is the
+    /// concrete match, and provenance is derived from the *source* event's
+    /// artifact so the evidence class is preserved — but the user-action claim is
+    /// forced to [`UserActionClaim::ObservedString`]. An IOC-shaped string merely
+    /// *appears* in an artifact; its presence is never a claim the user visited,
+    /// searched, or downloaded anything (D4 honesty).
+    #[must_use]
+    pub fn from_ioc(kind_label: &str, value: &str, event: &BrowserEvent) -> Self {
+        let mut provenance = provenance_for(&event.artifact);
+        provenance.user_action_claim = UserActionClaim::ObservedString;
+        let confidence = confidence_for(provenance.state);
+        let rule_id = rule_for(&provenance);
+        Self {
+            term: kind_label.to_string(),
+            confidence,
+            rule_id,
+            provenance,
+            match_value: value.to_string(),
+            timestamp_ns: event.timestamp_ns,
+            browser: Some(event.browser.to_string()),
+            profile: None,
+            user: None,
+        }
+    }
+
     /// Project the hit to a [`FIND_HEADERS`]-ordered table row for the human view.
     /// Every axis is rendered in full (never ellipsized); the lowercase Display of
     /// each provenance enum is the human label.

@@ -120,6 +120,11 @@ enum Command {
         /// Read one term per line from this file (`#` comments allowed).
         #[arg(long, value_name = "FILE")]
         terms_file: Option<PathBuf>,
+        /// Enumerate ALL candidate entities/IOCs (emails, IPs, crypto-address and
+        /// card candidates, search terms) with no query. Takes no TERM; composes
+        /// with `--from`/`--to`/`--source`.
+        #[arg(long)]
+        iocs: bool,
         /// Inclusive lower time bound (RFC3339, `YYYY-MM-DD`, or Unix nanos).
         #[arg(long, value_name = "TS")]
         from: Option<String>,
@@ -551,6 +556,7 @@ where
             regex,
             literal,
             terms_file,
+            iocs,
             from,
             to,
             sources,
@@ -561,6 +567,7 @@ where
             regex.as_deref(),
             literal.as_deref(),
             terms_file.as_deref(),
+            iocs,
             from.as_deref(),
             to.as_deref(),
             &sources,
@@ -3080,6 +3087,7 @@ pub fn run_find(
     regex: Option<&str>,
     literal: Option<&str>,
     terms_file: Option<&Path>,
+    iocs: bool,
     from: Option<&str>,
     to: Option<&str>,
     sources: &[SourceKind],
@@ -3087,6 +3095,17 @@ pub fn run_find(
 ) -> Result<()> {
     use browser_forensic_core::finding::EvidenceSource;
     use browser_forensic_search::{filter_events, EventQuery, Pattern};
+
+    // `--iocs` is a distinct, pattern-free enumeration mode (RFC 0001 P5c): no
+    // TERM, no --regex/--term/--terms-file — it lists every candidate entity.
+    if iocs {
+        if regex.is_some() || literal.is_some() || terms_file.is_some() {
+            anyhow::bail!(
+                "--iocs enumerates all IOCs; drop --regex/--term/--terms-file (usage: br4n6 find --iocs <PATH>)"
+            );
+        }
+        return run_find_iocs(term, path, from, to, sources, format);
+    }
 
     // Resolve the PATH: when the term comes from a flag, the single positional is
     // the PATH; otherwise the canonical `find <TERM> <PATH>` two-positional form.
@@ -3238,6 +3257,89 @@ pub fn run_find(
                     "memory",
                     "whole-image carving"
                 ],
+            )
+        );
+    }
+    Ok(())
+}
+
+/// `br4n6 find --iocs <PATH>` — pattern-free IOC *enumeration* (RFC 0001 P5c).
+///
+/// Collects the profile/home events (the same path `find` uses) and enumerates
+/// every candidate entity via [`browser_forensic_search::extract_iocs`] — reusing
+/// that extractor, never reimplementing it. Each IOC becomes a provenance-tagged
+/// [`FindHit`] whose source is its origin event's evidence class but whose
+/// user-action claim is `observed-string` (an IOC-shaped string merely appears;
+/// it is not a claimed visit/search/download). Scopes with `--from`/`--to` (via
+/// the shared time-window filter) and `--source`.
+///
+/// # Errors
+/// Returns an error for a missing PATH, a positional TERM (enumeration takes no
+/// query), an invalid timestamp, or a collection failure.
+fn run_find_iocs(
+    term: Option<&str>,
+    path: Option<&Path>,
+    from: Option<&str>,
+    to: Option<&str>,
+    sources: &[SourceKind],
+    format: Option<OutputFormat>,
+) -> Result<()> {
+    use browser_forensic_core::finding::EvidenceSource;
+    use browser_forensic_search::{filter_events, EventQuery};
+
+    // Pattern-free enumeration takes no TERM: the single positional is the PATH.
+    let evidence_path: PathBuf = match (term, path) {
+        (None, Some(p)) => p.to_path_buf(),
+        (Some(p), None) => PathBuf::from(p),
+        (Some(_), Some(_)) => anyhow::bail!(
+            "--iocs enumerates all IOCs; drop the TERM (usage: br4n6 find --iocs <PATH>)"
+        ),
+        (None, None) => anyhow::bail!("missing PATH: br4n6 find --iocs <PATH>"),
+    };
+
+    let output_format = crate::output::resolve_stdout(format);
+    let from_ns = from.map(parse_timestamp_ns).transpose()?;
+    let to_ns = to.map(parse_timestamp_ns).transpose()?;
+
+    let allowed: Vec<EvidenceSource> = sources.iter().map(|s| s.evidence_source()).collect();
+    let source_allowed = |src: &EvidenceSource| allowed.is_empty() || allowed.contains(src);
+
+    eprintln!("Enumerating IOCs in {} …", evidence_path.display());
+
+    // Scope the events by the time window first, then extract — so an IocMatch's
+    // `event_index` indexes the same scoped slice and time scoping matches `find`.
+    let events = collect_profile_events(&evidence_path)?;
+    let query = EventQuery {
+        pattern: None,
+        fields: Vec::new(),
+        from_ns,
+        to_ns,
+    };
+    let scoped: Vec<BrowserEvent> = filter_events(&events, &query)
+        .into_iter()
+        .cloned()
+        .collect();
+
+    let iocs = browser_forensic_search::extract_iocs(&scoped);
+    let mut hits: Vec<FindHit> = Vec::new();
+    for m in &iocs {
+        let Some(event) = scoped.get(m.event_index) else {
+            continue;
+        };
+        let hit = FindHit::from_ioc(m.kind.label(), &m.value, event);
+        if source_allowed(&hit.provenance.source) {
+            hits.push(hit);
+        }
+    }
+
+    emit_find_hits(&hits, output_format);
+
+    if hits.is_empty() {
+        eprintln!(
+            "{}",
+            crate::output::negative_result(
+                &["live history", "downloads", "bookmarks", "cookies", "cache"],
+                &["encrypted values", "deleted/carved records", "memory"],
             )
         );
     }
