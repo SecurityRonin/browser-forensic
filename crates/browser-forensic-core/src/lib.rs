@@ -194,6 +194,17 @@ pub fn browser_event_schema() -> schemars::Schema {
     schemars::schema_for!(BrowserEvent)
 }
 
+/// Generate the JSON Schema (draft 2020-12) for [`Finding`] and its sub-types.
+///
+/// Like [`browser_event_schema`], the schema is *derived* from the Rust types via
+/// schemars, so it never drifts from the serialized shape. The committed
+/// `docs/finding.schema.json` is kept in step by a sync test.
+#[cfg(feature = "schema")]
+#[must_use]
+pub fn finding_schema() -> schemars::Schema {
+    schemars::schema_for!(Finding)
+}
+
 /// Forensic metadata from forensicnomicon for a specific browser artifact.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForensicMeta {
