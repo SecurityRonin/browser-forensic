@@ -1,10 +1,11 @@
 //! RFC 0001 P6 (D7) — unified `--keys` decryption UX, end-to-end.
 //!
 //! Tier-2: the Windows fixtures are built from the decrypt crate's
-//! impacket-/NIST-vouched `win_dpapi_vectors.json` (Local State DPAPI-wrapped key
-//! + masterkey file + logon password recover the AES-256-GCM profile key, which
-//! decrypts the v10 cookie value end-to-end). The whole chain runs on any host —
-//! no live Keychain — so it is CI-deterministic on macOS and Linux alike.
+//! impacket-/NIST-vouched `win_dpapi_vectors.json`. The Local State DPAPI-wrapped
+//! key, the masterkey file, and the logon password together recover the
+//! AES-256-GCM profile key, which decrypts the v10 cookie value end-to-end. The
+//! whole chain runs on any host (no live Keychain), so it is CI-deterministic on
+//! macOS and Linux alike.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::{Path, PathBuf};
@@ -35,7 +36,10 @@ fn br4n6() -> Command {
 /// are the per-cookie `encrypted_value` payloads. Returns (root, cookies_path).
 fn build_win_root(root: &Path, blobs: &[Vec<u8>]) -> PathBuf {
     let v = win_vec();
-    let default = root.join("Default");
+    // Nest under a "Chrome" dir so the plain (no-keys) path can detect the family
+    // from the vendor string — the keys root still contains everything.
+    let base = root.join("Chrome");
+    let default = base.join("Default");
     std::fs::create_dir_all(&default).unwrap();
     std::fs::write(
         default.join("Local State"),
@@ -43,7 +47,7 @@ fn build_win_root(root: &Path, blobs: &[Vec<u8>]) -> PathBuf {
     )
     .unwrap();
 
-    let protect = root
+    let protect = base
         .join("AppData")
         .join("Roaming")
         .join("Microsoft")
@@ -61,7 +65,9 @@ fn build_win_root(root: &Path, blobs: &[Vec<u8>]) -> PathBuf {
     let conn = rusqlite::Connection::open(&cookies).unwrap();
     conn.execute_batch(
         "CREATE TABLE cookies (creation_utc INTEGER NOT NULL, host_key TEXT NOT NULL, \
-         name TEXT NOT NULL, path TEXT NOT NULL, encrypted_value BLOB DEFAULT '');",
+         name TEXT NOT NULL, path TEXT NOT NULL, expires_utc INTEGER DEFAULT 0, \
+         is_secure INTEGER DEFAULT 0, is_httponly INTEGER DEFAULT 0, \
+         samesite INTEGER DEFAULT 0, encrypted_value BLOB DEFAULT '');",
     )
     .unwrap();
     for (i, blob) in blobs.iter().enumerate() {

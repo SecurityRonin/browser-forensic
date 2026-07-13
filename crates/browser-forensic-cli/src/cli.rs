@@ -391,7 +391,10 @@ enum ArtifactKind {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
-    /// Parse browser cookies.
+    /// Parse browser cookies. Encrypted values are always COUNTED and reported
+    /// (never dropped); add `--keys <PATH>` to decrypt them. Cookie plaintext may
+    /// show under `--keys` alone (session work); `v20` App-Bound values are
+    /// refused, never fabricated (RFC 0001 P6 / D7).
     Cookies {
         /// Path to the cookies artifact file or profile directory.
         #[arg(value_name = "PATH")]
@@ -399,36 +402,27 @@ enum ArtifactKind {
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
-        /// OPT-IN: decrypt Chromium `v10` cookie values via the macOS login
-        /// Keychain (prompts for authorization). Off by default.
-        #[arg(long)]
-        decrypt_macos: bool,
-        /// Keychain service holding the "… Safe Storage" password.
+        /// Decrypt cookie values using key material AUTO-LOCATED **within** this
+        /// evidence root and never outside it: the Chromium `Local State`
+        /// (DPAPI-wrapped key), Windows DPAPI masterkeys under
+        /// `.../Microsoft/Protect/<SID>/`, and — on a live macOS host — the
+        /// "… Safe Storage" Keychain item. Usually the profile or evidence root.
+        #[arg(long, value_name = "PATH")]
+        keys: Option<PathBuf>,
+        /// macOS only: the Keychain service holding the "… Safe Storage" secret
+        /// (e.g. `Chrome Safe Storage`, `Microsoft Edge Safe Storage`). Refines
+        /// `--keys` on a live macOS host.
         #[arg(long, value_name = "SERVICE", default_value = "Chrome Safe Storage")]
         keychain_service: String,
-        /// OPT-IN: decrypt Windows Chromium `v10`/`v11` cookie values. Needs
-        /// `--local-state` and a DPAPI secret (below). Off by default; `v20`
-        /// App-Bound values are refused, never fabricated.
+        /// Read the Windows logon password once from stdin (to unwrap the DPAPI
+        /// masterkey). NEVER pass a password on argv — it leaks to shell history
+        /// and `ps`. Used with `--keys`.
         #[arg(long)]
-        decrypt_win: bool,
-        /// Path to the profile's `Local State` file (holds the DPAPI-wrapped key).
+        password_stdin: bool,
+        /// Also write a chain-of-custody manifest here, recording every key file
+        /// used (SHA-256, GUID/SID) and how many items each decrypted (D11).
         #[arg(long, value_name = "PATH")]
-        local_state: Option<PathBuf>,
-        /// DPAPI secret: a pre-decrypted 64-byte master key as hex. Mutually
-        /// exclusive with the `--dpapi-password`/`--dpapi-sid`/…-file trio.
-        #[arg(long, value_name = "HEX")]
-        dpapi_masterkey: Option<String>,
-        /// DPAPI secret: the user's logon password (with `--dpapi-sid` and
-        /// `--dpapi-masterkey-file`).
-        #[arg(long, value_name = "PASSWORD")]
-        dpapi_password: Option<String>,
-        /// DPAPI secret: the user SID (e.g. `S-1-5-21-…-1001`).
-        #[arg(long, value_name = "SID")]
-        dpapi_sid: Option<String>,
-        /// DPAPI secret: the user's master-key file
-        /// (`%APPDATA%/Microsoft/Protect/<SID>/<GUID>`).
-        #[arg(long, value_name = "PATH")]
-        dpapi_masterkey_file: Option<PathBuf>,
+        manifest: Option<PathBuf>,
     },
     /// Parse browser downloads.
     Downloads(ArtifactArgs),
@@ -1314,27 +1308,17 @@ fn dispatch_artifact(kind: ArtifactKind) -> Result<()> {
         ArtifactKind::Cookies {
             path,
             format,
-            decrypt_macos,
+            keys,
             keychain_service,
-            decrypt_win,
-            local_state,
-            dpapi_masterkey,
-            dpapi_password,
-            dpapi_sid,
-            dpapi_masterkey_file,
+            password_stdin,
+            manifest,
         } => dispatch_cookies(
             &path,
             format,
-            decrypt_macos,
+            keys.as_deref(),
             &keychain_service,
-            CookieWinDecrypt {
-                enabled: decrypt_win,
-                local_state,
-                dpapi_masterkey,
-                dpapi_password,
-                dpapi_sid,
-                dpapi_masterkey_file,
-            },
+            password_stdin,
+            manifest.as_deref(),
         ),
         ArtifactKind::Downloads(a) => run_artifact(&a.path, ArtifactType::Downloads, a.format),
         ArtifactKind::Bookmarks(a) => run_artifact(&a.path, ArtifactType::Bookmarks, a.format),
@@ -2733,55 +2717,182 @@ pub fn decrypt_chromium_cookies_win(path: &Path, key: &[u8; 32]) -> Result<Vec<B
     Ok(events)
 }
 
-/// Opt-in Windows Chromium cookie-decryption inputs (grouped so the `cookies`
-/// dispatch takes one coherent choice, not six loose flags).
-struct CookieWinDecrypt {
-    enabled: bool,
-    local_state: Option<PathBuf>,
-    dpapi_masterkey: Option<String>,
-    dpapi_password: Option<String>,
-    dpapi_sid: Option<String>,
-    dpapi_masterkey_file: Option<PathBuf>,
-}
-
-/// Route `cookies`: opt-in Windows or macOS `v10` decryption, else plain parser.
+/// Route `cookies` (RFC 0001 P6 / D7): with `--keys`, auto-locate key material
+/// within the evidence root and decrypt; without it, parse plainly and COUNT the
+/// encrypted values (reported, never dropped).
 fn dispatch_cookies(
     path: &Path,
     format: OutputFormat,
-    decrypt_macos: bool,
+    keys: Option<&Path>,
     keychain_service: &str,
-    win: CookieWinDecrypt,
+    password_stdin: bool,
+    manifest_out: Option<&Path>,
 ) -> Result<()> {
-    if win.enabled {
-        run_cookies_decrypt_win(path, &win, format)
-    } else if decrypt_macos {
-        run_cookies_decrypt_macos(path, keychain_service, format)
-    } else {
-        run_artifact(path, ArtifactType::Cookies, format)
+    match keys {
+        Some(root) => run_cookies_decrypt(
+            path,
+            root,
+            keychain_service,
+            password_stdin,
+            manifest_out,
+            format,
+        ),
+        None => run_cookies_plain(path, format),
     }
 }
 
-/// `br4n6 cookies PATH --decrypt-win` handler: recover the DPAPI key, decrypt.
-fn run_cookies_decrypt_win(
+/// Plain cookie parse: render every cookie, then COUNT the encrypted values and
+/// point the examiner at `--keys` (RFC 0001 D7 — counted, never silently dropped).
+fn run_cookies_plain(path: &Path, format: OutputFormat) -> Result<()> {
+    let mut events = parse_cookie_events(path)?;
+    events.sort_by_key(|e| e.timestamp_ns);
+    let encrypted = events
+        .iter()
+        .filter(|e| e.attrs.get("encrypted_value").and_then(|v| v.as_str()) == Some("ENCRYPTED"))
+        .count();
+    print_events(&events, format);
+    if encrypted > 0 {
+        eprintln!(
+            "{encrypted} cookie value(s) encrypted (shown as ENCRYPTED, never dropped) \u{2014} \
+             add --keys <PATH> to decrypt"
+        );
+    }
+    Ok(())
+}
+
+/// `br4n6 artifact cookies PATH --keys <ROOT>` handler: auto-locate the key within
+/// the evidence root, decrypt, stamp per-record provenance, and (optionally) write
+/// a manifest recording every key source and what it decrypted.
+fn run_cookies_decrypt(
     path: &Path,
-    win: &CookieWinDecrypt,
+    root: &Path,
+    keychain_service: &str,
+    password_stdin: bool,
+    manifest_out: Option<&Path>,
     format: OutputFormat,
 ) -> Result<()> {
-    let local_state = win.local_state.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("--decrypt-win requires --local-state <PATH> (the profile's Local State)")
-    })?;
-    eprintln!("[decrypt] opt-in Windows Chromium cookie decryption — output contains plaintext");
-    let key = resolve_dpapi_key(
-        local_state,
-        win.dpapi_masterkey.as_deref(),
-        win.dpapi_password.as_deref(),
-        win.dpapi_sid.as_deref(),
-        win.dpapi_masterkey_file.as_deref(),
-    )?;
-    let mut events = decrypt_chromium_cookies_win(path, &key)?;
+    let password = read_stdin_password(password_stdin)?;
+    let mut resolution =
+        crate::keys::resolve_chromium_keys(root, password.as_deref(), keychain_service)?;
+    // The "Keys:" provenance line goes to stderr so stdout stays a clean record
+    // stream; it names exactly what was found and used (D7).
+    eprintln!("Keys: {}", resolution.summary);
+
+    let (mut events, method) = match &resolution.key {
+        crate::keys::ChromiumKey::Macos(k) => (
+            decrypt_chromium_cookies(path, k)?,
+            "AES-128-CBC (macOS Keychain)",
+        ),
+        crate::keys::ChromiumKey::Win(k) => (
+            decrypt_chromium_cookies_win(path, k)?,
+            "AES-256-GCM (DPAPI)",
+        ),
+    };
+    let decrypted = annotate_cookie_provenance(&mut events, method, &resolution.key_source);
+    // Found ≠ decrypted: the key chain was unwrapped (found), and here is how many
+    // items it actually decrypted (0 when every value was v20-refused).
+    for ks in &mut resolution.audit {
+        ks.decrypted_items = decrypted as u64;
+    }
+
     events.sort_by_key(|e| e.timestamp_ns);
     print_events(&events, format);
+
+    if let Some(mp) = manifest_out {
+        write_keyed_manifest(mp, path, &resolution.audit)?;
+        eprintln!("wrote chain-of-custody manifest to {}", mp.display());
+    }
     Ok(())
+}
+
+/// Stamp each decrypted cookie with machine-readable decryption provenance
+/// (`encrypted` + `decryption{method,key_source}`) and return how many rows
+/// actually decrypted (a `DECRYPT_FAILED` value stays `encrypted:true`).
+fn annotate_cookie_provenance(
+    events: &mut [BrowserEvent],
+    method: &str,
+    key_source: &str,
+) -> usize {
+    let mut decrypted = 0usize;
+    for ev in events.iter_mut() {
+        let ok = ev
+            .attrs
+            .get("value")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.starts_with("DECRYPT_FAILED"));
+        if ok {
+            decrypted += 1;
+        }
+        ev.attrs.insert("encrypted".to_string(), json!(!ok));
+        ev.attrs.insert(
+            "decryption".to_string(),
+            json!({ "method": method, "key_source": key_source }),
+        );
+    }
+    decrypted
+}
+
+/// Detect the browser family for a cookies path and parse its cookies, mirroring
+/// [`run_artifact`]'s detection chain so plain and keyed paths agree.
+fn parse_cookie_events(path: &Path) -> Result<Vec<BrowserEvent>> {
+    use browser_forensic_core::detect_browser;
+    let family = detect_browser(path)
+        .or_else(|| infer_browser_from_filename(path))
+        .or_else(|| preferences_family(path))
+        .with_context(|| format!("cannot determine browser from path: {}", path.display()))?;
+    match family {
+        BrowserFamily::Chromium => browser_forensic_chrome::parse_cookies(path),
+        BrowserFamily::Firefox => browser_forensic_firefox::parse_cookies(path),
+        BrowserFamily::Safari => browser_forensic_safari::parse_cookies(path),
+        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => anyhow::bail!(
+            "IE / Edge-Legacy cookies live in WebCacheV01.dat (ESE); use `br4n6 webcache PATH`"
+        ),
+    }
+}
+
+/// Write a chain-of-custody manifest over `evidence` + the key files used,
+/// carrying the `--keys` key-source audit (RFC 0001 D7/D11).
+fn write_keyed_manifest(
+    out: &Path,
+    evidence: &Path,
+    audit: &[browser_forensic_manifest::KeySource],
+) -> Result<()> {
+    let mut inputs = vec![evidence.to_path_buf()];
+    for ks in audit {
+        if let Some(p) = &ks.path {
+            inputs.push(PathBuf::from(p));
+        }
+    }
+    let args: Vec<String> = std::env::args().collect();
+    let run = browser_forensic_manifest::RunMetadata::capture(
+        "br4n6",
+        env!("CARGO_PKG_VERSION"),
+        &args,
+        None,
+    );
+    let mut manifest = browser_forensic_manifest::build_manifest(&inputs, run);
+    manifest.key_sources = audit.to_vec();
+    let json = browser_forensic_manifest::to_json(&manifest).context("serializing manifest")?;
+    std::fs::write(out, json.as_bytes())
+        .with_context(|| format!("writing manifest {}", out.display()))?;
+    Ok(())
+}
+
+/// Read a single password line from stdin when `enabled` (never from argv — that
+/// leaks to shell history + `ps`). Trailing CR/LF is stripped. `None` when the
+/// flag is unset (the caller falls back to an empty password, e.g. Windows with a
+/// blank logon password or a Firefox profile with no master password).
+fn read_stdin_password(enabled: bool) -> Result<Option<String>> {
+    use std::io::Read as _;
+    if !enabled {
+        return Ok(None);
+    }
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buf)
+        .context("reading password from stdin")?;
+    let trimmed = buf.trim_end_matches(['\r', '\n']).to_string();
+    Ok(Some(trimmed))
 }
 
 /// Route `login-data`: opt-in Firefox credential decryption, else the plain
@@ -2818,18 +2929,6 @@ fn run_credentials_decrypt(
         }
     );
     let mut events = decrypt_firefox_credentials(path, master_password, include_passwords)?;
-    events.sort_by_key(|e| e.timestamp_ns);
-    print_events(&events, format);
-    Ok(())
-}
-
-/// `br4n6 cookies PATH --decrypt-macos` handler: read the Keychain key, decrypt.
-fn run_cookies_decrypt_macos(path: &Path, service: &str, format: OutputFormat) -> Result<()> {
-    eprintln!("[decrypt] reading '{service}' from the macOS login Keychain (may prompt)…");
-    let password = browser_forensic_decrypt::fetch_macos_keychain_key(service)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let key = browser_forensic_decrypt::derive_chromium_macos_key(password.as_bytes());
-    let mut events = decrypt_chromium_cookies(path, &key)?;
     events.sort_by_key(|e| e.timestamp_ns);
     print_events(&events, format);
     Ok(())
