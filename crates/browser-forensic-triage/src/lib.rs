@@ -45,6 +45,28 @@ impl Default for TriageOptions {
     }
 }
 
+/// A progress observer the triage pipeline reports parse-unit boundaries to
+/// (RFC 0001 P3b — progress heartbeats). A *unit* is one `(profile, artifact)`
+/// pair; [`TriageProgress::on_unit`] fires just before that artifact is parsed.
+///
+/// The rendering UI lives entirely in the CLI; the library only *reports* which
+/// unit it is about to work on, so triage stays UI-free and this seam is
+/// unit-testable (a recording observer asserts the units fire in order).
+pub trait TriageProgress {
+    /// Called just before the named `artifact` of `profile` is parsed. `profile`
+    /// is a human label (e.g. `Default`); `artifact` is the artifact name (e.g.
+    /// `History`).
+    fn on_unit(&self, profile: &str, artifact: &str);
+}
+
+/// A no-op [`TriageProgress`]: the default for callers that want no progress
+/// reporting (every existing non-`_progress` entry point uses it).
+pub struct NullProgress;
+
+impl TriageProgress for NullProgress {
+    fn on_unit(&self, _profile: &str, _artifact: &str) {}
+}
+
 /// Triage a single browser profile directory (carving enabled).
 pub fn triage_profile(profile_path: &Path, browser: BrowserFamily) -> Result<TriageReport> {
     triage_profile_with_options(profile_path, browser, TriageOptions::default())
@@ -91,6 +113,19 @@ pub fn triage_profile_with_options(
     })
 }
 
+/// Triage a single profile at an explicit tier, reporting per-artifact progress
+/// to `progress` (RFC 0001 P3b). Behaves exactly like
+/// [`triage_profile_with_options`] but announces each parse unit as it starts.
+pub fn triage_profile_with_options_progress(
+    profile_path: &Path,
+    browser: BrowserFamily,
+    opts: TriageOptions,
+    _progress: &dyn TriageProgress,
+) -> Result<TriageReport> {
+    // RED stub: the observer is not yet wired, so no unit fires. GREEN threads it.
+    triage_profile_with_options(profile_path, browser, opts)
+}
+
 /// Triage all browser profiles discovered under a home directory (carving enabled).
 pub fn triage(home_dir: &Path) -> Result<TriageReport> {
     triage_with_options(home_dir, TriageOptions::default())
@@ -103,6 +138,18 @@ pub fn triage_with_options(home_dir: &Path, opts: TriageOptions) -> Result<Triag
         browser_forensic_discovery::discover_profiles(home_dir),
         opts,
     ))
+}
+
+/// Triage all discovered profiles at a tier, reporting per-artifact progress to
+/// `progress` (RFC 0001 P3b). Behaves exactly like [`triage_with_options`] but
+/// announces each parse unit as it starts.
+pub fn triage_with_options_progress(
+    home_dir: &Path,
+    opts: TriageOptions,
+    _progress: &dyn TriageProgress,
+) -> Result<TriageReport> {
+    // RED stub: the observer is not yet wired, so no unit fires. GREEN threads it.
+    triage_with_options(home_dir, opts)
 }
 
 /// Triage every Chromium/Firefox profile and embedded-Chromium container found
@@ -502,6 +549,54 @@ mod tests {
         let json = serde_json::to_string(&report).expect("serialize");
         assert!(json.contains("generated_at_ns"));
         assert!(json.contains("1700000000000000000"));
+    }
+
+    /// A [`TriageProgress`] that records every `(profile, artifact)` unit it is
+    /// told about, so a test can assert the pipeline reports its work.
+    #[derive(Default)]
+    struct RecordingProgress {
+        units: std::sync::Mutex<Vec<(String, String)>>,
+    }
+
+    impl TriageProgress for RecordingProgress {
+        fn on_unit(&self, profile: &str, artifact: &str) {
+            self.units
+                .lock()
+                .expect("lock")
+                .push((profile.to_string(), artifact.to_string()));
+        }
+    }
+
+    #[test]
+    fn progress_observer_fires_per_artifact_unit() {
+        let dir = TempDir::new().expect("tempdir");
+        let profile = dir.path().join("Default");
+        std::fs::create_dir_all(&profile).expect("mkdir");
+        let history = profile.join("History");
+        let conn = rusqlite::Connection::open(&history).expect("open");
+        conn.execute_batch(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1, 'https://example.com', 'Example', 1, 13300000000000000);
+             INSERT INTO visits VALUES (1, 1, 13300000000000000, 0, 0);",
+        )
+        .expect("setup");
+        drop(conn);
+
+        let rec = RecordingProgress::default();
+        let _ = triage_profile_with_options_progress(
+            &profile,
+            BrowserFamily::Chromium,
+            TriageOptions::default(),
+            &rec,
+        )
+        .expect("triage");
+
+        let units = rec.units.lock().expect("lock");
+        assert!(
+            units.iter().any(|(p, a)| p == "Default" && a == "History"),
+            "the History unit is reported with its profile label: {units:?}"
+        );
     }
 
     #[test]
