@@ -230,15 +230,28 @@ fn artifact_help_shows_moved_primitives() {
 // ---- flag preservation + renames ----
 
 #[test]
-fn artifact_cookies_preserves_decrypt_flags() {
+fn artifact_cookies_exposes_unified_keys_flag_and_drops_the_soup() {
+    // RFC 0001 P6/D7 clean break: the per-platform decrypt flag soup is collapsed
+    // into one `--keys <PATH>` (+ `--password-stdin`); the old flags are gone.
     let out = br4n6()
         .args(["artifact", "cookies", "--help"])
         .output()
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    for flag in ["--decrypt-win", "--decrypt-macos", "--local-state"] {
-        assert!(stdout.contains(flag), "artifact cookies lost `{flag}`");
+    for flag in ["--keys", "--password-stdin"] {
+        assert!(stdout.contains(flag), "artifact cookies missing `{flag}`");
+    }
+    for gone in [
+        "--decrypt-win",
+        "--decrypt-macos",
+        "--local-state",
+        "--dpapi-masterkey",
+    ] {
+        assert!(
+            !stdout.contains(gone),
+            "artifact cookies still exposes removed `{gone}`"
+        );
     }
 }
 
