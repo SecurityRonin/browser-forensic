@@ -192,6 +192,38 @@ pub struct RuleVersion {
     pub version: String,
 }
 
+/// One key source identified during `--keys` auto-location (RFC 0001 D7/D11).
+///
+/// Every key file the decryption UX reads is hashed and identified here, so the
+/// chain of custody records exactly which key material was used to make a value
+/// readable. The record distinguishes **key found** ([`Self::unwrapped`] — the
+/// material was located and successfully unwrapped/derived) from **items
+/// decrypted with it** ([`Self::decrypted_items`] — how many artifacts this key
+/// source actually decrypted), so "the key was present" is never conflated with
+/// "this value decrypted".
+#[derive(Debug, Clone, Serialize)]
+pub struct KeySource {
+    /// Human kind, e.g. `Local State (AES key, DPAPI-wrapped)`, `DPAPI masterkey`,
+    /// or `macOS Safe Storage keychain`.
+    pub kind: String,
+    /// Absolute path of the key file, when the source is a file on disk. `None`
+    /// for a live keychain item (which has no file to hash).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Lowercase-hex SHA-256 of the key file contents, identifying it. `None` for
+    /// a live keychain item.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// Identifying detail: the masterkey GUID, the user SID, or the keychain
+    /// service name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Whether the key material was successfully unwrapped/derived (key *found*).
+    pub unwrapped: bool,
+    /// How many items this key source successfully *decrypted* (found ≠ decrypted).
+    pub decrypted_items: u64,
+}
+
 /// A complete chain-of-custody manifest.
 #[derive(Debug, Clone, Serialize)]
 pub struct Manifest {
@@ -226,6 +258,11 @@ pub struct Manifest {
     /// Schema version of the tool's output records (RFC 0001 D11).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_schema_version: Option<String>,
+    /// Key sources located and used by the `--keys` decryption UX (RFC 0001 D7).
+    /// Omitted from the JSON when empty, so a run that decrypts nothing serializes
+    /// exactly as before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub key_sources: Vec<KeySource>,
 }
 
 /// Hash a single file, streaming its bytes through SHA-256 and MD5.
@@ -329,6 +366,7 @@ pub fn build_manifest(inputs: &[PathBuf], run: RunMetadata) -> Manifest {
         build_hash: None,
         timezone_rule: None,
         output_schema_version: None,
+        key_sources: Vec::new(),
     }
 }
 
