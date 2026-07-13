@@ -41,28 +41,168 @@ use ese_core::{decode_record, EseDatabase, EseValue};
 /// Vocabulary per the libyal WebCache spec (see module docs). `MSHist…`
 /// containers are per-period history partitions and classify as History.
 #[must_use]
-pub fn classify_container(_name: &str) -> Option<ArtifactKind> {
-    None
+pub fn classify_container(name: &str) -> Option<ArtifactKind> {
+    // Per-period history partitions: MSHist012026062220260629, …
+    if name.starts_with("MSHist") {
+        return Some(ArtifactKind::History);
+    }
+    // Fixed container names (case-insensitive — the store is not case-sensitive).
+    if name.eq_ignore_ascii_case("History") {
+        Some(ArtifactKind::History)
+    } else if name.eq_ignore_ascii_case("Cookies") {
+        Some(ArtifactKind::Cookies)
+    } else if name.eq_ignore_ascii_case("Content") {
+        // "Content" is the on-disk cache (INetCache).
+        Some(ArtifactKind::Cache)
+    } else if name.eq_ignore_ascii_case("iedownload") {
+        Some(ArtifactKind::Downloads)
+    } else if name.eq_ignore_ascii_case("DOMStore") {
+        Some(ArtifactKind::LocalStorage)
+    } else {
+        None
+    }
 }
 
 /// Infer the browser family from a container `Directory` path. Legacy Edge
 /// (EdgeHTML) stores its WebCache containers under an app-container path
 /// containing `MicrosoftEdge`; Internet Explorer does not.
 #[must_use]
-pub fn family_from_directory(_directory: &str) -> BrowserFamily {
-    BrowserFamily::InternetExplorer
+pub fn family_from_directory(directory: &str) -> BrowserFamily {
+    if directory.to_ascii_lowercase().contains("microsoftedge") {
+        BrowserFamily::EdgeLegacy
+    } else {
+        BrowserFamily::InternetExplorer
+    }
+}
+
+/// Find a column value by name in a decoded record.
+fn column<'a>(columns: &'a [(String, EseValue)], name: &str) -> Option<&'a EseValue> {
+    columns.iter().find(|(n, _)| n == name).map(|(_, v)| v)
+}
+
+/// Decode an ESE text/large-text column to a `String`. WebCache text columns
+/// arrive as `Text` (variable) or, for tagged large-text, `Binary` UTF-8 bytes.
+/// Trailing NUL padding (common in tagged text) is trimmed. Empty → `None`.
+fn ese_text(v: &EseValue) -> Option<String> {
+    let s = match v {
+        EseValue::Text(s) => s.clone(),
+        EseValue::Binary(b) => String::from_utf8_lossy(b).into_owned(),
+        _ => return None,
+    };
+    let s = s.trim_end_matches('\0').trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+/// Read a FILETIME column (stored as a 64-bit signed/unsigned integer).
+fn ese_filetime(v: &EseValue) -> Option<u64> {
+    match v {
+        EseValue::I64(n) => Some(*n as u64),
+        EseValue::U64(n) => Some(*n),
+        _ => None,
+    }
+}
+
+/// Read a small unsigned integer column (AccessCount, EntryId, …).
+fn ese_u64(v: &EseValue) -> Option<u64> {
+    match v {
+        EseValue::U8(n) => Some(u64::from(*n)),
+        EseValue::U16(n) => Some(u64::from(*n)),
+        EseValue::U32(n) => Some(u64::from(*n)),
+        EseValue::U64(n) => Some(*n),
+        EseValue::I16(n) if *n >= 0 => Some(*n as u64),
+        EseValue::I32(n) if *n >= 0 => Some(*n as u64),
+        EseValue::I64(n) if *n >= 0 => Some(*n as u64),
+        _ => None,
+    }
+}
+
+/// FILETIME timestamp columns in a `Container_#` record, most-to-least relevant
+/// for the "when did this happen" event time.
+const TIME_COLUMNS: [&str; 4] = ["AccessedTime", "ModifiedTime", "CreationTime", "SyncTime"];
+
+/// Pick the primary event timestamp: the first non-zero FILETIME among
+/// [`TIME_COLUMNS`]. A `0` FILETIME means "not set" and is skipped (converting
+/// it would clamp to `i64::MIN`). Returns `0` when no timestamp is present.
+fn primary_timestamp_ns(columns: &[(String, EseValue)]) -> i64 {
+    for name in TIME_COLUMNS {
+        if let Some(ft) = column(columns, name).and_then(ese_filetime) {
+            if ft != 0 {
+                return filetime_to_unix_nanos(ft);
+            }
+        }
+    }
+    0
+}
+
+/// Insert a FILETIME column into `attrs` as Unix nanoseconds, only when present
+/// and non-zero (machine-faithful: absent stays absent, never a bogus MIN).
+fn put_time_ns(
+    attrs_ns: &mut serde_json::Map<String, serde_json::Value>,
+    columns: &[(String, EseValue)],
+    col: &str,
+    key: &str,
+) {
+    if let Some(ft) = column(columns, col).and_then(ese_filetime) {
+        if ft != 0 {
+            attrs_ns.insert(
+                key.to_string(),
+                serde_json::json!(filetime_to_unix_nanos(ft)),
+            );
+        }
+    }
 }
 
 /// Build a [`BrowserEvent`] from one decoded `Container_#` record.
+///
+/// Looks columns up by **name** (not fixed offset), so if `ese_core` gains
+/// tagged-column (`id >= 256`) record decoding, `Url`/`Filename`/`ResponseHeaders`
+/// populate automatically with no change here. Every column access is
+/// bounds/`None`-safe — a record missing any column degrades that field.
 #[must_use]
 pub fn event_from_record(
-    _columns: &[(String, EseValue)],
-    _kind: &ArtifactKind,
-    _family: BrowserFamily,
-    _source: &str,
-    _container_name: &str,
+    columns: &[(String, EseValue)],
+    kind: &ArtifactKind,
+    family: BrowserFamily,
+    source: &str,
+    container_name: &str,
 ) -> Option<BrowserEvent> {
-    None
+    let url = column(columns, "Url").and_then(ese_text);
+    let filename = column(columns, "Filename").and_then(ese_text);
+    let description = url
+        .clone()
+        .or_else(|| filename.clone())
+        .unwrap_or_else(|| format!("{container_name} entry"));
+
+    let ts = primary_timestamp_ns(columns);
+    let mut ev = BrowserEvent::new(ts, family, kind.clone(), source, description);
+
+    ev = ev.with_attr("container", serde_json::json!(container_name));
+    if let Some(u) = url {
+        ev = ev.with_attr("url", serde_json::json!(u));
+    }
+    if let Some(f) = filename {
+        ev = ev.with_attr("filename", serde_json::json!(f));
+    }
+    if let Some(id) = column(columns, "EntryId").and_then(ese_u64) {
+        ev = ev.with_attr("entry_id", serde_json::json!(id));
+    }
+    if let Some(n) = column(columns, "AccessCount").and_then(ese_u64) {
+        ev = ev.with_attr("access_count", serde_json::json!(n));
+    }
+    // Preserve every WebCache timestamp faithfully as Unix nanos.
+    let mut times = serde_json::Map::new();
+    put_time_ns(&mut times, columns, "AccessedTime", "accessed_time_ns");
+    put_time_ns(&mut times, columns, "ModifiedTime", "modified_time_ns");
+    put_time_ns(&mut times, columns, "CreationTime", "creation_time_ns");
+    put_time_ns(&mut times, columns, "ExpiryTime", "expiry_time_ns");
+    for (k, v) in times {
+        ev = ev.with_attr(k, v);
+    }
+    Some(ev)
 }
 
 /// Parse an IE / Edge-Legacy `WebCacheV01.dat` into browser events.
@@ -76,8 +216,72 @@ pub fn event_from_record(
 /// Returns an error only if the file cannot be opened as an ESE database or the
 /// `Containers` table itself cannot be read (a bootstrap failure, surfaced loud
 /// rather than absorbed into an empty result).
-pub fn parse_webcache(_path: &Path) -> Result<Vec<BrowserEvent>> {
-    Ok(Vec::new())
+pub fn parse_webcache(path: &Path) -> Result<Vec<BrowserEvent>> {
+    let db = EseDatabase::open(path)
+        .with_context(|| format!("opening ESE WebCache database {}", path.display()))?;
+    let source = path.display().to_string();
+
+    // Bootstrap: the Containers table lists every container. A failure to read
+    // it is a real error, surfaced loud — never absorbed into an empty result.
+    let container_cols = db
+        .table_columns("Containers")
+        .context("reading Containers table columns")?;
+    let container_cursor = db
+        .table_records("Containers")
+        .context("reading Containers table")?;
+
+    // (ContainerId, Name, Directory) for each declared container.
+    let mut containers: Vec<(i64, String, String)> = Vec::new();
+    for rec in container_cursor {
+        // A single corrupt page/record degrades to skip; the cursor recovers.
+        let Ok((_, _, data)) = rec else { continue };
+        let Ok(cols) = decode_record(&data, &container_cols) else {
+            continue;
+        };
+        let id = column(&cols, "ContainerId").and_then(|v| match v {
+            EseValue::I64(n) => Some(*n),
+            EseValue::U64(n) => i64::try_from(*n).ok(),
+            _ => None,
+        });
+        let name = column(&cols, "Name").and_then(ese_text);
+        let directory = column(&cols, "Directory")
+            .and_then(ese_text)
+            .unwrap_or_default();
+        if let (Some(id), Some(name)) = (id, name) {
+            containers.push((id, name, directory));
+        }
+    }
+
+    let mut events = Vec::new();
+    for (id, name, directory) in containers {
+        // Only browsing containers become events; infrastructure containers
+        // (BackgroundTransferApi, iecompat, …) are skipped.
+        let Some(kind) = classify_container(&name) else {
+            continue;
+        };
+        let family = family_from_directory(&directory);
+        let table = format!("Container_{id}");
+
+        // A declared container's Container_# table is sometimes absent (per the
+        // WebCache spec) — degrade that container to zero events, never panic.
+        let Ok(cols) = db.table_columns(&table) else {
+            continue;
+        };
+        let Ok(cursor) = db.table_records(&table) else {
+            continue;
+        };
+        for rec in cursor {
+            let Ok((_, _, data)) = rec else { continue };
+            let Ok(record_cols) = decode_record(&data, &cols) else {
+                continue;
+            };
+            if let Some(ev) = event_from_record(&record_cols, &kind, family.clone(), &source, &name)
+            {
+                events.push(ev);
+            }
+        }
+    }
+    Ok(events)
 }
 
 #[cfg(test)]
