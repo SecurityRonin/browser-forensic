@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn footer_standard_names_deep_work_and_deep_pointer() {
-        let f = skipped_footer(Tier::Standard, "/ev").to_lowercase();
+        let f = skipped_footer(Tier::Standard, None, "/ev").to_lowercase();
         for token in ["carving", "cache", "memory", "--deep"] {
             assert!(f.contains(token), "standard footer names `{token}`: {f}");
         }
@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn footer_quick_names_strictly_more_than_standard() {
-        let q = skipped_footer(Tier::Quick, "/ev").to_lowercase();
+        let q = skipped_footer(Tier::Quick, None, "/ev").to_lowercase();
         // Everything standard skips, quick also skips …
         for token in ["carving", "cache", "memory"] {
             assert!(q.contains(token), "quick footer names `{token}`: {q}");
@@ -638,21 +638,111 @@ mod tests {
     }
 
     #[test]
-    fn footer_deep_marks_todo() {
-        let d = skipped_footer(Tier::Deep, "/ev").to_lowercase();
+    fn footer_deep_names_what_ran_not_todo() {
+        // P5b: deep recovery is WIRED now — the footer must state what actually
+        // ran, never "not yet implemented" / a deferring-phase TODO.
+        let d = skipped_footer(
+            Tier::Deep,
+            Some(crate::recover::RecoverScope::Profile),
+            "/ev",
+        )
+        .to_lowercase();
         assert!(
-            d.contains("not yet") || d.contains("todo"),
-            "deep is honestly marked unimplemented: {d}"
+            !d.contains("not yet") && !d.contains("todo"),
+            "deep footer no longer claims unimplemented: {d}"
         );
         assert!(
-            d.contains("p3b") || d.contains("p5"),
-            "cites the deferring phase: {d}"
+            d.contains("ran"),
+            "deep footer states deep recovery RAN: {d}"
+        );
+        assert!(
+            d.contains("tamper"),
+            "deep footer names the tamper checks it ran: {d}"
+        );
+        // Honest about what a profile-dir run does NOT cover: no memory image.
+        assert!(
+            d.contains("memory"),
+            "deep footer names memory (not scanned — no image supplied): {d}"
+        );
+    }
+
+    #[test]
+    fn footer_deep_memory_image_scope_states_ram_carve_ran() {
+        let d = skipped_footer(
+            Tier::Deep,
+            Some(crate::recover::RecoverScope::MemoryImage),
+            "/ev/mem.raw",
+        )
+        .to_lowercase();
+        assert!(!d.contains("not yet") && !d.contains("todo"));
+        assert!(d.contains("ran"), "states deep recovery ran: {d}");
+        assert!(
+            d.contains("ram") || d.contains("memory"),
+            "names the RAM carve it ran over a memory image: {d}"
+        );
+    }
+
+    #[test]
+    fn dedup_findings_collapses_cross_generator_duplicate() {
+        // The same tamper observation surfaces from BOTH the standard integrity
+        // generator and the deep tamper generator (different rule_id, identical
+        // evidence + source + state). Folding deep into standard must dedup it.
+        let prov = || {
+            Provenance::new(
+                EvidenceSource::History,
+                EvidenceState::Deleted,
+                TimestampBasis::None,
+                UserActionClaim::Unknown,
+            )
+        };
+        let standard = Finding::new(
+            Priority::High,
+            Confidence::Medium,
+            "investigate.integrity.HistoryCleared.v1",
+            "consistent with clearing",
+            prov(),
+            "History cleared @ /ev/Default/History",
+        );
+        let deep = Finding::new(
+            Priority::High,
+            Confidence::Medium,
+            "recover.tamper.HistoryCleared.v1",
+            "consistent with clearing; innocent alternative: sync",
+            prov(),
+            "History cleared @ /ev/Default/History",
+        );
+        let distinct = Finding::new(
+            Priority::Medium,
+            Confidence::Low,
+            "recover.carve.deleted_record.v1",
+            "consistent with a deleted row",
+            Provenance::new(
+                EvidenceSource::Carved,
+                EvidenceState::Carved,
+                TimestampBasis::None,
+                UserActionClaim::Unknown,
+            ),
+            "urls deleted row @offset 4096",
+        );
+        let out = dedup_findings(vec![standard.clone(), deep, distinct]);
+        assert_eq!(
+            out.len(),
+            2,
+            "the duplicate tamper (same evidence+source+state) collapses to one: {out:?}"
+        );
+        assert!(
+            out.iter().any(|f| f.evidence.contains("History cleared")),
+            "the shared tamper datum survives once"
+        );
+        assert!(
+            out.iter().any(|f| f.evidence.contains("deleted row")),
+            "a genuinely distinct finding is kept"
         );
     }
 
     #[test]
     fn render_summary_always_contains_footer_even_with_no_findings() {
-        let out = render_summary(&[], &[], Tier::Standard, "/ev", false);
+        let out = render_summary(&[], &[], Tier::Standard, None, "/ev", false);
         assert!(
             out.contains("Deep recovery"),
             "the skipped-work footer is always present: {out}"
@@ -672,7 +762,7 @@ mod tests {
             detected_at_ns: 0,
         });
         let findings = rank_findings(findings_from_report(&report));
-        let out = render_summary(&[], &findings, Tier::Standard, "/ev", false);
+        let out = render_summary(&[], &findings, Tier::Standard, None, "/ev", false);
         for label in ["Priority:", "Confidence:", "Interpretation:", "Next:"] {
             assert!(out.contains(label), "render shows `{label}`: {out}");
         }
@@ -688,7 +778,7 @@ mod tests {
         }
         let findings = rank_findings(findings_from_report(&report));
         assert!(findings.len() > MAX_VISIBLE_FINDINGS);
-        let out = render_summary(&[], &findings, Tier::Standard, "/ev", false);
+        let out = render_summary(&[], &findings, Tier::Standard, None, "/ev", false);
         assert!(
             out.to_lowercase().contains("more"),
             "over-cap findings are noted, not silently dropped: {out}"
