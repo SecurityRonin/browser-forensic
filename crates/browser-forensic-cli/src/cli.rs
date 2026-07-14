@@ -277,16 +277,18 @@ enum Command {
         path: Option<PathBuf>,
     },
     /// Unified cross-artifact chronology for a profile/home (RFC 0001 P5a): the
-    /// timed sequence of events across every browser artifact, with a per-host
-    /// rollup. `PATH` is a profile directory, a home/evidence directory, or a
-    /// single history file. `--around <WHEN> --window <DUR>` pivots on a moment;
-    /// `--tz <IANA>` renders timestamps in a zone. The DEFAULT view is
-    /// navigation-chain reconstruction (referrer → page → redirect hops +
-    /// inferred sessions) — the navigation story is the point of a timeline;
-    /// `--flat` opts OUT to the plain chronological stream (the unified
-    /// cross-artifact chronology, the former `correlate`). `--graph <json|dot>`
-    /// stays an explicit opt-in alternate artifact (the former `graph`: the
-    /// registrable-host entity graph). Correlation is co-occurrence by
+    /// timed sequence of events across every browser artifact (history, cookies,
+    /// downloads, cache, web-storage, …), origin-stamped. `PATH` is a profile
+    /// directory, a home/evidence directory, or a single history file. The
+    /// DEFAULT view is that full cross-artifact chronology WITH each history
+    /// event enriched in place by navigation-chain reconstruction (referrer →
+    /// page → redirect hops + inferred sessions) — so a download sits next to the
+    /// visit that led to it, and that visit carries its chain. `--flat` shows the
+    /// SAME breadth WITHOUT the chain enrichment (plain view + per-host rollup,
+    /// the former `correlate`). `--graph <json|dot>` stays an explicit opt-in
+    /// alternate artifact (the former `graph`: the registrable-host entity
+    /// graph). `--around <WHEN> --window <DUR>` pivots on a moment; `--tz <IANA>`
+    /// renders timestamps in a zone. Correlation is co-occurrence by
     /// URL/host/time — never proof of intent or causation.
     Timeline {
         /// A profile directory, a home/evidence directory, or a history file.
@@ -303,9 +305,10 @@ enum Command {
         /// Render timestamps in this IANA timezone (e.g. `America/New_York`).
         #[arg(long = "tz", visible_alias = "timezone", value_name = "IANA")]
         tz: Option<String>,
-        /// Opt OUT of chain reconstruction: emit the plain chronological stream
-        /// (the unified cross-artifact chronology) WITHOUT referrer/redirect/
-        /// inferred-session enrichment. Makes `--idle-gap` a no-op.
+        /// Opt OUT of chain enrichment: emit the SAME full cross-artifact breadth
+        /// (history, cookies, downloads, …) as the default, plus the per-host
+        /// rollup, but WITHOUT the referrer/redirect/inferred-session attrs on the
+        /// history events. Makes `--idle-gap` a no-op.
         #[arg(long, group = "mode")]
         flat: bool,
         /// Idle-gap threshold (minutes) for inferring session boundaries in the
@@ -2361,20 +2364,23 @@ fn retain_around(events: &mut Vec<BrowserEvent>, pivot_ns: i64, window_ns: i64) 
 /// `br4n6 timeline PATH [--around WHEN --window DUR] [--tz IANA] [--flat |
 /// --graph <json|dot>] [--format …]` — the RFC 0001 P5a unified chronology verb.
 ///
-/// The DEFAULT view is referrer/redirect/inferred-session chain reconstruction
-/// (formerly the opt-in `--chains`): the navigation story is the point of a
-/// timeline. `--flat` opts OUT to the plain unified cross-artifact chronology +
-/// per-host rollup (formerly the default `correlate`); `--graph <json|dot>`
-/// emits the entity graph (formerly `graph`). `--around`/`--window` narrow every
-/// view to a pivot moment; `--tz` renders timestamps in an IANA zone.
+/// The DEFAULT view is the FULL cross-artifact chronology (history, cookies,
+/// downloads, cache, web-storage, …) WITH each history event enriched in place
+/// by referrer/redirect/inferred-session chain reconstruction — the download
+/// sits next to the visit that led to it, and that visit carries its chain.
+/// `--flat` shows the SAME breadth WITHOUT the enrichment (plain view + per-host
+/// rollup, formerly the default `correlate`); `--graph <json|dot>` emits the
+/// entity graph (formerly `graph`). `--around`/`--window` narrow every view to a
+/// pivot moment; `--tz` renders timestamps in an IANA zone.
 ///
 /// A multi-profile home reconstructs EACH profile's chains independently
-/// (`from_visit` edges are profile-local) and merges them into one time-sorted,
-/// origin-stamped stream (D9). Because each profile's chains are self-contained,
-/// a `--user`/`--profile`/`--browser` selector yields SCOPED chains for the
-/// selected profiles — no cross-profile contamination. Evidence with no
-/// per-visit referrer data (Safari, a visits-less history) contributes its flat
-/// visits to the merged stream rather than erroring.
+/// (`from_visit` edges are profile-local) and merges them into the one
+/// time-sorted, origin-stamped stream (D9). Because each profile's chains are
+/// self-contained, a `--user`/`--profile`/`--browser` selector yields SCOPED
+/// chains for the selected profiles — no cross-profile contamination. Evidence
+/// with no per-visit referrer data (Safari, a visits-less history) contributes
+/// its artifacts with no chain attrs rather than erroring; a home with zero
+/// reconstructable chains still shows the full flat breadth.
 ///
 /// # Errors
 /// Returns a loud error if the path does not exist, a timestamp/duration/timezone
@@ -2420,21 +2426,33 @@ pub fn run_timeline(
 
     let resolved = crate::output::resolve_stdout(format);
 
-    // Default view: per-profile referrer/redirect/inferred-session chain
-    // reconstruction, merged across every (selected) profile and origin-stamped
-    // (D9). `from_visit` edges are profile-local, so a `--user`/`--profile`/
-    // `--browser` selector yields SCOPED chains rather than the flat fallback.
-    // `--flat` opts out. Evidence with no per-visit referrer data degrades to the
-    // flat chronology (never fails).
+    // Default view: the FULL cross-artifact chronology (every artifact, every
+    // selected profile, origin-stamped) WITH the history events enriched in
+    // place by per-profile referrer/redirect/inferred-session chain
+    // reconstruction — a download or cookie sits next to the visit that led to
+    // it, and that visit carries its chain. `from_visit` edges are profile-local,
+    // so a `--user`/`--profile`/`--browser` selector yields SCOPED chains.
+    // `--flat` opts out of the enrichment (same breadth, plain view). Evidence
+    // with no per-visit referrer data contributes its artifacts with no chain
+    // attrs (never dropped, never errors).
     if !flat {
-        if let Some(mut events) = reconstruct_timeline_chains(path, idle_gap, selectors) {
-            apply_around(&mut events);
-            emit_events(&events, resolved);
-            return Ok(());
+        let mut events = collect_timeline_events(path, selectors)?;
+        if let Some(chains) = reconstruct_timeline_chains(path, idle_gap, selectors) {
+            // Swap the history sub-stream for the chain-enriched, origin-stamped
+            // one (same visits, now carrying referrer/redirect/session attrs).
+            // The non-history artifacts (cookies/downloads/…) are untouched, so
+            // nothing is dropped and no history event is duplicated.
+            events.retain(|e| e.artifact != browser_forensic_core::ArtifactKind::History);
+            events.extend(chains);
+            events.sort_by_key(|e| e.timestamp_ns);
         }
+        apply_around(&mut events);
+        emit_events(&events, resolved);
+        return Ok(());
     }
 
-    // Flat / scoped / degraded: the unified cross-artifact chronology + rollup.
+    // `--flat`: the SAME full cross-artifact breadth WITHOUT chain enrichment,
+    // rendered as the unified chronology + per-host rollup.
     let mut events = collect_timeline_events(path, selectors)?;
     apply_around(&mut events);
     print!("{}", correlate_output(&events, resolved, tz));
@@ -3687,6 +3705,11 @@ fn collect_profile_events_scoped(
                     format!("collecting events from profile {}", profile.path.display())
                 })?;
         let mut frag = report.events;
+        // The triage stream omits the `downloads` table; re-add this profile's
+        // downloads so a scoped timeline carries the same breadth (D9).
+        if profile.browser == BrowserFamily::Chromium {
+            frag.append(&mut chromium_downloads_for(&profile.path));
+        }
         for event in &mut frag {
             crate::selectors::stamp_event(event, profile);
         }
@@ -3753,6 +3776,37 @@ fn collect_visit_history(path: &Path) -> (Vec<BrowserEvent>, Vec<BrowserFamily>)
     (events, families)
 }
 
+/// The Chromium `downloads` table events for one profile directory (empty when
+/// there is no `History` DB, it is unreadable, or it carries no downloads).
+///
+/// The `downloads` table lives in the same `History` DB, but the triage stream
+/// omits it, so the timeline/correlation breadth re-adds it — the same gap
+/// `investigate`'s `collect_one_profile` closes for its event set.
+fn chromium_downloads_for(profile_dir: &Path) -> Vec<BrowserEvent> {
+    history_file_for(profile_dir, BrowserFamily::Chromium)
+        .and_then(|hf| browser_forensic_chrome::parse_downloads(&hf).ok())
+        .unwrap_or_default()
+}
+
+/// Chromium downloads for every discovered profile under `path` (with the
+/// single-profile fallback), so the unified timeline carries a download next to
+/// the visit that led to it. Firefox/Safari downloads live in separate stores
+/// and stay with their dedicated `downloads` artifact verb.
+fn collect_downloads(path: &Path) -> Vec<BrowserEvent> {
+    let mut events = Vec::new();
+    let mut found_profile = false;
+    for profile in browser_forensic_discovery::discover_profiles(path) {
+        if profile.browser == BrowserFamily::Chromium {
+            found_profile = true;
+            events.append(&mut chromium_downloads_for(&profile.path));
+        }
+    }
+    if !found_profile && profile_family(path) == Some(BrowserFamily::Chromium) {
+        events.append(&mut chromium_downloads_for(path));
+    }
+    events
+}
+
 /// Collect events for `correlate`/`graph`. Same artifacts as
 /// [`collect_profile_events`], but the redirect-collapsed `History` view is
 /// replaced (per family) with the per-visit stream so referrer/redirect edges
@@ -3778,8 +3832,9 @@ fn collect_correlation_events(
                 || !families.contains(&e.browser)
         });
         events.extend(visits);
-        events.sort_by_key(|e| e.timestamp_ns);
     }
+    events.append(&mut collect_downloads(path));
+    events.sort_by_key(|e| e.timestamp_ns);
     Ok(events)
 }
 

@@ -69,8 +69,8 @@ co-occurrence by URL / host / time — never proof of intent or causation.
 
 | Old flat command | New form | Note |
 | --- | --- | --- |
-| `br4n6 chains <PATH>` | `br4n6 timeline <PATH>` | referrer / redirect / inferred-session view — now the DEFAULT |
-| `br4n6 correlate <PATH>` | `br4n6 timeline <PATH> --flat` | the plain unified chronology (opt out of chain reconstruction) |
+| `br4n6 chains <PATH>` | `br4n6 timeline <PATH>` | the DEFAULT: full cross-artifact chronology with the history events referrer / redirect / inferred-session enriched in place |
+| `br4n6 correlate <PATH>` | `br4n6 timeline <PATH> --flat` | the same full breadth without the chain enrichment (plain view + per-host rollup) |
 | `br4n6 graph <PATH>` | `br4n6 timeline <PATH> --graph <json\|dot>` | the registrable-host entity graph |
 
 ## Search / IOC extraction → `find`

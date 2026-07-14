@@ -1,17 +1,19 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! RFC 0001 Phase P5a — the `timeline` verb. Navigation-chain reconstruction
-//! (referrer → page → redirect hops + inferred sessions) is the DEFAULT view:
-//! the navigation story IS the point of a timeline ("don't make them think").
-//! `--flat` opts OUT to the plain chronological stream (the unified
-//! cross-artifact chronology, formerly the default). `--graph <json|dot>` stays
-//! an explicit opt-in alternate artifact. A multi-profile home reconstructs
-//! EACH profile's chains independently (profile-local `from_visit` edges) and
-//! merges them into one time-sorted, origin-stamped stream (D9). Because each
+//! RFC 0001 Phase P5a — the `timeline` verb. The DEFAULT view is the FULL
+//! cross-artifact chronology (history, cookies, downloads, cache, web-storage, …)
+//! WITH each history event enriched in place by navigation-chain reconstruction
+//! (referrer → page → redirect hops + inferred sessions) — so a download sits
+//! next to the visit that led to it, and that visit carries its chain. `--flat`
+//! shows the SAME breadth WITHOUT the chain enrichment (plain view + per-host
+//! rollup, formerly the default `correlate`). `--graph <json|dot>` stays an
+//! explicit opt-in alternate artifact. A multi-profile home reconstructs EACH
+//! profile's chains independently (profile-local `from_visit` edges) and merges
+//! them into the one time-sorted, origin-stamped stream (D9). Because each
 //! profile's chains are self-contained, a `--user`/`--profile`/`--browser`
 //! selector yields SCOPED chains for the selected profiles — never cross-profile
 //! visits. Evidence with no per-visit referrer data (Safari, a visits-less
-//! history) contributes its flat visits to the merged stream rather than
-//! erroring. Driven end-to-end through the real `br4n6` binary.
+//! history) contributes its artifacts with no chain attrs rather than erroring.
+//! Driven end-to-end through the real `br4n6` binary.
 
 use std::path::PathBuf;
 
