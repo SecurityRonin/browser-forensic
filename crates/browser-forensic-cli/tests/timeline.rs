@@ -287,13 +287,14 @@ fn timeline_multiprofile_home_reconstructs_each_profiles_chains() {
         stdout.contains("Chrome/Default") && stdout.contains("Chrome/Profile 1"),
         "each event must carry its profile origin (D9):\n{stdout}"
     );
-    // The two landing events carry DIFFERENT profile origins — no cross-profile mix.
+    // The two landing events carry DIFFERENT profile origins — no cross-profile
+    // mix. The chains JSONL hoists attrs to the top level (`url`/`profile`/…).
     let landing_profile = |host: &str| -> String {
         stdout
             .lines()
             .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-            .find(|v| v["attrs"]["url"].as_str().is_some_and(|u| u.contains(host)))
-            .and_then(|v| v["attrs"]["profile"].as_str().map(str::to_string))
+            .find(|v| v["url"].as_str().is_some_and(|u| u.contains(host)))
+            .and_then(|v| v["profile"].as_str().map(str::to_string))
             .unwrap_or_default()
     };
     let a = landing_profile("a-landing.example");

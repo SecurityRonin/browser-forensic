@@ -309,8 +309,9 @@ enum Command {
         #[arg(long, group = "mode")]
         flat: bool,
         /// Idle-gap threshold (minutes) for inferring session boundaries in the
-        /// default chain-reconstructed view (a no-op under `--flat` or a
-        /// `--user`/`--profile`/`--browser` selector, which emit the flat stream).
+        /// default chain-reconstructed view — applied per profile, including under
+        /// a `--user`/`--profile`/`--browser` selector (scoped chains). A no-op
+        /// only under `--flat`.
         #[arg(long, value_name = "MINUTES", default_value_t = DEFAULT_IDLE_GAP_MINUTES)]
         idle_gap: i64,
         /// Entity-graph view: registrable-host nodes with referrer/redirect and
@@ -2150,20 +2151,39 @@ fn enrich_visits(visits: &mut [BrowserEvent], idle_gap_minutes: i64) {
 /// The `timeline` default's chain reconstruction, degrading gracefully instead
 /// of erroring when there is no per-visit referrer data to reconstruct.
 ///
+/// A directory (a home/image/profile dir) reconstructs EACH discovered
+/// profile's chains independently and merges them, origin-stamped (see
+/// [`reconstruct_profile_chains_merged`]); a lone history file resolves to a
+/// single profile and reconstructs its chains directly. `from_visit` referrer/
+/// redirect edges are always profile-local, so a chain never crosses a profile —
+/// per-profile reconstruction then a time-sorted merge is the correct model, and
+/// it is why a selector now yields SCOPED chains rather than the flat fallback.
+///
 /// Chain reconstruction is best-effort enrichment layered over the always-
-/// available flat chronology: this returns `Some(enriched visits)` only when a
-/// per-visit table with rows can be read, and `Ok(None)` — the signal to fall
-/// back to the flat chronology — in every "nothing to reconstruct" case:
-/// * a directory with no directly-resolvable single history file (a
-///   multi-profile home, whose discovery-based flat view is the right fallback);
-/// * Safari `History.db`, which has no per-visit `from_visit` table;
-/// * a history whose per-visit table is missing/unreadable or empty (a thin
+/// available flat chronology: this returns `Some(enriched events)` only when a
+/// per-visit table with rows can be read for at least one profile, and `None` —
+/// the signal to fall back to the flat chronology — in every "nothing to
+/// reconstruct" case:
+/// * a directory in which no (selected) profile has a per-visit table (e.g. a
+///   Safari-only home), whose richer discovery-based flat view is the right
+///   fallback;
+/// * a lone Safari `History.db`, which has no per-visit `from_visit` table;
+/// * a lone history whose per-visit table is missing/unreadable or empty (a thin
 ///   `urls`-only export, or a Firefox `places` without `from_visit`).
 ///
 /// A genuinely unreadable history is NOT swallowed: the flat fallback re-reads
 /// the same file through the simpler `urls`/`moz_places` chronology and fails
 /// loud there if even that cannot be parsed.
-fn reconstruct_timeline_chains(path: &Path, idle_gap_minutes: i64) -> Option<Vec<BrowserEvent>> {
+fn reconstruct_timeline_chains(
+    path: &Path,
+    idle_gap_minutes: i64,
+    selectors: &crate::selectors::Selectors,
+) -> Option<Vec<BrowserEvent>> {
+    if path.is_dir() {
+        return reconstruct_profile_chains_merged(path, idle_gap_minutes, selectors);
+    }
+    // A lone history file resolves to exactly one profile, so a selector cannot
+    // scope it further; reconstruct its chains directly.
     let (family, history) = resolve_history(path).ok()?;
     let mut visits = match family {
         Family::Chromium => parse_visits(&history).ok()?,
@@ -2176,6 +2196,106 @@ fn reconstruct_timeline_chains(path: &Path, idle_gap_minutes: i64) -> Option<Vec
     }
     enrich_visits(&mut visits, idle_gap_minutes);
     Some(visits)
+}
+
+/// Reconstruct navigation chains across every (selector-scoped) profile under a
+/// home/image/profile directory, merged into one time-sorted, origin-stamped
+/// stream (RFC 0001 D9).
+///
+/// `from_visit` referrer/redirect edges are always profile-local, so each
+/// profile's chains are reconstructed INDEPENDENTLY (reusing [`enrich_visits`])
+/// and only then merged — a chain never crosses a profile. Every event is
+/// stamped with its user/profile/browser origin so a merged multi-profile
+/// timeline stays attributable. Because a selected profile's chains are
+/// self-contained, this is safe to scope: a `--user`/`--profile`/`--browser`
+/// selector reconstructs chains for the SELECTED profiles only.
+///
+/// A profile with no per-visit referrer data (Safari, a thin `urls`-only export,
+/// a Firefox `places` without `from_visit`) is NOT dropped: it contributes its
+/// FLAT per-URL chronology to the merged stream. Returns `None` — the signal to
+/// fall back to the richer discovery-based flat collector — only when NO profile
+/// yields reconstructable chains (e.g. a Safari-only home).
+fn reconstruct_profile_chains_merged(
+    path: &Path,
+    idle_gap_minutes: i64,
+    selectors: &crate::selectors::Selectors,
+) -> Option<Vec<BrowserEvent>> {
+    // Scope to the selected profiles. A non-matching selector was already
+    // rejected loudly up front in `run_timeline`; on the (then unreachable) error
+    // degrade to the flat collector, which re-validates and fails loud — never
+    // swallow it here.
+    let profiles = selectors.filter(investigation_profiles(path)).ok()?;
+    let mut merged: Vec<BrowserEvent> = Vec::new();
+    let mut reconstructed_any = false;
+    for profile in &profiles {
+        let Some(history) = history_file_for(&profile.path, profile.browser.clone()) else {
+            continue;
+        };
+        let mut events =
+            match reconstruct_profile_visits(&history, &profile.browser, idle_gap_minutes) {
+                Some(chained) => {
+                    reconstructed_any = true;
+                    chained
+                }
+                // No per-visit referrer data: contribute the profile's FLAT
+                // chronology to the merged stream (never dropped). A profile whose
+                // flat parse also fails is skipped best-effort, like the flat
+                // collector's own per-profile reads.
+                None => match flat_history_events(&history, &profile.browser) {
+                    Some(flat) => flat,
+                    None => continue,
+                },
+            };
+        for event in &mut events {
+            crate::selectors::stamp_event(event, profile);
+        }
+        merged.append(&mut events);
+    }
+    // Claim the chains view only when at least one profile actually reconstructed
+    // chains; a directory of only flat-degrading profiles falls back to the
+    // richer flat collector (which also carries non-history artifacts).
+    if !reconstructed_any || merged.is_empty() {
+        return None;
+    }
+    merged.sort_by_key(|e| e.timestamp_ns);
+    Some(merged)
+}
+
+/// A single profile's per-visit navigation chains (referrer/redirect/inferred-
+/// session enriched), or `None` when the family has no per-visit `from_visit`
+/// table (Safari / WebCache) or the table is empty/unreadable (a `urls`-only
+/// export, a Firefox `places` without `from_visit`).
+fn reconstruct_profile_visits(
+    history: &Path,
+    family: &BrowserFamily,
+    idle_gap_minutes: i64,
+) -> Option<Vec<BrowserEvent>> {
+    let mut visits = match family {
+        BrowserFamily::Chromium => parse_visits(history).ok()?,
+        BrowserFamily::Firefox => browser_forensic_firefox::parse_visits(history).ok()?,
+        BrowserFamily::Safari | BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => {
+            return None
+        }
+    };
+    if visits.is_empty() {
+        return None;
+    }
+    enrich_visits(&mut visits, idle_gap_minutes);
+    Some(visits)
+}
+
+/// A single profile's FLAT per-URL chronology (no chain enrichment), for a
+/// referrer-less profile that degrades out of chain reconstruction but still
+/// belongs in the merged multi-profile timeline.
+fn flat_history_events(history: &Path, family: &BrowserFamily) -> Option<Vec<BrowserEvent>> {
+    match family {
+        BrowserFamily::Chromium => browser_forensic_chrome::parse_history(history),
+        BrowserFamily::Firefox => browser_forensic_firefox::parse_history(history),
+        BrowserFamily::Safari => browser_forensic_safari::parse_history(history),
+        // WebCache (IE / legacy Edge) is not part of the navigation-chain view.
+        BrowserFamily::InternetExplorer | BrowserFamily::EdgeLegacy => return None,
+    }
+    .ok()
 }
 
 /// Collect a profile/home directory's unified event stream, or a single history
@@ -2248,11 +2368,13 @@ fn retain_around(events: &mut Vec<BrowserEvent>, pivot_ns: i64, window_ns: i64) 
 /// emits the entity graph (formerly `graph`). `--around`/`--window` narrow every
 /// view to a pivot moment; `--tz` renders timestamps in an IANA zone.
 ///
-/// When a `--user`/`--profile`/`--browser` selector is active the run scopes to
-/// the selection and DROPS the path-wide per-visit enrichment (it reads every
-/// profile's `visits` and would reintroduce out-of-scope data, D9), emitting the
-/// flat scoped chronology. Evidence with no per-visit referrer data (Safari, a
-/// visits-less history) degrades to the flat chronology rather than erroring.
+/// A multi-profile home reconstructs EACH profile's chains independently
+/// (`from_visit` edges are profile-local) and merges them into one time-sorted,
+/// origin-stamped stream (D9). Because each profile's chains are self-contained,
+/// a `--user`/`--profile`/`--browser` selector yields SCOPED chains for the
+/// selected profiles — no cross-profile contamination. Evidence with no
+/// per-visit referrer data (Safari, a visits-less history) contributes its flat
+/// visits to the merged stream rather than erroring.
 ///
 /// # Errors
 /// Returns a loud error if the path does not exist, a timestamp/duration/timezone
@@ -2298,12 +2420,14 @@ pub fn run_timeline(
 
     let resolved = crate::output::resolve_stdout(format);
 
-    // Default view: referrer/redirect/inferred-session chain reconstruction. A
-    // selector DROPS this path-wide per-visit enrichment (D9), and `--flat` opts
-    // out — both fall through to the flat chronology below. Evidence with no
-    // per-visit referrer data degrades to the same flat chronology (never fails).
-    if !flat && !selectors.is_active() {
-        if let Some(mut events) = reconstruct_timeline_chains(path, idle_gap) {
+    // Default view: per-profile referrer/redirect/inferred-session chain
+    // reconstruction, merged across every (selected) profile and origin-stamped
+    // (D9). `from_visit` edges are profile-local, so a `--user`/`--profile`/
+    // `--browser` selector yields SCOPED chains rather than the flat fallback.
+    // `--flat` opts out. Evidence with no per-visit referrer data degrades to the
+    // flat chronology (never fails).
+    if !flat {
+        if let Some(mut events) = reconstruct_timeline_chains(path, idle_gap, selectors) {
             apply_around(&mut events);
             emit_events(&events, resolved);
             return Ok(());
