@@ -62,6 +62,11 @@ forensicnomicon = { version = "1.5", features = ["serde"] }
 forensic-vfs = "0.1"
 sqlite-core = "0.9"
 sqlite-forensic = "0.9"
+# disk-forensic: the published container abstraction. `container::open(path)`
+# sniffs the wrapper and returns a decoded (decompressed) `Read + Seek` view for
+# E01/EWF, VMDK, VHDX, VHD, QCOW2, DMG, ISO9660, and raw — one code path, no
+# per-format branch. Whole-image carving reads through it instead of raw bytes.
+disk-forensic = "0.9"
 thiserror = "2"
 rust_xlsxwriter = "0.96"
 chrono-tz = "0.10"

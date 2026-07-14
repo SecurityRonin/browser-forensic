@@ -432,4 +432,103 @@ mod tests {
         let src = MemSource(Vec::new());
         assert!(carve_image(&src, Path::new("empty")).is_empty());
     }
+
+    use std::io::Write as _;
+
+    /// Write `bytes` to a fresh temp file (kept alive by the returned handle).
+    fn temp_file_with(bytes: &[u8]) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(bytes).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn container_source_read_at_returns_correct_bytes_and_short_eof_read() {
+        // A raw byte pattern → `container::open` sniffs it as Raw → the adapter
+        // serves positioned reads over the decoded (here pass-through) stream.
+        let data: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
+        let f = temp_file_with(&data);
+        let src = ContainerSource::open(f.path()).expect("open raw file as container");
+        assert_eq!(src.len(), data.len() as u64);
+
+        // Exact bytes at offset 0.
+        let mut buf = [0u8; 16];
+        assert_eq!(src.read_at(0, &mut buf).unwrap(), 16);
+        assert_eq!(&buf[..], &data[..16]);
+
+        // Exact bytes at an arbitrary interior offset.
+        let mut buf = [0u8; 32];
+        assert_eq!(src.read_at(1000, &mut buf).unwrap(), 32);
+        assert_eq!(&buf[..], &data[1000..1032]);
+
+        // Oversized read straddling EOF → short count (available prefix only).
+        let mut buf = [0u8; 64];
+        let n = src.read_at(data.len() as u64 - 10, &mut buf).unwrap();
+        assert_eq!(n, 10);
+        assert_eq!(&buf[..10], &data[data.len() - 10..]);
+
+        // At and past EOF → 0, never a panic.
+        let mut buf = [0u8; 8];
+        assert_eq!(src.read_at(data.len() as u64, &mut buf).unwrap(), 0);
+        assert_eq!(src.read_at(data.len() as u64 + 100, &mut buf).unwrap(), 0);
+    }
+
+    #[test]
+    fn container_open_path_carves_planted_sqlite_url() {
+        // Proves the new open strategy: `carve_image_path` opens through
+        // `container::open` (not a raw FileSource) and still recovers the plant.
+        let url = "https://planted.example/via-container-open";
+        let db = build_history_db(url, 13_300_000_000_000_000);
+        let db_off = 2048usize;
+        let img = plant(&db, db_off, db_off + db.len() + 4096);
+        let f = temp_file_with(&img);
+
+        let arts = carve_image_path(f.path()).expect("carve raw image via container::open");
+        assert!(
+            arts.iter().any(|a| a.url == url),
+            "planted URL not recovered through the container-abstraction open path: {arts:?}"
+        );
+    }
+
+    #[test]
+    fn carve_image_path_errors_loudly_when_image_cannot_be_opened() {
+        // A non-existent path is a bootstrap failure — surfaced loudly, never
+        // absorbed into an empty carve.
+        let missing = Path::new("/nonexistent/br4n6/does-not-exist.img");
+        assert!(carve_image_path(missing).is_err());
+    }
+
+    #[test]
+    fn truncated_ewf_container_errors_loudly_and_never_panics() {
+        // EnCase EWF v1 signature ("EVF\x09\x0d\x0a\xff\x00", libewf/EWF spec)
+        // followed by garbage: sniffs as EWF, but the decoder must reject the
+        // truncated body loudly — never a silent Raw downgrade or a panic.
+        let mut bytes = vec![0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+        bytes.extend_from_slice(&[0xffu8; 1024]);
+        let f = temp_file_with(&bytes);
+        assert!(carve_image_path(f.path()).is_err());
+    }
+
+    /// Env-gated real-E01 validation (tier-2): set `BR4N6_E01` to a small E01 to
+    /// prove it opens **decompressed** via `container::open` and carves. Provide
+    /// `BR4N6_E01_URL` to assert a specific planted URL is recovered. Skips clean
+    /// when unset (like an absent oracle binary).
+    #[test]
+    fn env_gated_e01_carves_decompressed_via_container_open() {
+        let Ok(path) = std::env::var("BR4N6_E01") else {
+            eprintln!("skip env_gated_e01: set BR4N6_E01 to a small E01 to run");
+            return;
+        };
+        let arts =
+            carve_image_path(Path::new(&path)).expect("open + carve E01 via container::open");
+        if let Ok(url) = std::env::var("BR4N6_E01_URL") {
+            assert!(
+                arts.iter().any(|a| a.url == url),
+                "planted URL {url} not recovered from E01: {arts:?}"
+            );
+        } else {
+            assert!(!arts.is_empty(), "no artifacts carved from E01 {path}");
+        }
+    }
 }

@@ -9,7 +9,9 @@ repository.workspace = true
 
 [dependencies]
 forensic-vfs = { workspace = true }
+disk-forensic = { workspace = true }
 sqlite-core = { workspace = true }
+thiserror = { workspace = true }
 browser-forensic-cache = { version = "0.1.0", path = "../browser-forensic-cache" }
 
 [dev-dependencies]
