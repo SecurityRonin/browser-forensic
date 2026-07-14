@@ -130,7 +130,9 @@ enum Command {
         /// Quick + bounded deleted-SQLite/WAL recovery. The default tier.
         #[arg(long, group = "tier")]
         standard: bool,
-        /// Standard + whole-image carving, cache, memory — NOT yet wired (TODO P3b/P5).
+        /// Standard + the recovery engines: free-page/deleted-record carving,
+        /// orphaned-cache carve, recovered domains, deleted bookmarks, tamper
+        /// checks (and RAM carve over a memory image), auto-selected by PATH shape.
         #[arg(long, group = "tier")]
         deep: bool,
         /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
@@ -901,6 +903,16 @@ type InvestigationCollection = (
     Option<Interrupted>,
 );
 
+/// The profiles, the deep recovery scope (`Some` only for a completed Deep run),
+/// the ranked-later findings, and the interrupt state that
+/// [`collect_investigation_findings`] returns.
+type DeepInvestigationCollection = (
+    Vec<browser_forensic_discovery::DiscoveredProfile>,
+    Option<crate::recover::RecoverScope>,
+    Vec<browser_forensic_core::finding::Finding>,
+    Option<Interrupted>,
+);
+
 /// An empty [`TriageReport`] stamped with the current wall-clock time.
 fn empty_report_now() -> browser_forensic_triage::TriageReport {
     let now_ns = std::time::SystemTime::now()
@@ -1144,6 +1156,50 @@ fn collect_investigation(
     Ok((profiles, report, findings, interrupted))
 }
 
+/// The full investigation finding set for `path` at `tier`: the standard-tier
+/// pipeline and — at [`Tier::Deep`](crate::investigate::Tier::Deep), and only
+/// when the run was not interrupted — the recovery engines (auto-selected by PATH
+/// shape exactly as `recover`), folded in and deduped so a datum surfacing from
+/// both tiers appears once. Returns the discovered profiles, the deep recovery
+/// scope (`Some` only for a completed Deep run — it drives the scope-aware
+/// footer), the *unranked* findings, and how far an interrupt got.
+///
+/// This is the pure assembly `run_investigate` renders; the deep phase is
+/// announced on stderr so stdout stays byte-clean. Deep is skipped on an
+/// interrupt so a Ctrl-C during the standard loop is honored (no new heavy work
+/// scheduled after the operator asked to stop).
+///
+/// # Errors
+/// Propagates a selector non-match, a checkpoint I/O error, or a non-degradable
+/// recovery error (e.g. an unreadable memory image at the deep tier).
+fn collect_investigation_findings(
+    path: &Path,
+    tier: crate::investigate::Tier,
+    progress: &dyn crate::progress::InvestigationProgress,
+    cancel: &std::sync::atomic::AtomicBool,
+    checkpoint: &mut Option<crate::checkpoint::CheckpointSession>,
+    selectors: &crate::selectors::Selectors,
+) -> Result<DeepInvestigationCollection> {
+    let (profiles, _report, mut findings, interrupted) =
+        collect_investigation(path, tier, progress, cancel, checkpoint, selectors)?;
+
+    let deep_scope = if tier == crate::investigate::Tier::Deep && interrupted.is_none() {
+        // Phase label on stderr (the recover engines report no progress units to
+        // wire into the heartbeat sink); the added cost is expected for --deep.
+        eprintln!(
+            "br4n6 investigate: deep recovery phase — running the recovery engines over {}",
+            path.display()
+        );
+        let (scope, mut recovered) = recover_findings(path, None, selectors)?;
+        findings.append(&mut recovered);
+        findings = crate::investigate::dedup_findings(findings);
+        Some(scope)
+    } else {
+        None
+    };
+    Ok((profiles, deep_scope, findings, interrupted))
+}
+
 /// The layered detections to show + log for an investigation (RFC 0001 D8).
 ///
 /// The top path is auto-detected and, for each discovered profile, its primary
@@ -1297,8 +1353,8 @@ pub fn run_investigate(
     // clean run. The resume decision is announced on stderr so stdout stays clean.
     let mut checkpoint = open_checkpoint(path, tier, resume_path.as_deref(), restart)?;
 
-    let (profiles, _report, findings, interrupted) =
-        collect_investigation(path, tier, &progress, &cancel, &mut checkpoint, selectors)?;
+    let (profiles, deep_scope, findings, interrupted) =
+        collect_investigation_findings(path, tier, &progress, &cancel, &mut checkpoint, selectors)?;
 
     // Layered PATH auto-detection (RFC 0001 D8): show what each input was detected
     // as, with confidence + basis, and record it for court defensibility. Custody
@@ -1322,7 +1378,7 @@ pub fn run_investigate(
     // Under `-o` persist the summary + findings into DIR (the human render is
     // written color-free; the findings go as JSONL for downstream tooling).
     if let Some(dir) = output {
-        write_investigation_outputs(dir, &profiles, &findings, tier, None, path)?;
+        write_investigation_outputs(dir, &profiles, &findings, tier, deep_scope, path)?;
     }
 
     let resolved = crate::output::resolve_stdout(format);
@@ -1335,7 +1391,7 @@ pub fn run_investigate(
                     &profiles,
                     &findings,
                     tier,
-                    None,
+                    deep_scope,
                     &path.display().to_string(),
                     color,
                 )
@@ -1552,30 +1608,27 @@ fn recover_memory_findings(
     Ok(crate::recover::memory_findings(&events))
 }
 
-/// `br4n6 recover PATH [--symbols ISF] [--format ...]` — the RFC 0001 P5b
-/// orchestrator. ONE verb runs ALL applicable recovery over `PATH` and renders a
-/// ranked, court-safe summary; the recovery kinds are auto-selected from the
-/// path shape (profile dir / single database / memory image), so the examiner
-/// makes no submode choice. The human render always ends with the scope's
-/// skipped-work footer so absence of a result is never false reassurance.
+/// Assemble every recovery [`Finding`](browser_forensic_core::finding::Finding)
+/// for `PATH`, auto-selecting the engines from the path shape exactly as
+/// `recover` does (profile dir → deleted SQLite/WAL records, orphaned cache,
+/// recovered domains, deleted bookmarks, tamper; single database → carve + tamper;
+/// memory image → RAM carve). Returns the auto-selected [`RecoverScope`](crate::recover::RecoverScope)
+/// (for the scope-aware footer) and the *unranked* findings. The shared engine
+/// layer behind BOTH `recover` and `investigate --deep`, so the two verbs run
+/// identical recovery — the deep tier is not a reimplementation.
 ///
 /// # Errors
-/// Returns a loud error if the path does not exist (a bootstrap failure is never
-/// absorbed into an empty result), or if a memory image cannot be read at all.
-pub fn run_recover(
+/// Propagates a selector non-match (loud, names what WAS present) or a
+/// non-degradable memory-carve/read error; a per-engine miss degrades to empty
+/// AFTER the path is known-good, never suppressing the others.
+fn recover_findings(
     path: &Path,
     symbols: Option<&Path>,
-    format: Option<OutputFormat>,
     selectors: &crate::selectors::Selectors,
-) -> Result<()> {
-    use std::io::IsTerminal as _;
-
-    // Bootstrap check: a nonexistent path is a loud error, never a silent empty
-    // "nothing recovered" summary (indistinguishable from a genuinely clean run).
-    if !path.exists() {
-        anyhow::bail!("path does not exist: {}", path.display());
-    }
-
+) -> Result<(
+    crate::recover::RecoverScope,
+    Vec<browser_forensic_core::finding::Finding>,
+)> {
     let scope = recover_scope_of(path);
     let findings = match scope {
         crate::recover::RecoverScope::Profile => {
@@ -1600,6 +1653,34 @@ pub fn run_recover(
         crate::recover::RecoverScope::Database => recover_database_findings(path),
         crate::recover::RecoverScope::MemoryImage => recover_memory_findings(path, symbols)?,
     };
+    Ok((scope, findings))
+}
+
+/// `br4n6 recover PATH [--symbols ISF] [--format ...]` — the RFC 0001 P5b
+/// orchestrator. ONE verb runs ALL applicable recovery over `PATH` and renders a
+/// ranked, court-safe summary; the recovery kinds are auto-selected from the
+/// path shape (profile dir / single database / memory image), so the examiner
+/// makes no submode choice. The human render always ends with the scope's
+/// skipped-work footer so absence of a result is never false reassurance.
+///
+/// # Errors
+/// Returns a loud error if the path does not exist (a bootstrap failure is never
+/// absorbed into an empty result), or if a memory image cannot be read at all.
+pub fn run_recover(
+    path: &Path,
+    symbols: Option<&Path>,
+    format: Option<OutputFormat>,
+    selectors: &crate::selectors::Selectors,
+) -> Result<()> {
+    use std::io::IsTerminal as _;
+
+    // Bootstrap check: a nonexistent path is a loud error, never a silent empty
+    // "nothing recovered" summary (indistinguishable from a genuinely clean run).
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
+
+    let (scope, findings) = recover_findings(path, symbols, selectors)?;
     let findings = crate::recover::rank_findings(findings);
 
     let resolved = crate::output::resolve_stdout(format);
@@ -6786,32 +6867,28 @@ mod tests {
 
     // ---- RFC 0001 P5b: `investigate --deep` runs the recover engines -------
 
-    /// A Chrome profile whose `History` holds 200 rows that were then deleted,
-    /// so free-page carving recovers the deleted records (`auto_vacuum = NONE`
-    /// keeps the freed cells in place). The long URL/title values fill pages so
-    /// deletion frees whole leaf pages the carver scans.
-    fn chrome_profile_with_deleted_history(root: &Path) {
-        let profile = root.join("google-chrome").join("Default");
-        std::fs::create_dir_all(&profile).unwrap();
+    /// A Chrome profile directory (a bare `History` DB) holding a handful of
+    /// `urls` rows, two of which are then deleted. Deleting a subset (not the
+    /// whole table) leaves the deleted cells as in-page freeblocks
+    /// (`secure_delete = OFF` keeps the bytes) — the residue a cell-level carver
+    /// recovers. Mirrors the carve crate's own `recovers_in_page_freeblock_deletions`
+    /// fixture, for a Chrome `urls` table. `PATH` is the profile dir itself so the
+    /// recover engines scan `PATH/History`.
+    fn chrome_profile_with_deleted_history(profile: &Path) {
+        std::fs::create_dir_all(profile).unwrap();
         let conn = rusqlite::Connection::open(profile.join("History")).unwrap();
         conn.execute_batch(
-            "PRAGMA auto_vacuum = NONE;
+            "PRAGMA page_size = 4096; PRAGMA secure_delete = OFF;
              CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
-             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);",
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);
+             INSERT INTO urls VALUES (1,'https://alive-one.example/','Alive One',3,13327626000000000);
+             INSERT INTO urls VALUES (2,'https://deleted-secret.example/path','Secret Page',9,13327626000000000);
+             INSERT INTO urls VALUES (3,'https://alive-two.example/','Alive Two',1,13327626000000000);
+             INSERT INTO urls VALUES (4,'https://deleted-evidence.example/x','Evidence',7,13327626000000000);
+             INSERT INTO urls VALUES (5,'https://alive-three.example/','Alive Three',2,13327626000000000);
+             DELETE FROM urls WHERE id IN (2,4);",
         )
         .unwrap();
-        for i in 0..200_i32 {
-            conn.execute(
-                "INSERT INTO urls (id, url, title, visit_count, last_visit_time) VALUES (?1, ?2, ?3, 1, 13327626000000000)",
-                rusqlite::params![
-                    i,
-                    format!("https://secret{i}.example/deleted/path/to/fill/free/page/space"),
-                    format!("Deleted secret {i}")
-                ],
-            )
-            .unwrap();
-        }
-        conn.execute("DELETE FROM urls", []).unwrap();
         drop(conn);
     }
 

@@ -79,7 +79,9 @@ fn quick_skips_more_than_standard() {
 }
 
 #[test]
-fn deep_is_marked_todo() {
+fn deep_footer_states_ran_not_todo() {
+    // P5b: --deep now actually runs the recovery engines end-to-end. The footer
+    // must state what ran, never the old "not yet implemented (TODO P3b/P5)".
     let (_dir, profile) = chrome_profile_with_exe_download();
     let out = stdout_of(&[
         "investigate",
@@ -90,12 +92,16 @@ fn deep_is_marked_todo() {
     ]);
     let lower = out.to_lowercase();
     assert!(
-        lower.contains("not yet") || lower.contains("todo"),
-        "deep is honestly marked unimplemented: {out}"
+        !lower.contains("not yet") && !lower.contains("todo"),
+        "deep footer no longer claims unimplemented: {out}"
     );
     assert!(
-        lower.contains("p3b") || lower.contains("p5"),
-        "cites deferring phase: {out}"
+        lower.contains("deep recovery ran"),
+        "deep footer states deep recovery actually ran: {out}"
+    );
+    assert!(
+        lower.contains("tamper"),
+        "deep footer names what ran (tamper checks): {out}"
     );
 }
 
