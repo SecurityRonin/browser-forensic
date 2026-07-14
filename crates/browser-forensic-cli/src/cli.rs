@@ -6784,6 +6784,123 @@ mod tests {
         );
     }
 
+    // ---- RFC 0001 P5b: `investigate --deep` runs the recover engines -------
+
+    /// A Chrome profile whose `History` holds 200 rows that were then deleted,
+    /// so free-page carving recovers the deleted records (`auto_vacuum = NONE`
+    /// keeps the freed cells in place). The long URL/title values fill pages so
+    /// deletion frees whole leaf pages the carver scans.
+    fn chrome_profile_with_deleted_history(root: &Path) {
+        let profile = root.join("google-chrome").join("Default");
+        std::fs::create_dir_all(&profile).unwrap();
+        let conn = rusqlite::Connection::open(profile.join("History")).unwrap();
+        conn.execute_batch(
+            "PRAGMA auto_vacuum = NONE;
+             CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT, visit_count INTEGER DEFAULT 0, last_visit_time INTEGER DEFAULT 0);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL, from_visit INTEGER DEFAULT 0, transition INTEGER DEFAULT 0);",
+        )
+        .unwrap();
+        for i in 0..200_i32 {
+            conn.execute(
+                "INSERT INTO urls (id, url, title, visit_count, last_visit_time) VALUES (?1, ?2, ?3, 1, 13327626000000000)",
+                rusqlite::params![
+                    i,
+                    format!("https://secret{i}.example/deleted/path/to/fill/free/page/space"),
+                    format!("Deleted secret {i}")
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute("DELETE FROM urls", []).unwrap();
+        drop(conn);
+    }
+
+    /// Drive the pure investigation assembly with a silent progress sink, no
+    /// checkpoint, and the all-matching selectors — the seam `run_investigate`
+    /// renders. Returns the deep recovery scope (Deep only) and the findings.
+    fn investigation_findings_for(
+        path: &Path,
+        tier: crate::investigate::Tier,
+    ) -> (
+        Option<crate::recover::RecoverScope>,
+        Vec<browser_forensic_core::finding::Finding>,
+    ) {
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let progress = crate::progress::Progress::select(false, false);
+        let mut checkpoint = None;
+        let (_profiles, scope, findings, _interrupted) = collect_investigation_findings(
+            path,
+            tier,
+            &progress,
+            &cancel,
+            &mut checkpoint,
+            &crate::selectors::Selectors::default(),
+        )
+        .unwrap();
+        (scope, findings)
+    }
+
+    #[test]
+    fn investigate_deep_surfaces_carved_deleted_record_standard_does_not() {
+        let dir = tempfile::TempDir::new().unwrap();
+        chrome_profile_with_deleted_history(dir.path());
+
+        let (std_scope, standard) =
+            investigation_findings_for(dir.path(), crate::investigate::Tier::Standard);
+        assert!(std_scope.is_none(), "standard runs no recovery scope");
+        assert!(
+            !standard.iter().any(|f| f.rule_id.contains("recover.carve")),
+            "standard tier does not surface carved deleted-record findings"
+        );
+
+        let (deep_scope, deep) =
+            investigation_findings_for(dir.path(), crate::investigate::Tier::Deep);
+        assert_eq!(
+            deep_scope,
+            Some(crate::recover::RecoverScope::Profile),
+            "deep auto-selects the profile recover scope from the PATH shape"
+        );
+        let carved = deep
+            .iter()
+            .find(|f| f.rule_id.contains("recover.carve.deleted_record"))
+            .expect("deep surfaces a carved deleted-record finding standard does not");
+        assert_eq!(
+            carved.provenance.source,
+            browser_forensic_core::finding::EvidenceSource::Carved,
+            "the recovered record is sourced from carving"
+        );
+        assert_ne!(
+            carved.provenance.state,
+            browser_forensic_core::finding::EvidenceState::Live,
+            "a carved deleted record is never live"
+        );
+    }
+
+    #[test]
+    fn investigate_deep_render_footer_states_ran_not_todo() {
+        let dir = tempfile::TempDir::new().unwrap();
+        chrome_profile_with_deleted_history(dir.path());
+        let (scope, findings) =
+            investigation_findings_for(dir.path(), crate::investigate::Tier::Deep);
+        let out = crate::investigate::render_summary(
+            &[],
+            &crate::investigate::rank_findings(findings),
+            crate::investigate::Tier::Deep,
+            scope,
+            &dir.path().display().to_string(),
+            false,
+        )
+        .to_lowercase();
+        assert!(
+            !out.contains("not yet") && !out.contains("todo"),
+            "the deep render no longer claims unimplemented: {out}"
+        );
+        assert!(
+            out.contains("deep recovery ran"),
+            "the deep render states deep recovery actually ran: {out}"
+        );
+    }
+
     // ---- RFC 0001 P3b concern 3: checkpoint / resumability -----------------
 
     fn findings_json(report: &browser_forensic_triage::TriageReport) -> String {
