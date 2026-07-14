@@ -486,6 +486,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser-forensic-imagecarve"
+version = "0.1.0"
+dependencies = [
+ "browser-forensic-cache",
+ "forensic-vfs",
+ "rusqlite",
+ "sqlite-core",
+ "tempfile",
+]
+
+[[package]]
 name = "browser-forensic-integrity"
 version = "0.2.0"
 dependencies = [

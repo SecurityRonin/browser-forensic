@@ -25,10 +25,12 @@
 //! signature location, bounded reads, caps) over `sqlite-core` and
 //! `browser-forensic-cache`.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use forensic_vfs::adapters::FileSource;
 use forensic_vfs::{ImageSource, VfsResult};
+use sqlite_core::{CarvedCell, Database, Value};
 
 /// Which vetted carver recovered a [`CarvedArtifact`] from raw image bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,9 +79,26 @@ pub const WINDOW: usize = 8 * 1024 * 1024;
 /// signature scanned for (the 16-byte SQLite magic).
 pub const OVERLAP: usize = 64 * 1024;
 
+/// The SQLite file-format magic (`"SQLite format 3\0"`, 16 bytes) — the header
+/// of a database found in unallocated space (sqlite.org/fileformat2.html §1.2).
+const SQLITE_MAGIC: &[u8; 16] = b"SQLite format 3\0";
+
 /// Hard cap on the number of artifacts a single image carve may emit
 /// (allocation-bomb guard against an image crafted to be all signatures).
 const MAX_ARTIFACTS: usize = 5_000_000;
+/// Largest byte extent read for one carved SQLite database blob (memory bound
+/// against a header whose page-count field lies large).
+const MAX_DB_EXTENT: usize = 64 * 1024 * 1024;
+/// Cap on records emitted from one carved database (per-DB allocation bound).
+const MAX_RECORDS_PER_DB: usize = 500_000;
+/// Cap on the number of SQLite-header hits a single image carve will open
+/// (bounds worst-case work on an image crafted to be all SQLite magics).
+const MAX_SQLITE_CARVES: usize = 100_000;
+/// Integers at or above this are treated as a candidate visit/last-used
+/// timestamp (Chrome µs-since-1601 ≈ 1.3e16, Firefox µs-since-1970 ≈ 1.7e15,
+/// WebKit s-since-2001 is smaller but a µs/ns history value clears 1e12). This
+/// is a heuristic label only — the epoch/units are never asserted.
+const MIN_CANDIDATE_TIMESTAMP: i64 = 1_000_000_000_000;
 
 /// Carve every browser SQLite record and Chromium SimpleCache entry from the raw
 /// unallocated space of an image, streaming it in bounded overlapping windows.
@@ -106,14 +125,201 @@ pub fn carve_image_path(path: &Path) -> VfsResult<Vec<CarvedArtifact>> {
 /// exercise window-boundary straddling with a small window).
 #[must_use]
 pub fn carve_image_with(
-    _source: &dyn ImageSource,
+    source: &dyn ImageSource,
     _source_path: &Path,
-    _window: usize,
-    _overlap: usize,
+    window: usize,
+    overlap: usize,
 ) -> Vec<CarvedArtifact> {
-    // STUB (RED): no carving yet.
-    let _ = MAX_ARTIFACTS;
-    Vec::new()
+    let len = source.len();
+    let mut out = Vec::new();
+    if len == 0 {
+        return out;
+    }
+    // Sane window/overlap: window has a floor, overlap is strictly below window
+    // so the scan cursor always advances (no infinite loop), and the overlap
+    // still exceeds the longest signature (16-byte SQLite magic) so a signature
+    // straddling a window boundary is re-seen in the next window.
+    let window = window.max(4096);
+    let overlap = overlap.min(window / 2).max(SQLITE_MAGIC.len());
+    let step = (window - overlap).max(1) as u64;
+
+    let mut buf = vec![0u8; window];
+    let mut seen_sqlite: HashSet<u64> = HashSet::new();
+    let mut sqlite_carves = 0usize;
+    let mut base = 0u64;
+    loop {
+        let want = usize::try_from((len - base).min(window as u64)).unwrap_or(window);
+        let n = fill(source, base, &mut buf[..want]);
+        let win = &buf[..n];
+
+        for local in find_all(win, SQLITE_MAGIC) {
+            let abs = base + local as u64;
+            // A magic in the overlap region is seen in two windows; carve once.
+            if seen_sqlite.insert(abs) && sqlite_carves < MAX_SQLITE_CARVES {
+                sqlite_carves += 1;
+                carve_sqlite_at(source, abs, &mut out);
+                if out.len() >= MAX_ARTIFACTS {
+                    return out;
+                }
+            }
+        }
+
+        if base + n as u64 >= len {
+            break;
+        }
+        base += step;
+    }
+    out
+}
+
+/// Fill `buf` from `source` at `offset`, returning the number of bytes read
+/// (short at EOF or on a read error). Never panics.
+fn fill(source: &dyn ImageSource, offset: u64, buf: &mut [u8]) -> usize {
+    let mut done = 0usize;
+    while done < buf.len() {
+        match source.read_at(offset + done as u64, &mut buf[done..]) {
+            Ok(k) if k > 0 => done += k,
+            _ => break,
+        }
+    }
+    done
+}
+
+/// Every offset in `hay` where `needle` begins (ascending). Bounds-checked.
+fn find_all(hay: &[u8], needle: &[u8]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let nlen = needle.len();
+    if nlen == 0 || hay.len() < nlen {
+        return out;
+    }
+    let mut i = 0usize;
+    while i + nlen <= hay.len() {
+        if hay.get(i..i + nlen) == Some(needle) {
+            out.push(i);
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Open the SQLite database whose header sits at absolute offset `abs` and carve
+/// every browser-history-shaped record from its pages (allocated cells plus freed
+/// residue), appending each as a [`CarvedArtifact`]. A malformed/lying header is
+/// skipped, never a panic.
+fn carve_sqlite_at(source: &dyn ImageSource, abs: u64, out: &mut Vec<CarvedArtifact>) {
+    let Some(blob) = read_sqlite_extent(source, abs) else {
+        return;
+    };
+    let Ok(db) = Database::open(blob) else {
+        return; // header failed validation — not a real database
+    };
+    let page_size = u64::from(db.header().page_size.max(1));
+    let page_count = db.page_count();
+    let mut recovered = 0usize;
+    for page in 1..=page_count {
+        let Some(page_bytes) = db.raw_page(page) else {
+            continue;
+        };
+        // Allocated cells (the DB itself is unallocated residue, so its live rows
+        // are recovered too) plus freed in-page residue.
+        let mut cells = db.carve_leaf_cells(page_bytes);
+        cells.extend(db.carve_free_regions(page_bytes, 0));
+        for cell in &cells {
+            let Some(art) = history_artifact_from_cell(cell, abs, page, page_size) else {
+                continue;
+            };
+            out.push(art);
+            recovered += 1;
+            if recovered >= MAX_RECORDS_PER_DB {
+                return;
+            }
+        }
+    }
+}
+
+/// Read a bounded, correctly-sized blob for the database whose header is at `abs`:
+/// parse the 100-byte header to derive `page_size * page_count`, then read exactly
+/// that many bytes (capped, and bounded by what the image holds). Returns `None`
+/// for a non-database or an implausible page size.
+fn read_sqlite_extent(source: &dyn ImageSource, abs: u64) -> Option<Vec<u8>> {
+    let mut head = [0u8; 100];
+    if fill(source, abs, &mut head) < 100 || head.get(0..16) != Some(&SQLITE_MAGIC[..]) {
+        return None;
+    }
+    // page_size: u16 big-endian at offset 16; the value 1 encodes 65536.
+    let ps_raw = u16::from_be_bytes([head[16], head[17]]);
+    let page_size: usize = if ps_raw == 1 {
+        65536
+    } else {
+        usize::from(ps_raw)
+    };
+    if page_size < 512 || !page_size.is_power_of_two() {
+        return None;
+    }
+    // page_count: u32 big-endian at offset 28 (0 when not maintained → derive).
+    let hdr_pages = u32::from_be_bytes([head[28], head[29], head[30], head[31]]) as usize;
+    let remaining = usize::try_from(source.len().saturating_sub(abs)).unwrap_or(usize::MAX);
+    let by_header = page_size.saturating_mul(hdr_pages);
+    let want = if by_header == 0 { remaining } else { by_header }
+        .min(MAX_DB_EXTENT)
+        .min(remaining)
+        .max(page_size);
+    let mut blob = vec![0u8; want];
+    let got = fill(source, abs, &mut blob);
+    blob.truncate(got);
+    (blob.len() >= page_size).then_some(blob)
+}
+
+/// Map a carved SQLite cell onto a browser-history-shaped [`CarvedArtifact`] when
+/// it carries a URL-looking TEXT value (`"://"`); otherwise `None`. The absolute
+/// image offset is `db_offset + (page-1)*page_size + cell.offset`.
+fn history_artifact_from_cell(
+    cell: &CarvedCell,
+    db_offset: u64,
+    page: u32,
+    page_size: u64,
+) -> Option<CarvedArtifact> {
+    let url = cell.values.iter().find_map(|v| match v {
+        Value::Text(t) if t.contains("://") => Some(t.clone()),
+        _ => None,
+    })?;
+    let visit_time_raw = cell.values.iter().find_map(|v| match v {
+        Value::Integer(n) if *n >= MIN_CANDIDATE_TIMESTAMP => Some(*n),
+        _ => None,
+    });
+    let image_offset = db_offset
+        .saturating_add(u64::from(page.saturating_sub(1)).saturating_mul(page_size))
+        .saturating_add(cell.offset as u64);
+    Some(CarvedArtifact {
+        kind: CarvedArtifactKind::SqliteRecord,
+        url,
+        image_offset,
+        visit_time_raw,
+        detail: dump_values(&cell.values),
+    })
+}
+
+/// A compact, full-value dump of a carved record's columns (never ellipsized).
+fn dump_values(values: &[Value]) -> String {
+    let mut s = String::from("[");
+    for (i, v) in values.iter().enumerate() {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        match v {
+            Value::Null => s.push_str("null"),
+            Value::Integer(n) => s.push_str(&n.to_string()),
+            Value::Real(r) => s.push_str(&r.to_string()),
+            Value::Text(t) => {
+                s.push('"');
+                s.push_str(t);
+                s.push('"');
+            }
+            Value::Blob(b) => s.push_str(&format!("blob[{}]", b.len())),
+        }
+    }
+    s.push(']');
+    s
 }
 
 #[cfg(test)]
@@ -163,7 +369,7 @@ mod tests {
                         format!("Filler {i}"),
                         i,
                         i,
-                        last_visit_time + i as i64
+                        last_visit_time + i64::from(i)
                     ],
                 )
                 .unwrap();
