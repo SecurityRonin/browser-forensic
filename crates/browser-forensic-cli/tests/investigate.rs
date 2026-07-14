@@ -177,6 +177,25 @@ fn nonexistent_path_fails_loudly() {
 
 // ---- issen-style resume UX: `-o <DIR>` is the only resume knob (RFC 0001 D2) --
 
+/// Without `-o` investigate is stateless: it writes no resume state or manifest
+/// into the evidence root.
+#[test]
+fn no_output_run_writes_nothing_into_evidence() {
+    let (_dir, profile) = chrome_profile_with_exe_download();
+    br4n6()
+        .args(["investigate", profile.to_str().unwrap(), "--format", "text"])
+        .assert()
+        .success();
+    assert!(
+        !profile.join(".br4n6-resume.json").exists(),
+        "a stateless run writes no resume file into the evidence"
+    );
+    assert!(
+        !profile.join("manifest.json").exists(),
+        "a stateless run writes no manifest into the evidence"
+    );
+}
+
 /// The opt-in `--checkpoint <PATH>` knob is gone — resume state auto-derives from
 /// `-o <DIR>`, never a user-supplied path.
 #[test]

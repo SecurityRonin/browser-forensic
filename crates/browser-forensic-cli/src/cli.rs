@@ -136,21 +136,22 @@ enum Command {
         /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
-        /// Write/read a resumable checkpoint at this path so a killed or crashed
-        /// run resumes from the last completed profile (RFC 0001 P3b). Off by
-        /// default — a read-only tool never writes into evidence unasked.
-        #[arg(long, value_name = "PATH")]
-        checkpoint: Option<PathBuf>,
-        /// Ignore any existing checkpoint and start a clean run (alias: --no-resume).
+        /// Write the summary, findings, and a chain-of-custody manifest into this
+        /// directory AND enable resume: a killed or crashed run re-run with the
+        /// same `-o` skips the profiles it already completed (RFC 0001 P3b). The
+        /// resume state (`.br4n6-resume.json`) lives here, OUTSIDE the evidence
+        /// root, so it never churns the evidence fingerprint. Without `-o`,
+        /// investigate is stateless (stdout only, no resume).
+        #[arg(short = 'o', long = "output", value_name = "DIR")]
+        output: Option<PathBuf>,
+        /// Ignore any existing resume state under `-o` and start a clean run
+        /// (alias: --no-resume). Only meaningful with `-o`.
         #[arg(long, visible_alias = "no-resume")]
         restart: bool,
-        /// Override the layered auto-detection (RFC 0001 D8): force the input's
-        /// artifact kind instead of detecting it. Use on carved / stomped data
-        /// the detector guesses wrong; the override is recorded in the manifest.
-        #[arg(long = "type", value_enum, value_name = "KIND")]
-        forced_type: Option<crate::detect::DetectionKind>,
-        /// Also write a chain-of-custody manifest here, recording the detection
-        /// basis + confidence for every input (RFC 0001 D8/D11).
+        /// Write the chain-of-custody manifest to this path instead of the default
+        /// `<DIR>/manifest.json`. Under `-o` the manifest is written automatically;
+        /// this overrides where. Without `-o` it is the only way to capture custody
+        /// (RFC 0001 D8/D11).
         #[arg(long, value_name = "PATH")]
         manifest: Option<PathBuf>,
         /// Scope to one user (SID or name); a non-match errors, naming what was
@@ -673,7 +674,6 @@ where
                 None,
                 false,
                 None,
-                None,
                 &crate::selectors::Selectors::default(),
             );
         }
@@ -698,9 +698,8 @@ where
             standard,
             deep,
             format,
-            checkpoint,
+            output,
             restart,
-            forced_type,
             manifest,
             user,
             profile,
@@ -709,9 +708,8 @@ where
             &path,
             tier_from_flags(quick, standard, deep),
             format,
-            checkpoint.as_deref(),
+            output.as_deref(),
             restart,
-            forced_type,
             manifest.as_deref(),
             &crate::selectors::Selectors::new(user, profile, browser),
         ),
@@ -1060,13 +1058,19 @@ fn unit_key(profile: &browser_forensic_discovery::DiscoveredProfile) -> String {
     format!("{}|{}", profile.browser, profile.path.display())
 }
 
-/// Open a resumable checkpoint session when `--checkpoint <PATH>` is given,
-/// announcing on stderr whether the run is fresh, resumed, or restarted (a
-/// mismatch / corruption never silently resumes). Returns `None` when
-/// checkpointing is off. Notices go to stderr so stdout stays byte-clean.
+/// File name of the auto-derived resume state under `-o <DIR>`. A dotfile so it
+/// reads as tool bookkeeping, not evidence.
+const RESUME_STATE_FILE: &str = ".br4n6-resume.json";
+
+/// Open the resumable checkpoint session for a run whose resume state lives at
+/// `checkpoint_path` (auto-derived from `-o <DIR>` — never a user-supplied path).
+/// Announces on stderr, issen-style, whether the run resumed completed units (a
+/// mismatch / corruption never silently resumes). Returns `None` when `-o` is
+/// absent, so investigate is stateless. Notices go to stderr so stdout stays
+/// byte-clean.
 ///
 /// # Errors
-/// Propagates a checkpoint I/O error (e.g. an unreadable checkpoint directory).
+/// Propagates a checkpoint I/O error (e.g. an unreadable resume-state directory).
 fn open_checkpoint(
     evidence: &Path,
     tier: crate::investigate::Tier,
@@ -1084,21 +1088,18 @@ fn open_checkpoint(
         tier_name,
         restart,
     )
-    .with_context(|| format!("opening checkpoint {}", cp_path.display()))?;
+    .with_context(|| format!("opening resume state {}", cp_path.display()))?;
 
     match resumed {
         crate::checkpoint::Resumed::Fresh => {}
-        crate::checkpoint::Resumed::Resumed {
-            completed,
-            created_ns,
-        } => {
-            eprintln!(
-                "Resuming: {completed} artifact(s) already complete (checkpoint from {})",
-                format_checkpoint_time(created_ns)
-            );
+        crate::checkpoint::Resumed::Resumed { completed, .. } => {
+            // issen-style resume line, only when work was actually skipped.
+            if completed > 0 {
+                eprintln!("Resumed: {completed} units already complete (skipped)");
+            }
         }
         crate::checkpoint::Resumed::Restarted(reason) => {
-            eprintln!("[notice] checkpoint not resumed ({reason}); starting a clean run");
+            eprintln!("[notice] resume state not reused ({reason}); starting a clean run");
         }
     }
     Ok(Some(session))
@@ -1111,16 +1112,6 @@ fn tier_name(tier: crate::investigate::Tier) -> &'static str {
         crate::investigate::Tier::Standard => "standard",
         crate::investigate::Tier::Deep => "deep",
     }
-}
-
-/// Render a checkpoint creation time (Unix ns) as an RFC 3339 UTC string, or the
-/// raw value if it is out of range.
-fn format_checkpoint_time(created_ns: i64) -> String {
-    chrono::DateTime::from_timestamp(
-        created_ns.div_euclid(1_000_000_000),
-        (created_ns.rem_euclid(1_000_000_000)) as u32,
-    )
-    .map_or_else(|| created_ns.to_string(), |dt| dt.to_rfc3339())
 }
 
 /// Drive the triage pipeline over each discovered profile at `tier`, reporting
@@ -1146,18 +1137,14 @@ fn collect_investigation(
 
 /// The layered detections to show + log for an investigation (RFC 0001 D8).
 ///
-/// With `--type <KIND>` the examiner's forced kind replaces auto-detection (a
-/// single record over the top path). Otherwise the top path is detected and, for
-/// each discovered profile, its primary history database — so "SQLite" is refined
-/// to the concrete artifact by the schema probe, per input.
+/// The top path is auto-detected and, for each discovered profile, its primary
+/// history database — so "SQLite" is refined to the concrete artifact by the
+/// schema probe, per input. (A per-file detection *override* belongs on the
+/// `artifact <name>` primitives, not on this whole-profile/home verb.)
 fn investigation_detections(
     path: &Path,
     profiles: &[browser_forensic_discovery::DiscoveredProfile],
-    forced_type: Option<crate::detect::DetectionKind>,
 ) -> Vec<(PathBuf, crate::detect::Detection)> {
-    if let Some(kind) = forced_type {
-        return vec![(path.to_path_buf(), crate::detect::forced(kind))];
-    }
     let mut out = vec![(path.to_path_buf(), crate::detect::detect(path))];
     for profile in profiles {
         for (name, _family) in PROFILE_HISTORY_DBS {
@@ -1200,22 +1187,63 @@ fn write_detection_manifest(
     Ok(())
 }
 
+/// Persist an investigation's human summary (`summary.txt`, color-free) and its
+/// ranked findings (`findings.jsonl`) into the `-o` output directory.
+///
+/// # Errors
+/// Propagates a file write failure.
+fn write_investigation_outputs(
+    dir: &Path,
+    profiles: &[browser_forensic_discovery::DiscoveredProfile],
+    findings: &[browser_forensic_core::finding::Finding],
+    tier: crate::investigate::Tier,
+    evidence: &Path,
+) -> Result<()> {
+    let summary = crate::investigate::render_summary(
+        profiles,
+        findings,
+        tier,
+        &evidence.display().to_string(),
+        false,
+    );
+    let summary_path = dir.join("summary.txt");
+    std::fs::write(&summary_path, summary.as_bytes())
+        .with_context(|| format!("writing summary {}", summary_path.display()))?;
+
+    let mut jsonl = String::new();
+    for finding in findings {
+        jsonl.push_str(&serde_json::to_string(finding).context("serializing finding")?);
+        jsonl.push('\n');
+    }
+    let findings_path = dir.join("findings.jsonl");
+    std::fs::write(&findings_path, jsonl.as_bytes())
+        .with_context(|| format!("writing findings {}", findings_path.display()))?;
+
+    eprintln!("wrote investigation output to {}", dir.display());
+    Ok(())
+}
+
 /// `br4n6 investigate PATH [--quick|--standard|--deep]` — the RFC 0001 P3a golden
 /// path. Runs the bounded triage pipeline at the chosen tier and renders a ranked,
 /// court-safe summary (human on a TTY, JSONL of the findings when piped). The
 /// human render always ends with the tier's skipped-work footer.
 ///
+/// With `output` (`-o <DIR>`) the summary, findings, and a chain-of-custody
+/// manifest are written into DIR, and the run becomes **resumable**: the resume
+/// state (`<DIR>/.br4n6-resume.json`, keyed by the evidence fingerprint) lets a
+/// re-run skip already-completed profiles. Without `-o` the run is stateless.
+///
 /// # Errors
 /// Returns a loud error if the path does not exist (a bootstrap failure is never
-/// absorbed into an empty result) or the triage pipeline fails.
+/// absorbed into an empty result), the output directory cannot be created, or the
+/// triage pipeline fails.
 #[allow(clippy::too_many_arguments)] // one flag per RFC 0001 P3/P7 concern; a struct would obscure the 1:1 CLI mapping
 pub fn run_investigate(
     path: &Path,
     tier: crate::investigate::Tier,
     format: Option<OutputFormat>,
-    checkpoint_path: Option<&Path>,
+    output: Option<&Path>,
     restart: bool,
-    forced_type: Option<crate::detect::DetectionKind>,
     manifest_path: Option<&Path>,
     selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
@@ -1227,6 +1255,16 @@ pub fn run_investigate(
     if !path.exists() {
         anyhow::bail!("path does not exist: {}", path.display());
     }
+
+    // With `-o <DIR>` the directory holds the run's outputs AND its resume state —
+    // create it up front so both the checkpoint writer and the summary writer can
+    // land files. The resume file lives here (outside the evidence root) precisely
+    // so writing it never churns the evidence directory's mtime fingerprint.
+    if let Some(dir) = output {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("creating output directory {}", dir.display()))?;
+    }
+    let resume_path = output.map(|dir| dir.join(RESUME_STATE_FILE));
 
     // stderr-only heartbeat, active only on a TTY so pipes/CI stay byte-clean
     // (RFC 0001 P3b concern 1). `NO_COLOR` is honored via `color_enabled`.
@@ -1242,27 +1280,39 @@ pub fn run_investigate(
     let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     install_interrupt_handler(&cancel);
 
-    // Optional resumable checkpoint (RFC 0001 P3b concern 3). Off unless
-    // `--checkpoint <PATH>` is given — a read-only tool never writes into evidence
-    // by default. The resume decision is announced on stderr so stdout stays clean.
-    let mut checkpoint = open_checkpoint(path, tier, checkpoint_path, restart)?;
+    // Resumable checkpoint (RFC 0001 P3b concern 3), auto-derived from `-o <DIR>`:
+    // resume is the default whenever `-o` is given (state under DIR, never a
+    // user-supplied path); absent `-o` the run is stateless. `--restart` forces a
+    // clean run. The resume decision is announced on stderr so stdout stays clean.
+    let mut checkpoint = open_checkpoint(path, tier, resume_path.as_deref(), restart)?;
 
     let (profiles, _report, findings, interrupted) =
         collect_investigation(path, tier, &progress, &cancel, &mut checkpoint, selectors)?;
 
-    // Layered PATH auto-detection (RFC 0001 D8): show what each input was
-    // detected as, with confidence + basis, and — with `--manifest` — record it
-    // for court defensibility. `--type` forces the kind (auto-detection skipped).
-    let detections = investigation_detections(path, &profiles, forced_type);
+    // Layered PATH auto-detection (RFC 0001 D8): show what each input was detected
+    // as, with confidence + basis, and record it for court defensibility. Custody
+    // is automatic under `-o` (`<DIR>/manifest.json`); `--manifest <PATH>`
+    // overrides where the manifest lands (and is the only way to capture custody
+    // without `-o`).
+    let detections = investigation_detections(path, &profiles);
     for (_, det) in &detections {
         eprintln!("{}", det.header());
     }
-    if let Some(mp) = manifest_path {
+    let manifest_out: Option<PathBuf> = manifest_path
+        .map(Path::to_path_buf)
+        .or_else(|| output.map(|dir| dir.join("manifest.json")));
+    if let Some(mp) = &manifest_out {
         write_detection_manifest(mp, path, &detections)?;
     }
 
     // Findings are already origin-stamped per profile (D9); rank them for render.
     let findings = crate::investigate::rank_findings(findings);
+
+    // Under `-o` persist the summary + findings into DIR (the human render is
+    // written color-free; the findings go as JSONL for downstream tooling).
+    if let Some(dir) = output {
+        write_investigation_outputs(dir, &profiles, &findings, tier, path)?;
+    }
 
     let resolved = crate::output::resolve_stdout(format);
     match resolved {
@@ -4178,7 +4228,7 @@ fn run_report_bundle(
 
     // Layered detection basis for every input (RFC 0001 D8), recorded into the
     // manifest for court defensibility.
-    let detections = investigation_detections(path, &profiles, None);
+    let detections = investigation_detections(path, &profiles);
     let manifest = build_bundle_manifest(path, tz, &findings, &detections)?;
 
     let meta = crate::report::ReportMeta {

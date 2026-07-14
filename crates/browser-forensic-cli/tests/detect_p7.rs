@@ -4,9 +4,10 @@
 //!
 //! `investigate` runs the layered detector over its input, prints
 //! `Detected:/Confidence:/Basis:` (to stderr, so stdout stays byte-clean for
-//! JSONL), and — with `--manifest <PATH>` — records a `DetectionRecord` per
-//! detected input for court defensibility. A `--type <KIND>` override always
-//! exists for carved / stomped data the detector will guess wrong.
+//! JSONL), and records a `DetectionRecord` per detected input for court
+//! defensibility (automatically under `-o <DIR>`, or at a `--manifest <PATH>`
+//! override). Detection is automatic — the per-file `--type` override was removed
+//! from this whole-profile/home verb.
 
 use assert_cmd::Command;
 use rusqlite::Connection;

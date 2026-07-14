@@ -9,14 +9,13 @@
 //! flagged **explicitly low-confidence** unless a known header/container is
 //! present. Every result carries a [`Confidence`] and a human `basis` string —
 //! the audit trail written into the chain-of-custody manifest for court
-//! defensibility (D8/D11). A `--type` override ([`DetectionKind`]) always exists
-//! because the detector *will* guess wrong on carved / stomped data (Gemini).
+//! defensibility (D8/D11). Detection is automatic; a per-file *override* belongs
+//! on the `artifact <name>` primitives, not on the `investigate` golden path.
 
 use std::path::Path;
 
 use browser_forensic_core::Confidence;
 use browser_forensic_manifest::DetectionRecord;
-use clap::ValueEnum;
 
 /// One layered detection result: the artifact kind (human string), how confident
 /// the call is, and the human-readable basis behind it.
@@ -61,64 +60,6 @@ pub fn to_record(path: &Path, d: &Detection) -> DetectionRecord {
         confidence: d.confidence,
         basis: d.basis.clone(),
     }
-}
-
-/// A forced artifact kind for `--type`, overriding auto-detection on carved /
-/// stomped data the detector will guess wrong (RFC 0001 D8, Gemini's objection).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum DetectionKind {
-    /// Chromium `History` (SQLite `urls`/`visits`).
-    ChromiumHistory,
-    /// Chromium `Cookies` (SQLite).
-    ChromiumCookies,
-    /// Firefox `places.sqlite` (`moz_places`).
-    FirefoxPlaces,
-    /// Safari `History.db` (`history_items`).
-    SafariHistory,
-    /// A Chromium profile directory.
-    ChromiumProfile,
-    /// A Firefox profile directory.
-    FirefoxProfile,
-    /// An IE / Edge-Legacy `WebCacheV01.dat` (ESE).
-    Webcache,
-    /// A memory image.
-    MemoryImage,
-    /// A raw disk image.
-    RawDisk,
-}
-
-impl DetectionKind {
-    /// The human string for this forced kind (matches the auto-detector's names).
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::ChromiumHistory => "Chromium History (SQLite)",
-            Self::ChromiumCookies => "Chromium Cookies (SQLite)",
-            Self::FirefoxPlaces => "Firefox places (SQLite)",
-            Self::SafariHistory => "Safari History (SQLite)",
-            Self::ChromiumProfile => "Chromium profile",
-            Self::FirefoxProfile => "Firefox profile",
-            Self::Webcache => "IE/Edge-Legacy WebCacheV01 (ESE)",
-            Self::MemoryImage => "memory image",
-            Self::RawDisk => "raw disk image",
-        }
-    }
-}
-
-/// The detection for a `--type <KIND>` override: the forced kind, high
-/// confidence (the examiner asserted it), and a basis that records the override
-/// so the manifest shows detection was skipped by hand.
-#[must_use]
-pub fn forced(kind: DetectionKind) -> Detection {
-    Detection::new(
-        kind.label(),
-        Confidence::High,
-        format!(
-            "forced by --type {} (auto-detection skipped by the examiner)",
-            kind.to_possible_value()
-                .map_or_else(|| kind.label().to_string(), |v| v.get_name().to_string())
-        ),
-    )
 }
 
 /// The SQLite format-3 header magic.
@@ -485,13 +426,5 @@ mod tests {
         let d = detect(&profile);
         assert_eq!(d.kind, "Chromium profile");
         assert_eq!(d.confidence, Confidence::High);
-    }
-
-    #[test]
-    fn forced_type_overrides_and_notes_it() {
-        let d = forced(DetectionKind::FirefoxPlaces);
-        assert_eq!(d.kind, "Firefox places (SQLite)");
-        assert!(d.basis.contains("--type"), "{}", d.basis);
-        assert!(d.basis.contains("firefox-places"), "{}", d.basis);
     }
 }
