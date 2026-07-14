@@ -4,12 +4,14 @@
 //! the navigation story IS the point of a timeline ("don't make them think").
 //! `--flat` opts OUT to the plain chronological stream (the unified
 //! cross-artifact chronology, formerly the default). `--graph <json|dot>` stays
-//! an explicit opt-in alternate artifact. When a `--user`/`--profile`/`--browser`
-//! selector is active, the run scopes to the selection and DROPS the path-wide
-//! per-visit enrichment (D9) — chains-by-default must not reintroduce
-//! cross-profile visits. Evidence with no per-visit referrer data (Safari, a
-//! visits-less history) degrades to the flat chronology rather than erroring.
-//! Driven end-to-end through the real `br4n6` binary.
+//! an explicit opt-in alternate artifact. A multi-profile home reconstructs
+//! EACH profile's chains independently (profile-local `from_visit` edges) and
+//! merges them into one time-sorted, origin-stamped stream (D9). Because each
+//! profile's chains are self-contained, a `--user`/`--profile`/`--browser`
+//! selector yields SCOPED chains for the selected profiles — never cross-profile
+//! visits. Evidence with no per-visit referrer data (Safari, a visits-less
+//! history) contributes its flat visits to the merged stream rather than
+//! erroring. Driven end-to-end through the real `br4n6` binary.
 
 use std::path::PathBuf;
 
@@ -146,6 +148,85 @@ fn two_profile_home() -> (TempDir, PathBuf) {
     (dir, home)
 }
 
+/// A home with TWO Chromium profiles that each carry a DISTINCT referrer chain
+/// (`*-origin.example` → `*-landing.example`, `from_visit = 1`). `from_visit`
+/// edges are profile-local, so `timeline <home>` must reconstruct BOTH profiles'
+/// chains, merge them time-sorted, and stamp each event with its own profile
+/// origin — never mixing one profile's edge into the other.
+fn two_profile_chain_home() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().join("Users").join("alice");
+    let base = home.join("AppData/Local/Google/Chrome/User Data");
+
+    for (sub, origin, landing) in [
+        ("Default", "a-origin.example", "a-landing.example"),
+        ("Profile 1", "b-origin.example", "b-landing.example"),
+    ] {
+        let profile = base.join(sub);
+        std::fs::create_dir_all(&profile).unwrap();
+        let conn = Connection::open(profile.join("History")).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT DEFAULT '',
+                 visit_count INTEGER DEFAULT 0 NOT NULL, last_visit_time INTEGER NOT NULL);
+             CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL,
+                 from_visit INTEGER, transition INTEGER NOT NULL, visit_duration INTEGER);
+             INSERT INTO urls VALUES
+                (1,'https://{origin}/','O',1,13327626000000000),
+                (2,'https://{landing}/','L',1,13327626000000001);
+             INSERT INTO visits (id,url,visit_time,from_visit,transition) VALUES
+                (1,1,13327626000000000,0,1),
+                (2,2,13327626000000001,1,1);"
+        ))
+        .unwrap();
+    }
+    (dir, home)
+}
+
+/// A MIXED home: a Chromium profile with a reconstructable referrer chain
+/// (`cx-origin.example` → `cx-landing.example`) alongside a Safari `History.db`
+/// (no per-visit `from_visit` table). The merged timeline must carry the
+/// Chromium chain edges AND the Safari flat visits, origin-stamped, never
+/// dropping the referrer-less profile.
+fn chrome_chain_and_safari_flat_home() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().join("Users").join("bob");
+
+    let chrome = home.join("Library/Application Support/Google/Chrome/Default");
+    std::fs::create_dir_all(&chrome).unwrap();
+    let conn = Connection::open(chrome.join("History")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT DEFAULT '',
+             visit_count INTEGER DEFAULT 0 NOT NULL, last_visit_time INTEGER NOT NULL);
+         CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL,
+             from_visit INTEGER, transition INTEGER NOT NULL, visit_duration INTEGER);
+         INSERT INTO urls VALUES
+            (1,'https://cx-origin.example/','O',1,13327626000000000),
+            (2,'https://cx-landing.example/','L',1,13327626000000001);
+         INSERT INTO visits (id,url,visit_time,from_visit,transition) VALUES
+            (1,1,13327626000000000,0,1),
+            (2,2,13327626000000001,1,1);",
+    )
+    .unwrap();
+
+    let safari = home.join("Library/Safari");
+    std::fs::create_dir_all(&safari).unwrap();
+    let sconn = Connection::open(safari.join("History.db")).unwrap();
+    sconn
+        .execute_batch(
+            "CREATE TABLE history_items (
+                id INTEGER PRIMARY KEY, url TEXT NOT NULL, visit_count INTEGER DEFAULT 0);
+             CREATE TABLE history_visits (
+                id INTEGER PRIMARY KEY, history_item INTEGER NOT NULL, visit_time REAL NOT NULL);
+             INSERT INTO history_items (id,url,visit_count) VALUES
+                (1,'https://sf-flat.example',1);
+             INSERT INTO history_visits (id,history_item,visit_time) VALUES
+                (1,1,700000000.0);",
+        )
+        .unwrap();
+
+    (dir, home)
+}
+
 // ---- DEFAULT: navigation-chain reconstruction (no flag) ----
 
 #[test]
@@ -171,6 +252,120 @@ fn timeline_default_reconstructs_chains() {
     assert!(
         stdout.contains("referrer_url") && stdout.contains("https://origin.example/"),
         "chains-by-default must resolve the known referrer edge (landing FROM origin):\n{stdout}"
+    );
+}
+
+// ---- MULTI-PROFILE: each profile's chains reconstructed + merged (D9) ----
+
+#[test]
+fn timeline_multiprofile_home_reconstructs_each_profiles_chains() {
+    // The closed gap: a multi-profile home reconstructs EACH profile's chains
+    // (profile-local `from_visit` edges), merges them time-sorted, and stamps
+    // every event with its profile origin — instead of degrading to a flat view.
+    let (_d, home) = two_profile_chain_home();
+    let out = br4n6()
+        .args(["timeline", home.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "multi-profile timeline failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // BOTH profiles' referrer edges are reconstructed (not just one).
+    assert!(
+        stdout.contains("referrer_url") && stdout.contains("https://a-origin.example/"),
+        "profile Default's referrer edge must be reconstructed:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("https://b-origin.example/"),
+        "profile 'Profile 1's referrer edge must be reconstructed:\n{stdout}"
+    );
+    // Each event is origin-stamped with its own profile (D9).
+    assert!(
+        stdout.contains("Chrome/Default") && stdout.contains("Chrome/Profile 1"),
+        "each event must carry its profile origin (D9):\n{stdout}"
+    );
+    // The two landing events carry DIFFERENT profile origins — no cross-profile mix.
+    let landing_profile = |host: &str| -> String {
+        stdout
+            .lines()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .find(|v| v["attrs"]["url"].as_str().is_some_and(|u| u.contains(host)))
+            .and_then(|v| v["attrs"]["profile"].as_str().map(str::to_string))
+            .unwrap_or_default()
+    };
+    let a = landing_profile("a-landing.example");
+    let b = landing_profile("b-landing.example");
+    assert_eq!(
+        a, "Chrome/Default",
+        "Default's landing must be stamped Default"
+    );
+    assert_eq!(
+        b, "Chrome/Profile 1",
+        "Profile 1's landing must be stamped Profile 1"
+    );
+    assert_ne!(a, b, "landing events must carry distinct profile origins");
+}
+
+#[test]
+fn timeline_mixed_home_merges_chrome_chains_and_safari_flat() {
+    // A Chrome-with-chains + Safari-flat home: the merged timeline carries the
+    // Chromium chain edge AND the Safari flat visit, no error, no dropped profile.
+    let (_d, home) = chrome_chain_and_safari_flat_home();
+    let out = br4n6()
+        .args(["timeline", home.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "mixed home timeline must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Chromium chain edge present...
+    assert!(
+        stdout.contains("referrer_url") && stdout.contains("https://cx-origin.example/"),
+        "the Chromium profile's chain edge must be reconstructed:\n{stdout}"
+    );
+    // ...and the referrer-less Safari profile's flat visit is merged in, not dropped.
+    assert!(
+        stdout.contains("sf-flat.example"),
+        "the Safari flat visit must be merged in (never dropped):\n{stdout}"
+    );
+}
+
+#[test]
+fn timeline_flat_home_merges_without_chain_edges() {
+    // `--flat` forces the merged plain chronology across all profiles: both
+    // profiles' hosts appear, but NONE of the chain-reconstruction enrichment.
+    let (_d, home) = two_profile_chain_home();
+    let out = br4n6()
+        .args([
+            "timeline",
+            home.to_str().unwrap(),
+            "--flat",
+            "--format",
+            "jsonl",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "flat multi-profile timeline failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("a-origin.example") && stdout.contains("b-origin.example"),
+        "the flat chronology must list both profiles' hosts:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("session_id")
+            && !stdout.contains("referrer_url")
+            && !stdout.contains("redirect_chain_id"),
+        "--flat must NOT carry chain edges across the merged home:\n{stdout}"
     );
 }
 
@@ -263,10 +458,14 @@ fn timeline_around_narrows_to_the_pivot_window() {
     );
 }
 
-// ---- selector scoping: no cross-profile chain data (P5a / D9) ----
+// ---- selector scoping: SCOPED chains for the selected profile (P5a / D9) ----
 
 #[test]
-fn timeline_selector_scopes_and_drops_cross_profile_chains() {
+fn timeline_selector_gets_scoped_chains() {
+    // Behavior change from P10: chains are profile-local, so a selector now
+    // reconstructs SCOPED chains for the selected profile (not the flat fallback)
+    // — the selected profile's data only, still origin-stamped, with the other
+    // profile scoped OUT (no cross-profile contamination, D9).
     let (_d, home) = two_profile_home();
     let out = br4n6()
         .args([
@@ -293,9 +492,15 @@ fn timeline_selector_scopes_and_drops_cross_profile_chains() {
         !stdout.contains("other.example"),
         "the other profile must be scoped OUT (no cross-profile data):\n{stdout}"
     );
+    // Scoped CHAINS now: the selected profile's per-visit enrichment is present.
     assert!(
-        !stdout.contains("session_id"),
-        "a selector DROPS the path-wide per-visit enrichment (no chains):\n{stdout}"
+        stdout.contains("session_id"),
+        "a selector now yields SCOPED chains (profile-local, D9):\n{stdout}"
+    );
+    // ...stamped with the selected profile's origin.
+    assert!(
+        stdout.contains("Chrome/Default"),
+        "scoped chains must carry the profile origin (D9):\n{stdout}"
     );
 }
 
