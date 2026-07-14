@@ -239,7 +239,10 @@ enum Command {
     ///   and NEL / DIPS / HSTS), deleted bookmarks, and tamper / anti-forensic
     ///   indicators;
     /// * a single SQLite DATABASE → deleted-record carving + tamper indicators;
-    /// * a MEMORY image → process-attributed RAM carve.
+    /// * a MEMORY image → process-attributed RAM carve;
+    /// * a whole DISK image (partition-table / E01 signature, or forced with
+    ///   `--whole-image`) → an unallocated-space signature carve recovering
+    ///   deleted SQLite records + Chromium SimpleCache entries from raw bytes.
     ///
     /// Every recovered item is a *consistent-with* eviction/clearing artifact
     /// (state deleted/carved/recovered), never asserted as a deliberate user
@@ -1742,10 +1745,18 @@ fn recover_findings(
 fn recover_whole_image_findings(
     image: &Path,
 ) -> Result<Vec<browser_forensic_core::finding::Finding>> {
-    // RED stub: the WholeImage engine is not wired yet, so this yields nothing —
-    // the plant-and-recover integration test fails until GREEN calls carve_image.
-    let _ = image;
-    Ok(Vec::new())
+    let artifacts = browser_forensic_imagecarve::carve_image_path(image).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot open image {} for whole-image carve: {e:?}",
+            image.display()
+        )
+    })?;
+    eprintln!(
+        "br4n6 recover: whole-image carve — {} artifact(s) from the unallocated space of {}",
+        artifacts.len(),
+        image.display()
+    );
+    Ok(crate::recover::whole_image_findings(&artifacts))
 }
 
 /// `br4n6 recover PATH [--symbols ISF] [--format ...]` — the RFC 0001 P5b

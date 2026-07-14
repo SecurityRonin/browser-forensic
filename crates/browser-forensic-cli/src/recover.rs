@@ -331,9 +331,44 @@ pub fn memory_findings(events: &[BrowserEvent]) -> Vec<Finding> {
 pub fn whole_image_findings(
     artifacts: &[browser_forensic_imagecarve::CarvedArtifact],
 ) -> Vec<Finding> {
-    // RED stub: returns nothing so the plant-and-recover wiring test fails.
-    let _ = artifacts;
-    Vec::new()
+    use browser_forensic_imagecarve::CarvedArtifactKind;
+    artifacts
+        .iter()
+        .map(|art| {
+            let kind_note = match art.kind {
+                CarvedArtifactKind::SqliteRecord => "a deleted SQLite record",
+                CarvedArtifactKind::CacheEntry => "a Chromium SimpleCache entry",
+            };
+            let provenance = Provenance::new(
+                EvidenceSource::Carved,
+                EvidenceState::Carved,
+                TimestampBasis::None,
+                UserActionClaim::ObservedString,
+            );
+            let visit = art
+                .visit_time_raw
+                .map(|t| format!(" visit_time_raw={t}"))
+                .unwrap_or_default();
+            Finding::new(
+                Priority::Info,
+                Confidence::Low,
+                format!("recover.imagecarve.{}.v1", art.kind.as_str()),
+                format!(
+                    "recovered from unallocated space — no filesystem context; consistent with a \
+                     deleted/evicted artifact ({kind_note}); a byte pattern in raw slack is not \
+                     proof a human acted on it"
+                ),
+                provenance,
+                format!(
+                    "{url} @image_offset {off}{visit}: {detail}",
+                    url = art.url,
+                    off = art.image_offset,
+                    detail = art.detail,
+                ),
+            )
+            .with_next("br4n6 recover <IMAGE> --whole-image --format jsonl")
+        })
+        .collect()
 }
 
 /// The always-present skipped-work footer for a scope (RFC 0001 D2). Names what
@@ -343,17 +378,18 @@ pub fn whole_image_findings(
 pub fn recover_footer(scope: RecoverScope, path_display: &str) -> String {
     match scope {
         RecoverScope::Profile => format!(
-            "Not attempted: memory was NOT scanned (no image supplied) and whole-image / \
-             physical-disk carving was NOT run. This run covered profile recovery over \
-             {path_display}: deleted SQLite/WAL records, orphaned cache, recovered domains, \
-             deleted bookmarks, and tamper indicators. For RAM: br4n6 recover <memory-image>; \
-             for a whole disk: br4n6 image <disk-image>"
+            "Not attempted: memory was NOT scanned (no image supplied); whole-image carving is \
+             N/A (not a raw image). This run covered profile recovery over {path_display}: \
+             deleted SQLite/WAL records, orphaned cache, recovered domains, deleted bookmarks, \
+             and tamper indicators. For RAM: br4n6 recover <memory-image>; for a whole disk \
+             image: br4n6 recover <disk-image> --whole-image"
         ),
         RecoverScope::Database => format!(
             "Not attempted: memory, orphaned-cache recovery, recovered domains, and deleted \
-             bookmarks were NOT scanned (single-database scope), and whole-image carving was NOT \
-             run. This run carved deleted SQLite/WAL records and checked tamper indicators over \
-             {path_display}. For the full set, point recover at the profile directory."
+             bookmarks were NOT scanned (single-database scope); whole-image carving is N/A (a \
+             single database, not a raw image). This run carved deleted SQLite/WAL records and \
+             checked tamper indicators over {path_display}. For the full set, point recover at \
+             the profile directory."
         ),
         RecoverScope::MemoryImage => format!(
             "Not attempted: profile recovery (deleted SQLite/WAL records, orphaned cache, \
@@ -361,8 +397,15 @@ pub fn recover_footer(scope: RecoverScope, path_display: &str) -> String {
              image, and whole-image carving was NOT run. This run carved browser artifacts from \
              RAM over {path_display}. For on-disk profiles: br4n6 recover <profile-dir>"
         ),
-        // RED stub: intentionally omits the "ran" wording so the footer test fails.
-        RecoverScope::WholeImage => format!("whole-image scope (pending) — {path_display}"),
+        RecoverScope::WholeImage => format!(
+            "Whole-image carving ran: an unallocated-space signature carve for deleted SQLite \
+             records + Chromium SimpleCache entries over the raw bytes of {path_display}. Not \
+             attempted: filesystem-aware profile recovery (deleted SQLite/WAL records, orphaned \
+             cache, recovered domains, deleted bookmarks, tamper indicators) and \
+             process-attributed memory carving were NOT run — this scope reads the image with no \
+             filesystem mount. For a mounted profile: br4n6 recover <profile-dir>; for RAM with \
+             process attribution: br4n6 recover <memory-image>"
+        ),
     }
 }
 

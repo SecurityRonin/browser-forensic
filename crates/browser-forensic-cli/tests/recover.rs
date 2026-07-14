@@ -238,23 +238,37 @@ fn recover_over_whole_disk_image_carves_planted_url_and_footer_says_ran() {
     let img = dir.path().join("case.dd");
     std::fs::write(&img, planted_disk_image(url, 2048)).unwrap();
 
-    let out = stdout_of(&["recover", img.to_str().unwrap(), "--format", "text"]);
-    assert!(
-        out.contains(url),
-        "whole-image scope surfaces the planted carved URL: {out}"
+    // JSONL is the byte-faithful, uncapped render — the wiring proof.
+    let jsonl = stdout_of(&["recover", img.to_str().unwrap(), "--format", "jsonl"]);
+    let hit = jsonl
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .find(|v| {
+            v.get("evidence")
+                .and_then(|e| e.as_str())
+                .is_some_and(|e| e.contains(url))
+        })
+        .unwrap_or_else(|| panic!("planted URL not surfaced as a carved finding: {jsonl}"));
+    assert_eq!(
+        hit.get("provenance")
+            .and_then(|p| p.get("state"))
+            .and_then(|s| s.as_str())
+            .map(str::to_lowercase)
+            .as_deref(),
+        Some("carved"),
+        "the recovered artifact carries a Carved state: {hit}"
     );
-    let low = out.to_lowercase();
-    assert!(
-        low.contains("carved"),
-        "the recovered artifact carries a Carved state: {out}"
-    );
+
+    // The human render's footer states the whole-image carve RAN.
+    let text = stdout_of(&["recover", img.to_str().unwrap(), "--format", "text"]);
+    let low = text.to_lowercase();
     assert!(
         low.contains("whole-image") && low.contains("ran"),
-        "the footer states whole-image carving RAN: {out}"
+        "the footer states whole-image carving RAN: {text}"
     );
     assert!(
         !low.contains("whole-image carving was not run"),
-        "the whole-image footer must not claim the carve was skipped: {out}"
+        "the whole-image footer must not claim the carve was skipped: {text}"
     );
 }
 
@@ -272,21 +286,29 @@ fn recover_whole_image_flag_forces_scope_over_ambiguous_dump() {
     buf.extend_from_slice(&[9u8; 4096]);
     std::fs::write(&img, &buf).unwrap();
 
-    let out = stdout_of(&[
+    let jsonl = stdout_of(&[
+        "recover",
+        img.to_str().unwrap(),
+        "--whole-image",
+        "--format",
+        "jsonl",
+    ]);
+    assert!(
+        jsonl.contains(url),
+        "the forced whole-image carve surfaces the planted URL: {jsonl}"
+    );
+
+    let text = stdout_of(&[
         "recover",
         img.to_str().unwrap(),
         "--whole-image",
         "--format",
         "text",
     ]);
-    let low = out.to_lowercase();
+    let low = text.to_lowercase();
     assert!(
         low.contains("whole-image") && low.contains("ran"),
-        "--whole-image footer states the carve RAN: {out}"
-    );
-    assert!(
-        out.contains(url),
-        "the forced whole-image carve surfaces the planted URL: {out}"
+        "--whole-image footer states the carve RAN: {text}"
     );
 }
 
