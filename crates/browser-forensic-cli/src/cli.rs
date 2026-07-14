@@ -2077,7 +2077,7 @@ pub fn run_history(
     if let Some(needle) = search {
         filter_in_place(&mut visits, needle);
     }
-    emit_events(&visits, format);
+    emit_events(&visits, format, None);
     Ok(())
 }
 
@@ -2447,7 +2447,7 @@ pub fn run_timeline(
             events.sort_by_key(|e| e.timestamp_ns);
         }
         apply_around(&mut events);
-        emit_events(&events, resolved);
+        emit_events(&events, resolved, tz);
         return Ok(());
     }
 
@@ -2474,7 +2474,7 @@ pub fn run_sessions(path: &Path, search: Option<&str>, format: OutputFormat) -> 
     if let Some(needle) = search {
         filter_in_place(&mut events, needle);
     }
-    emit_events(&events, format);
+    emit_events(&events, format, None);
     Ok(())
 }
 
@@ -2640,22 +2640,26 @@ fn filter_in_place(events: &mut Vec<BrowserEvent>, needle: &str) {
 }
 
 /// Emit a slice of events in the requested format.
-fn emit_events(events: &[BrowserEvent], format: OutputFormat) {
+/// Render `events` in the requested `format`. `tz`, when set, shifts the HUMAN
+/// timestamp into that IANA zone (the `timeline --tz` default-view render);
+/// `None` keeps the current UTC rendering. In JSONL the numeric `timestamp_ns`
+/// stays UTC-faithful regardless — `tz` is display-only.
+fn emit_events(events: &[BrowserEvent], format: OutputFormat, tz: Option<chrono_tz::Tz>) {
     match format {
         OutputFormat::Text => {
             for e in events {
-                println!("{}", event_text(e));
+                println!("{}", event_text(e, tz));
             }
         }
         OutputFormat::Jsonl => {
             for e in events {
-                println!("{}", event_json(e));
+                println!("{}", event_json(e, tz));
             }
         }
         OutputFormat::Csv => {
             println!("timestamp,browser,artifact,url,title");
             for e in events {
-                println!("{}", event_csv(e));
+                println!("{}", event_csv(e, tz));
             }
         }
     }
@@ -2669,11 +2673,11 @@ fn attr_str(e: &BrowserEvent, key: &str) -> String {
         .to_string()
 }
 
-fn event_text(e: &BrowserEvent) -> String {
+fn event_text(e: &BrowserEvent, tz: Option<chrono_tz::Tz>) -> String {
     let url = attr_str(e, "url");
     format!(
         "[{ts}] {browser}/{artifact}: {desc}  <{url}>",
-        ts = format_ts(e.timestamp_ns),
+        ts = format_ts_tz(e.timestamp_ns, tz),
         browser = e.browser,
         artifact = e.artifact,
         desc = e.description,
@@ -2682,10 +2686,12 @@ fn event_text(e: &BrowserEvent) -> String {
 
 /// Flat per-record JSON: `url`/`title` are hoisted to the top level (the shape a
 /// front-end or jq pipeline expects), alongside the timestamp and provenance.
-fn event_json(e: &BrowserEvent) -> String {
+/// The numeric `timestamp_ns` stays UTC-faithful; the human `timestamp` honors
+/// `tz` (display-only), matching the `--flat` (`correlate_row_json`) contract.
+fn event_json(e: &BrowserEvent, tz: Option<chrono_tz::Tz>) -> String {
     let mut obj = json!({
         "timestamp_ns": e.timestamp_ns,
-        "timestamp": format_ts(e.timestamp_ns),
+        "timestamp": format_ts_tz(e.timestamp_ns, tz),
         "browser": e.browser.to_string(),
         "artifact": e.artifact.to_string(),
         "source": e.source,
@@ -2704,10 +2710,10 @@ fn event_json(e: &BrowserEvent) -> String {
     serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string())
 }
 
-fn event_csv(e: &BrowserEvent) -> String {
+fn event_csv(e: &BrowserEvent, tz: Option<chrono_tz::Tz>) -> String {
     format!(
         "{},{},{},{},{}",
-        csv_escape(&format_ts(e.timestamp_ns)),
+        csv_escape(&format_ts_tz(e.timestamp_ns, tz)),
         csv_escape(&e.browser.to_string()),
         csv_escape(&e.artifact.to_string()),
         csv_escape(&attr_str(e, "url")),
@@ -4877,7 +4883,7 @@ pub fn run_storage(path: &Path, format: OutputFormat) -> Result<()> {
     let mut events = browser_forensic_storage::parse_path(path)
         .with_context(|| format!("parsing web storage from {}", path.display()))?;
     events.sort_by_key(|e| e.timestamp_ns);
-    emit_events(&events, format);
+    emit_events(&events, format, None);
     Ok(())
 }
 
@@ -5084,7 +5090,7 @@ pub fn run_indexeddb(path: &Path, format: OutputFormat) -> Result<()> {
     let mut events = browser_forensic_storage::parse_indexeddb(path)
         .with_context(|| format!("decoding IndexedDB from {}", path.display()))?;
     events.sort_by_key(|e| e.timestamp_ns);
-    emit_events(&events, format);
+    emit_events(&events, format, None);
     Ok(())
 }
 
@@ -5681,7 +5687,7 @@ mod tests {
     #[test]
     fn event_json_hoists_url_to_top_level() {
         let e = visit("https://x.example", false, false);
-        let v: serde_json::Value = serde_json::from_str(&event_json(&e)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&event_json(&e, None)).unwrap();
         assert_eq!(v["url"], json!("https://x.example"));
         assert_eq!(v["browser"], json!("Chromium"));
         // attrs are carried through, not nested under `attrs`.
