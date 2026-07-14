@@ -174,3 +174,171 @@ fn nonexistent_path_fails_loudly() {
         .assert()
         .failure();
 }
+
+// ---- issen-style resume UX: `-o <DIR>` is the only resume knob (RFC 0001 D2) --
+
+/// The opt-in `--checkpoint <PATH>` knob is gone — resume state auto-derives from
+/// `-o <DIR>`, never a user-supplied path.
+#[test]
+fn checkpoint_flag_is_gone() {
+    let (_dir, profile) = chrome_profile_with_exe_download();
+    br4n6()
+        .args([
+            "investigate",
+            profile.to_str().unwrap(),
+            "--checkpoint",
+            "/tmp/x.json",
+        ])
+        .assert()
+        .failure();
+}
+
+/// `-o <DIR>` writes the summary and a chain-of-custody manifest into DIR with no
+/// `--manifest` needed — custody is automatic for a forensic tool.
+#[test]
+fn output_dir_writes_summary_and_manifest_automatically() {
+    let (_dir, profile) = chrome_profile_with_exe_download();
+    let outdir = TempDir::new().unwrap();
+    br4n6()
+        .args([
+            "investigate",
+            profile.to_str().unwrap(),
+            "-o",
+            outdir.path().to_str().unwrap(),
+            "--format",
+            "text",
+        ])
+        .assert()
+        .success();
+    let manifest = outdir.path().join("manifest.json");
+    assert!(
+        manifest.is_file(),
+        "manifest is written automatically under -o (no --manifest needed)"
+    );
+    let man = std::fs::read_to_string(&manifest).unwrap();
+    assert!(
+        man.contains("detection_basis"),
+        "the auto-manifest carries the detection basis: {man}"
+    );
+    let summary = outdir.path().join("summary.txt");
+    assert!(summary.is_file(), "the summary is written under -o");
+    let text = std::fs::read_to_string(&summary).unwrap();
+    assert!(
+        text.contains("Detected:"),
+        "the summary file carries the render: {text}"
+    );
+}
+
+/// A second run over the same evidence with the same `-o` resumes the completed
+/// units and prints the issen-style `Resumed: N …` line on stderr.
+#[test]
+fn second_run_resumes_and_prints_resumed_line() {
+    let (_dir, profile) = chrome_profile_with_exe_download();
+    let outdir = TempDir::new().unwrap();
+    let o = outdir.path().to_str().unwrap();
+    let p = profile.to_str().unwrap();
+    br4n6()
+        .args(["investigate", p, "-o", o, "--format", "text"])
+        .assert()
+        .success();
+    let out = br4n6()
+        .args(["investigate", p, "-o", o, "--format", "text"])
+        .assert()
+        .success();
+    let err = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert!(
+        err.contains("Resumed:") && err.contains("skipped"),
+        "the resumed run prints the issen-style resume line: {err}"
+    );
+}
+
+/// `--restart` forces a fresh run — the existing resume state is ignored, so no
+/// `Resumed:` line is printed.
+#[test]
+fn restart_forces_fresh_no_resume_line() {
+    let (_dir, profile) = chrome_profile_with_exe_download();
+    let outdir = TempDir::new().unwrap();
+    let o = outdir.path().to_str().unwrap();
+    let p = profile.to_str().unwrap();
+    br4n6()
+        .args(["investigate", p, "-o", o, "--format", "text"])
+        .assert()
+        .success();
+    let out = br4n6()
+        .args(["investigate", p, "-o", o, "--restart", "--format", "text"])
+        .assert()
+        .success();
+    let err = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert!(
+        !err.contains("Resumed:"),
+        "--restart never resumes prior state: {err}"
+    );
+}
+
+/// Different evidence pointed at the same `-o <DIR>` must NOT silently resume the
+/// other evidence's units — the fingerprint mismatch restarts clean.
+#[test]
+fn different_evidence_same_output_does_not_silently_resume() {
+    let (_dir_a, profile_a) = chrome_profile_with_exe_download();
+    let (_dir_b, profile_b) = chrome_profile_with_exe_download();
+    let outdir = TempDir::new().unwrap();
+    let o = outdir.path().to_str().unwrap();
+    br4n6()
+        .args([
+            "investigate",
+            profile_a.to_str().unwrap(),
+            "-o",
+            o,
+            "--format",
+            "text",
+        ])
+        .assert()
+        .success();
+    let out = br4n6()
+        .args([
+            "investigate",
+            profile_b.to_str().unwrap(),
+            "-o",
+            o,
+            "--format",
+            "text",
+        ])
+        .assert()
+        .success();
+    let err = String::from_utf8(out.get_output().stderr.clone()).unwrap();
+    assert!(
+        !err.contains("Resumed:"),
+        "a different evidence root must not resume another's state: {err}"
+    );
+}
+
+/// `--manifest <PATH>` overrides the automatic `-o` manifest location: the
+/// custody file lands at the override, not inside DIR.
+#[test]
+fn manifest_flag_overrides_output_dir_location() {
+    let (_dir, profile) = chrome_profile_with_exe_download();
+    let outdir = TempDir::new().unwrap();
+    let elsewhere = TempDir::new().unwrap();
+    let manifest = elsewhere.path().join("custody.json");
+    br4n6()
+        .args([
+            "investigate",
+            profile.to_str().unwrap(),
+            "-o",
+            outdir.path().to_str().unwrap(),
+            "--manifest",
+            manifest.to_str().unwrap(),
+            "--format",
+            "text",
+        ])
+        .assert()
+        .success();
+    assert!(
+        manifest.is_file(),
+        "--manifest writes the custody file at the override location"
+    );
+    assert!(
+        !outdir.path().join("manifest.json").is_file(),
+        "the override replaces the default -o manifest path (not written twice)"
+    );
+}

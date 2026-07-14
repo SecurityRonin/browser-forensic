@@ -121,36 +121,19 @@ fn detection_record_lands_in_the_manifest() {
 }
 
 #[test]
-fn type_override_forces_the_kind_even_when_detection_would_differ() {
-    // Point the override at a Chrome History but FORCE Firefox places — the
-    // examiner's word wins on carved / stomped data (Gemini's objection).
-    let (dir, profile) = chrome_profile();
-    let manifest = dir.path().join("manifest.json");
-    let out = br4n6()
+fn type_flag_no_longer_accepted_on_investigate() {
+    // `--type` was a single-artifact detection override — it belongs on a
+    // per-file `artifact <name>` verb, not on the whole-profile/home `investigate`
+    // golden path. Auto-detection still runs and still logs its basis; the manual
+    // override is gone from this verb.
+    let (_dir, profile) = chrome_profile();
+    br4n6()
         .args([
             "investigate",
             profile.to_str().unwrap(),
             "--type",
             "firefox-places",
-            "--format",
-            "text",
-            "--manifest",
-            manifest.to_str().unwrap(),
         ])
         .assert()
-        .success();
-    let err = String::from_utf8(out.get_output().stderr.clone()).unwrap();
-    assert!(
-        err.contains("Firefox places (SQLite)"),
-        "the forced --type is what is reported, not the auto-detection: {err}"
-    );
-    let text = std::fs::read_to_string(&manifest).unwrap();
-    assert!(
-        text.contains("Firefox places (SQLite)"),
-        "the forced kind is the one recorded in the manifest: {text}"
-    );
-    assert!(
-        text.contains("--type"),
-        "the manifest notes the detection was overridden by --type: {text}"
-    );
+        .failure();
 }
