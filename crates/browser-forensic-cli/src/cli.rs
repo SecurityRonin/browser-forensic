@@ -1734,14 +1734,16 @@ fn recover_findings(
     Ok((scope, findings))
 }
 
-/// Carve browser artifacts from the raw unallocated space of a whole disk / memory
-/// image into recovery findings (RFC 0001 P15b). Opens the image FILE as a
-/// read-only positioned byte source (no filesystem mount) and runs the vetted
-/// whole-image signature carve; a bootstrap failure (the image cannot be opened)
-/// is loud, never a silent empty result.
+/// Carve browser artifacts from the unallocated space of a whole disk / memory
+/// image into recovery findings (RFC 0001 P15b). Opens the image through the
+/// forensic container abstraction (`disk_forensic::container::open`) — sniffing
+/// the wrapper and reading a decoded, decompressed view for raw/dd, E01/EWF,
+/// VMDK, VHDX, VHD, QCOW2, DMG, and ISO9660 through one code path — then runs the
+/// vetted whole-image signature carve (no filesystem mount). A bootstrap failure
+/// (the container cannot be opened/decoded) is loud, never a silent empty result.
 ///
 /// # Errors
-/// Propagates a failure to open the image path as a byte source.
+/// Propagates a failure to open/decode the image as a forensic container.
 fn recover_whole_image_findings(
     image: &Path,
 ) -> Result<Vec<browser_forensic_core::finding::Finding>> {

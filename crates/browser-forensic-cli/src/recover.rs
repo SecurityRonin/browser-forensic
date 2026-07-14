@@ -398,13 +398,16 @@ pub fn recover_footer(scope: RecoverScope, path_display: &str) -> String {
              RAM over {path_display}. For on-disk profiles: br4n6 recover <profile-dir>"
         ),
         RecoverScope::WholeImage => format!(
-            "Whole-image carving ran: an unallocated-space signature carve for deleted SQLite \
-             records + Chromium SimpleCache entries over the raw bytes of {path_display}. Not \
-             attempted: filesystem-aware profile recovery (deleted SQLite/WAL records, orphaned \
-             cache, recovered domains, deleted bookmarks, tamper indicators) and \
-             process-attributed memory carving were NOT run — this scope reads the image with no \
-             filesystem mount. For a mounted profile: br4n6 recover <profile-dir>; for RAM with \
-             process attribution: br4n6 recover <memory-image>"
+            "Whole-image carving ran: {path_display} was opened through the forensic container \
+             abstraction (raw/dd, E01/EWF, VMDK, VHDX, VHD, QCOW2, DMG, ISO9660 — decoded and \
+             decompressed) and its unallocated space signature-carved for deleted SQLite records \
+             + Chromium SimpleCache entries. Not attempted: filesystem-aware profile recovery \
+             (deleted SQLite/WAL records, orphaned cache, recovered domains, deleted bookmarks, \
+             tamper indicators) and process-attributed memory carving were NOT run — this scope \
+             reads the image with no filesystem mount. Not decoded by the container layer yet: \
+             AFF4 and AD1 (FTK logical) — carving them awaits their decoders being wired. For a \
+             mounted profile: br4n6 recover <profile-dir>; for RAM with process attribution: \
+             br4n6 recover <memory-image>"
         ),
     }
 }

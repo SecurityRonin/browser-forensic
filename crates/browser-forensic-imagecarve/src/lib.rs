@@ -1,9 +1,14 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! Whole-image / physical-disk carving of browser artifacts.
 //!
-//! Recovers browser artifacts from the **raw unallocated space** of a full disk
-//! or memory image — not just a single database's freelist/WAL. It streams the
-//! image in bounded, overlapping windows over a [`forensic_vfs::ImageSource`],
+//! Recovers browser artifacts from the **unallocated space** of a full disk or
+//! memory image — not just a single database's freelist/WAL. The image is opened
+//! through the **forensic container abstraction**
+//! ([`carve_image_path`] → `disk_forensic::container::open`), which sniffs the
+//! wrapper and exposes a decoded, **decompressed** view for raw/dd, E01/EWF,
+//! VMDK, VHDX, VHD, QCOW2, DMG, and ISO9660 through one code path — so a
+//! compressed E01 carves its real contents, not compressed bytes. It streams that
+//! view in bounded, overlapping windows over a [`forensic_vfs::ImageSource`],
 //! locates artifact signatures, and hands page/entry-aligned slices to the
 //! already-vetted per-format carvers rather than reimplementing any decode:
 //!
@@ -26,9 +31,13 @@
 //! `browser-forensic-cache`.
 
 use std::collections::HashSet;
+use std::io::SeekFrom;
 use std::path::Path;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Mutex;
+use std::thread::JoinHandle;
 
-use forensic_vfs::adapters::FileSource;
+use disk_forensic::container::{self, ReadSeek};
 use forensic_vfs::{ImageSource, VfsResult};
 use sqlite_core::{CarvedCell, Database, Value};
 
@@ -110,15 +119,218 @@ pub fn carve_image(source: &dyn ImageSource, source_path: &Path) -> Vec<CarvedAr
     carve_image_with(source, source_path, WINDOW, OVERLAP)
 }
 
-/// Open `path` as a read-only positioned byte source and carve it (see
-/// [`carve_image`]). Used when the evidence is a raw disk/memory image file
-/// rather than an already-mounted container.
+/// Open `path` through the **container abstraction** and carve it (see
+/// [`carve_image`]). `disk_forensic::container::open` sniffs the wrapper and
+/// returns a **decoded, decompressed** `Read + Seek` view of the disk, so the
+/// same carve engine runs over E01/EWF, VMDK, VHDX, VHD, QCOW2, DMG, ISO9660,
+/// and raw/`dd` images through one code path with no per-format branch — a
+/// compressed E01 now yields its real contents rather than compressed bytes.
 ///
 /// # Errors
-/// [`VfsError`] if the path cannot be opened as a byte source.
-pub fn carve_image_path(path: &Path) -> VfsResult<Vec<CarvedArtifact>> {
-    let source = FileSource::open(path)?;
+/// [`ImageCarveError::Open`] if the container cannot be sniffed/decoded (a
+/// bootstrap failure — surfaced loudly, never absorbed into an empty carve).
+pub fn carve_image_path(path: &Path) -> Result<Vec<CarvedArtifact>, ImageCarveError> {
+    let source = ContainerSource::open(path)?;
     Ok(carve_image(&source, path))
+}
+
+/// A whole-image carve could not open the evidence container. This is a
+/// **bootstrap** failure — the prerequisite every carve step depends on — so it
+/// is always loud and never degraded to an empty result.
+#[derive(Debug, thiserror::Error)]
+pub enum ImageCarveError {
+    /// `disk_forensic::container::open` could not sniff/decode the image, or the
+    /// reader thread failed to start. Carries the offending path and the
+    /// underlying reason verbatim so an examiner can identify the failure.
+    #[error("cannot open image {path} as a forensic container: {reason}")]
+    Open {
+        /// The image path that failed to open.
+        path: String,
+        /// The verbatim underlying failure (I/O, decode, or thread-start error).
+        reason: String,
+    },
+}
+
+/// One positioned-read request to the container-reader worker: fill up to `len`
+/// bytes starting at absolute `offset`.
+struct ReadReq {
+    offset: u64,
+    len: usize,
+}
+
+/// The worker's answer: the bytes read (a short/empty vec at EOF), or the I/O
+/// error text if the decoded stream failed mid-read.
+type ReadResp = Result<Vec<u8>, String>;
+
+/// The request/response endpoints held behind the source's `&self` lock.
+struct ReaderChannel {
+    req: Sender<ReadReq>,
+    resp: Receiver<ReadResp>,
+}
+
+/// A [`forensic_vfs::ImageSource`] over a `disk_forensic::container::OpenedImage`.
+///
+/// `container::open` hands back a `Box<dyn ReadSeek>` that is neither `Send` nor
+/// `Sync` (the published `ReadSeek` trait carries no auto-trait bounds), so it
+/// can neither back a `Send + Sync` `ImageSource` directly nor be moved into
+/// another thread. A dedicated worker thread therefore OPENS the container
+/// itself — only the `PathBuf`, which is `Send`, crosses the boundary — and owns
+/// the decoded reader for its whole life, answering positioned-read requests over
+/// channels. The handle every carve worker holds is a `Send + Sync` pair of
+/// channel endpoints plus the known size: no `unsafe`, bounded memory (one
+/// window-sized buffer per read), and the fully decoded/decompressed image behind
+/// it. The one-line alternative — a `+ Send` bound on the published `ReadSeek` —
+/// would let the reader be held directly; that is a follow-up for disk-forensic.
+struct ContainerSource {
+    len: u64,
+    io: Mutex<Option<ReaderChannel>>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl ContainerSource {
+    /// Open `path` through `disk_forensic::container::open` and expose the decoded
+    /// disk as an [`ImageSource`]. Loud on any open/decode failure.
+    fn open(path: &Path) -> Result<Self, ImageCarveError> {
+        let path_buf = path.to_path_buf();
+        let disp = path.display().to_string();
+
+        let (req_tx, req_rx) = mpsc::channel::<ReadReq>();
+        let (resp_tx, resp_rx) = mpsc::channel::<ReadResp>();
+        let (init_tx, init_rx) = mpsc::channel::<Result<u64, String>>();
+
+        let worker = std::thread::Builder::new()
+            .name("br4n6-container-reader".to_string())
+            .spawn(move || reader_thread(&path_buf, &req_rx, &resp_tx, &init_tx))
+            .map_err(|e| ImageCarveError::Open {
+                path: disp.clone(),
+                reason: format!("cannot start reader thread: {e}"),
+            })?;
+
+        match init_rx.recv() {
+            Ok(Ok(len)) => Ok(Self {
+                len,
+                io: Mutex::new(Some(ReaderChannel {
+                    req: req_tx,
+                    resp: resp_rx,
+                })),
+                worker: Some(worker),
+            }),
+            Ok(Err(reason)) => {
+                let _ = worker.join();
+                Err(ImageCarveError::Open { path: disp, reason })
+            }
+            Err(e) => {
+                let _ = worker.join();
+                Err(ImageCarveError::Open {
+                    path: disp,
+                    reason: format!("reader thread exited before opening: {e}"),
+                })
+            }
+        }
+    }
+}
+
+impl ImageSource for ContainerSource {
+    fn len(&self) -> u64 {
+        self.len
+    }
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
+        if buf.is_empty() || offset >= self.len {
+            return Ok(0);
+        }
+        let want = usize::try_from((self.len - offset).min(buf.len() as u64)).unwrap_or(buf.len());
+        // The loud failure already happened at open(); post-open the worker owns a
+        // decoded file/memory-backed stream. read_at is a short-read contract
+        // (0 at/after EOF, never a panic), and VfsError is a sealed non_exhaustive
+        // type this crate cannot construct — so a dead-worker / mid-read failure
+        // degrades to the available prefix (here 0) rather than fabricating an
+        // error. The carve simply stops scanning that window; it never panics.
+        let Ok(guard) = self.io.lock() else {
+            return Ok(0);
+        };
+        let Some(chan) = guard.as_ref() else {
+            return Ok(0);
+        };
+        if chan.req.send(ReadReq { offset, len: want }).is_err() {
+            return Ok(0);
+        }
+        let data = match chan.resp.recv() {
+            Ok(Ok(d)) => d,
+            _ => return Ok(0),
+        };
+        let n = data.len().min(buf.len());
+        if let (Some(dst), Some(src)) = (buf.get_mut(..n), data.get(..n)) {
+            dst.copy_from_slice(src);
+        }
+        Ok(n)
+    }
+}
+
+impl Drop for ContainerSource {
+    fn drop(&mut self) {
+        // Close the request channel FIRST (drop the Sender) so the worker's recv()
+        // returns Err and it exits, THEN join — order matters to avoid a
+        // join-before-close hang.
+        if let Ok(slot) = self.io.get_mut() {
+            slot.take();
+        }
+        if let Some(handle) = self.worker.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// The worker body: open the container (owning the `!Send` decoded reader here,
+/// never across a thread boundary), report the decoded size (or the open error)
+/// once, then serve positioned reads until the source is dropped.
+fn reader_thread(
+    path: &Path,
+    req: &Receiver<ReadReq>,
+    resp: &Sender<ReadResp>,
+    init: &Sender<Result<u64, String>>,
+) {
+    let opened = match container::open(path) {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = init.send(Err(e.to_string()));
+            return;
+        }
+    };
+    let size = opened.size;
+    let mut reader = opened.reader;
+    if init.send(Ok(size)).is_err() {
+        return; // the constructor gave up before we finished opening
+    }
+    while let Ok(ReadReq { offset, len }) = req.recv() {
+        let answer = read_positioned(reader.as_mut(), offset, len);
+        if resp.send(answer).is_err() {
+            break; // the source was dropped
+        }
+    }
+}
+
+/// Seek `reader` to `offset` and read up to `len` bytes, returning the bytes
+/// actually read (a short/empty vec at EOF). Bounded by `len`; never panics.
+fn read_positioned(reader: &mut dyn ReadSeek, offset: u64, len: usize) -> ReadResp {
+    reader
+        .seek(SeekFrom::Start(offset))
+        .map_err(|e| format!("seek to {offset}: {e}"))?;
+    let mut buf = vec![0u8; len];
+    let mut done = 0usize;
+    while done < len {
+        let Some(dst) = buf.get_mut(done..) else {
+            break; // cov:unreachable: done < len == buf.len()
+        };
+        match reader.read(dst) {
+            Ok(0) => break,
+            Ok(k) => done = done.saturating_add(k),
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(format!("read at {offset}: {e}")),
+        }
+    }
+    buf.truncate(done);
+    Ok(buf)
 }
 
 /// [`carve_image`] with explicit window/overlap sizing (the seam tests drive to
