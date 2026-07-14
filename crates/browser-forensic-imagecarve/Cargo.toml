@@ -1,0 +1,20 @@
+[package]
+name = "browser-forensic-imagecarve"
+version = "0.1.0"
+description = "Whole-image / physical-disk carving: recover browser SQLite records and Chromium SimpleCache entries from the raw unallocated space of a disk or memory image by streaming windowed signature carving over a forensic-vfs ImageSource. Orchestration over vetted carvers (sqlite-core + browser-forensic-cache) — owns zero record-decode logic."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+forensic-vfs = { workspace = true }
+sqlite-core = { workspace = true }
+browser-forensic-cache = { version = "0.1.0", path = "../browser-forensic-cache" }
+
+[dev-dependencies]
+rusqlite = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
