@@ -856,3 +856,124 @@ fn timeline_degraded_home_still_shows_nonhistory_artifacts() {
         "no visits means nothing to reconstruct:\n{stdout}"
     );
 }
+
+// ---- `--tz` must shift the DEFAULT view's human timestamps, exactly as it
+// already does under `--flat`. The default renders through `emit_events`, which
+// predated `--tz` wiring, so `timeline --tz <IANA>` silently showed UTC on the
+// default view — a flag that did nothing. Fixture visit `alpha.example` is at
+// Chrome µs 13327626000000000 == 2023-05-03T22:20:00Z (Unix ns
+// 1683152400000000000); in America/New_York (EDT, UTC-4) that is
+// 2023-05-03T18:20:00-04:00. ----
+
+#[test]
+fn timeline_default_tz_shifts_human_timestamp() {
+    let (_d, profile) = two_visit_profile();
+    let out = br4n6()
+        .args([
+            "timeline",
+            profile.to_str().unwrap(),
+            "--tz",
+            "America/New_York",
+            "--format",
+            "text",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "default timeline --tz failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("2023-05-03T18:20:00-04:00"),
+        "default view must render the visit in the requested zone (18:20 EDT), \
+         not UTC:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("2023-05-03T22:20:00+00:00"),
+        "default view with --tz must NOT still show the UTC hour:\n{stdout}"
+    );
+}
+
+#[test]
+fn timeline_flat_tz_still_shifts_human_timestamp() {
+    // Characterization: the `--flat` path already honored `--tz`; the fix must
+    // not regress it — same zone => same rendered string as the default view.
+    let (_d, profile) = two_visit_profile();
+    let out = br4n6()
+        .args([
+            "timeline",
+            profile.to_str().unwrap(),
+            "--flat",
+            "--tz",
+            "America/New_York",
+            "--format",
+            "text",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "flat timeline --tz failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("2023-05-03T18:20:00-04:00"),
+        "--flat must render the visit in the requested zone (18:20 EDT):\n{stdout}"
+    );
+}
+
+#[test]
+fn timeline_default_no_tz_stays_utc() {
+    // Characterization: with no `--tz`, the default view keeps its current UTC
+    // rendering unchanged.
+    let (_d, profile) = two_visit_profile();
+    let out = br4n6()
+        .args(["timeline", profile.to_str().unwrap(), "--format", "text"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "default timeline failed");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("2023-05-03T22:20:00+00:00"),
+        "no --tz must keep the UTC rendering:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("-04:00"),
+        "no --tz must not shift the zone:\n{stdout}"
+    );
+}
+
+#[test]
+fn timeline_default_tz_jsonl_keeps_numeric_ns_utc() {
+    // Machine-faithful: `--tz` is DISPLAY-only. The numeric `timestamp_ns` stays
+    // UTC (a consumer re-zones itself); only the human `timestamp` string shifts.
+    let (_d, profile) = two_visit_profile();
+    let out = br4n6()
+        .args([
+            "timeline",
+            profile.to_str().unwrap(),
+            "--tz",
+            "America/New_York",
+            "--format",
+            "jsonl",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "default timeline --tz jsonl failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"timestamp_ns\":1683152400000000000"),
+        "numeric timestamp_ns must stay UTC-faithful regardless of --tz:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("2023-05-03T18:20:00-04:00"),
+        "the human timestamp string must honor --tz:\n{stdout}"
+    );
+}
