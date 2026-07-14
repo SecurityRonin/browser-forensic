@@ -607,3 +607,250 @@ fn removed_chronology_commands_are_unknown_subcommands() {
         );
     }
 }
+
+// ---- P12: the DEFAULT is the FULL cross-artifact breadth WITH chain-enriched
+// history — not history-only. `--flat` is the SAME breadth, minus the chains. ----
+
+/// A base Chromium `History` schema carrying `urls`/`visits` (referrer chain)
+/// AND a `downloads` table, so one file exercises both history reconstruction
+/// and the downloads artifact.
+const HISTORY_WITH_DOWNLOADS_SCHEMA: &str =
+    "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT DEFAULT '',
+         visit_count INTEGER DEFAULT 0 NOT NULL, last_visit_time INTEGER NOT NULL);
+     CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL,
+         from_visit INTEGER, transition INTEGER NOT NULL, visit_duration INTEGER);
+     CREATE TABLE downloads (id INTEGER PRIMARY KEY, target_path TEXT NOT NULL DEFAULT '',
+         start_time INTEGER NOT NULL DEFAULT 0, total_bytes INTEGER NOT NULL DEFAULT 0,
+         state INTEGER NOT NULL DEFAULT 0, danger_type INTEGER NOT NULL DEFAULT 0);
+     CREATE TABLE downloads_url_chains (id INTEGER NOT NULL, chain_index INTEGER NOT NULL, url TEXT NOT NULL);";
+
+/// The Chromium `Cookies` jar schema (pre-CHIPS), matching what `parse_cookies`
+/// reads.
+const COOKIES_SCHEMA: &str = "CREATE TABLE cookies (
+        creation_utc    INTEGER NOT NULL, host_key TEXT NOT NULL, name TEXT NOT NULL,
+        value           TEXT DEFAULT '', path TEXT NOT NULL, expires_utc INTEGER DEFAULT 0,
+        is_secure       INTEGER DEFAULT 0, is_httponly INTEGER DEFAULT 0,
+        samesite        INTEGER DEFAULT -1, encrypted_value BLOB DEFAULT '');";
+
+/// Write a Chromium `History` with a referrer chain (`<host_prefix>-origin` ->
+/// `<host_prefix>-landing`, `from_visit = 1`) plus one download
+/// (`<host_prefix>-dl.example`), and a sibling `Cookies` jar
+/// (`<host_prefix>-cookie.example`), into `profile`.
+fn write_chrome_profile_artifacts(profile: &std::path::Path, host_prefix: &str) {
+    std::fs::create_dir_all(profile).unwrap();
+    let conn = Connection::open(profile.join("History")).unwrap();
+    conn.execute_batch(&format!(
+        "{HISTORY_WITH_DOWNLOADS_SCHEMA}
+         INSERT INTO urls VALUES
+            (1,'https://{host_prefix}-origin.example/','Origin',1,13327626000000000),
+            (2,'https://{host_prefix}-landing.example/','Landing',1,13327626000000001);
+         INSERT INTO visits (id,url,visit_time,from_visit,transition) VALUES
+            (1,1,13327626000000000,0,1),
+            (2,2,13327626000000001,1,1);
+         INSERT INTO downloads (id,target_path,start_time,total_bytes,state,danger_type) VALUES
+            (1,'/home/u/Downloads/tool.exe',13327626000000002,1024,1,0);
+         INSERT INTO downloads_url_chains (id,chain_index,url) VALUES
+            (1,0,'https://{host_prefix}-dl.example/tool.exe');"
+    ))
+    .unwrap();
+    let cconn = Connection::open(profile.join("Cookies")).unwrap();
+    cconn
+        .execute_batch(&format!(
+            "{COOKIES_SCHEMA}
+             INSERT INTO cookies (creation_utc,host_key,name,path,is_secure,is_httponly,samesite)
+                VALUES (13327626000000000,'{host_prefix}-cookie.example','sid','/',1,1,0);"
+        ))
+        .unwrap();
+}
+
+/// A single Chromium profile dir carrying THREE artifact kinds: a `History` with
+/// a referrer chain AND a downloads row, plus a sibling `Cookies` jar.
+fn history_cookies_downloads_profile() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let profile = dir.path().join("google-chrome").join("Default");
+    write_chrome_profile_artifacts(&profile, "solo");
+    (dir, profile)
+}
+
+/// A home with two Chromium profiles, each carrying a distinct referrer chain,
+/// download, and cookie — so the merged default must show BOTH profiles' full
+/// cross-artifact breadth, per-profile chain-enriched and origin-stamped.
+fn two_profile_full_breadth_home() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().join("Users").join("alice");
+    let base = home.join("AppData/Local/Google/Chrome/User Data");
+    write_chrome_profile_artifacts(&base.join("Default"), "a");
+    write_chrome_profile_artifacts(&base.join("Profile 1"), "b");
+    (dir, home)
+}
+
+/// A Chromium profile whose `History` has `urls` but an EMPTY `visits` table
+/// (nothing to reconstruct → chains degrade to `None`), yet still carries a
+/// `Cookies` jar — proving the non-history breadth survives the degrade path.
+fn visitsless_with_cookies_profile() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let profile = dir.path().join("google-chrome").join("Default");
+    std::fs::create_dir_all(&profile).unwrap();
+    let conn = Connection::open(profile.join("History")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT NOT NULL, title TEXT DEFAULT '',
+             visit_count INTEGER DEFAULT 0 NOT NULL, last_visit_time INTEGER NOT NULL);
+         CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER NOT NULL, visit_time INTEGER NOT NULL,
+             from_visit INTEGER, transition INTEGER NOT NULL, visit_duration INTEGER);
+         INSERT INTO urls VALUES (1,'https://onlyurls.example/','OnlyUrls',1,13327626000000000);",
+    )
+    .unwrap();
+    let cconn = Connection::open(profile.join("Cookies")).unwrap();
+    cconn
+        .execute_batch(
+            "CREATE TABLE cookies (
+                creation_utc INTEGER NOT NULL, host_key TEXT NOT NULL, name TEXT NOT NULL,
+                value TEXT DEFAULT '', path TEXT NOT NULL, expires_utc INTEGER DEFAULT 0,
+                is_secure INTEGER DEFAULT 0, is_httponly INTEGER DEFAULT 0,
+                samesite INTEGER DEFAULT -1, encrypted_value BLOB DEFAULT '');
+             INSERT INTO cookies (creation_utc,host_key,name,path,is_secure,is_httponly,samesite)
+                VALUES (13327626000000000,'degraded-cookie.example','sid','/',1,1,0);",
+        )
+        .unwrap();
+    (dir, profile)
+}
+
+#[test]
+fn timeline_default_includes_cookies_downloads_and_chains() {
+    // The regression: P10/P11 made the default history-only, silently dropping
+    // cookies/downloads. The default must be the FULL cross-artifact breadth
+    // (cookie + download events present) WITH the history chain enrichment.
+    let (_d, profile) = history_cookies_downloads_profile();
+    let out = br4n6()
+        .args(["timeline", profile.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "default timeline failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Non-history artifacts are present in the DEFAULT (fails today: history-only).
+    assert!(
+        stdout.contains("\"Cookies\"") && stdout.contains("solo-cookie.example"),
+        "default must carry the cookie event (full breadth):\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"Downloads\"") && stdout.contains("solo-dl.example"),
+        "default must carry the download event (full breadth):\n{stdout}"
+    );
+    // ...AND the history events carry the reconstructed chain edge in the SAME output.
+    assert!(
+        stdout.contains("referrer_url") && stdout.contains("https://solo-origin.example/"),
+        "default must ALSO chain-enrich the history events:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("session_id"),
+        "default history events must carry the inferred session_id:\n{stdout}"
+    );
+}
+
+#[test]
+fn timeline_flat_includes_cookies_and_downloads_no_chains() {
+    // `--flat` is the SAME full breadth as the default, minus the chain edges:
+    // the cookie + download events are still present, but no referrer/session/
+    // redirect enrichment.
+    let (_d, profile) = history_cookies_downloads_profile();
+    let out = br4n6()
+        .args([
+            "timeline",
+            profile.to_str().unwrap(),
+            "--flat",
+            "--format",
+            "jsonl",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "flat timeline failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("solo-cookie.example"),
+        "--flat must still carry the cookie event:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("solo-dl.example"),
+        "--flat must still carry the download event:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("session_id")
+            && !stdout.contains("referrer_url")
+            && !stdout.contains("redirect_chain_id"),
+        "--flat must NOT carry chain edges:\n{stdout}"
+    );
+}
+
+#[test]
+fn timeline_multiprofile_includes_each_profiles_full_breadth() {
+    // A multi-profile home: the default merges BOTH profiles' full cross-artifact
+    // breadth (cookies + downloads + history), per-profile chain-enriched and
+    // origin-stamped (P11 preserved).
+    let (_d, home) = two_profile_full_breadth_home();
+    let out = br4n6()
+        .args(["timeline", home.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "multi-profile timeline failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Both profiles' non-history artifacts are present.
+    assert!(
+        stdout.contains("a-cookie.example") && stdout.contains("b-cookie.example"),
+        "both profiles' cookies must be present:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("a-dl.example") && stdout.contains("b-dl.example"),
+        "both profiles' downloads must be present:\n{stdout}"
+    );
+    // Both profiles' chains are reconstructed and origin-stamped (P11).
+    assert!(
+        stdout.contains("https://a-origin.example/")
+            && stdout.contains("https://b-origin.example/"),
+        "both profiles' referrer edges must be reconstructed:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Chrome/Default") && stdout.contains("Chrome/Profile 1"),
+        "each event must carry its profile origin (D9):\n{stdout}"
+    );
+}
+
+#[test]
+fn timeline_degraded_home_still_shows_nonhistory_artifacts() {
+    // A profile with no reconstructable chains (empty `visits`) still contributes
+    // its full flat breadth: the cookie event must appear, with no chain attrs.
+    let (_d, profile) = visitsless_with_cookies_profile();
+    let out = br4n6()
+        .args(["timeline", profile.to_str().unwrap(), "--format", "jsonl"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "degraded timeline must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("degraded-cookie.example"),
+        "the cookie must survive the degrade-to-flat path:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("onlyurls.example"),
+        "the flat history must still be present:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("session_id"),
+        "no visits means nothing to reconstruct:\n{stdout}"
+    );
+}
