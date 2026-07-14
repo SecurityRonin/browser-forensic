@@ -1206,12 +1206,14 @@ fn write_investigation_outputs(
     profiles: &[browser_forensic_discovery::DiscoveredProfile],
     findings: &[browser_forensic_core::finding::Finding],
     tier: crate::investigate::Tier,
+    scope: Option<crate::recover::RecoverScope>,
     evidence: &Path,
 ) -> Result<()> {
     let summary = crate::investigate::render_summary(
         profiles,
         findings,
         tier,
+        scope,
         &evidence.display().to_string(),
         false,
     );
@@ -1320,7 +1322,7 @@ pub fn run_investigate(
     // Under `-o` persist the summary + findings into DIR (the human render is
     // written color-free; the findings go as JSONL for downstream tooling).
     if let Some(dir) = output {
-        write_investigation_outputs(dir, &profiles, &findings, tier, path)?;
+        write_investigation_outputs(dir, &profiles, &findings, tier, None, path)?;
     }
 
     let resolved = crate::output::resolve_stdout(format);
@@ -1333,6 +1335,7 @@ pub fn run_investigate(
                     &profiles,
                     &findings,
                     tier,
+                    None,
                     &path.display().to_string(),
                     color,
                 )

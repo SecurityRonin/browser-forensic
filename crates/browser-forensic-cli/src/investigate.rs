@@ -29,6 +29,8 @@ use browser_forensic_discovery::DiscoveredProfile;
 use browser_forensic_integrity::IntegrityIndicator;
 use browser_forensic_triage::{TriageOptions, TriageReport};
 
+use crate::recover::RecoverScope;
+
 /// Investigation depth tier (RFC 0001 D2). `Standard` is the bare-verb default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tier {
@@ -37,8 +39,10 @@ pub enum Tier {
     /// Quick + bounded deleted-record recovery (SQLite freelist / WAL). Default.
     #[default]
     Standard,
-    /// Standard + (not yet wired) whole-image carving, cache reconstruction,
-    /// memory scanning. Stubbed in P3a; see [`skipped_footer`].
+    /// Standard + the full recovery engines (P5b): deleted-record / free-page
+    /// carving, orphaned-cache carve, recovered domains, deleted bookmarks,
+    /// tamper checks and — over a memory image — RAM carving. Auto-selected by
+    /// PATH shape exactly as `recover`; see [`skipped_footer`].
     Deep,
 }
 
@@ -301,11 +305,35 @@ pub fn rank_findings(mut findings: Vec<Finding>) -> Vec<Finding> {
     findings
 }
 
+/// Drop findings that are the *same observed datum from the same evidence source
+/// in the same state* — the case where `--deep` folds a recovery [`Finding`] on
+/// top of a standard-tier one for the identical indicator (e.g. a `HistoryCleared`
+/// tamper that both the integrity and tamper generators emit). The dedup key is
+/// `(evidence, source, state)`, not `rule_id`: the two generators use different
+/// rule ids for one datum, so keying on the rule would miss the duplicate. First
+/// occurrence wins, so the standard-tier finding (added first) is the one kept.
+#[must_use]
+pub fn dedup_findings(findings: Vec<Finding>) -> Vec<Finding> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    findings
+        .into_iter()
+        .filter(|f| {
+            seen.insert(format!(
+                "{}\u{1f}{}\u{1f}{}",
+                f.evidence, f.provenance.source, f.provenance.state
+            ))
+        })
+        .collect()
+}
+
 /// The always-present skipped-work footer for a tier (RFC 0001 D2). Names what
 /// the tier did *not* do so "false reassurance" is impossible; `--quick` names
-/// strictly more than `--standard`.
+/// strictly more than `--standard`. `scope` is only meaningful for [`Tier::Deep`]
+/// — the recovery scope auto-selected from the PATH shape, which decides what deep
+/// recovery actually ran (and, honestly, what it still did not cover for this
+/// path); it is ignored (`None`) for the other tiers.
 #[must_use]
-pub fn skipped_footer(tier: Tier, path_display: &str) -> String {
+pub fn skipped_footer(tier: Tier, scope: Option<RecoverScope>, path_display: &str) -> String {
     match tier {
         Tier::Quick => format!(
             "Deep recovery not run: whole-image carving, cache reconstruction, memory scanning \
@@ -317,13 +345,21 @@ pub fn skipped_footer(tier: Tier, path_display: &str) -> String {
             "Deep recovery not run: whole-image carving, cache reconstruction, memory scanning \
              skipped — deleted evidence may be missed → br4n6 investigate --deep {path_display}"
         ),
-        Tier::Deep => format!(
-            "Deep recovery is NOT YET implemented (TODO P3b/P5): whole-image carving, cache \
-             reconstruction, and memory scanning would additionally run here. This run performed \
-             --standard-tier recovery (live artifacts + bounded SQLite freelist/WAL) over \
-             {path_display}"
-        ),
+        Tier::Deep => deep_footer(scope, path_display),
     }
+}
+
+/// The deep-tier footer: state what deep recovery ACTUALLY ran for the auto-
+/// selected [`RecoverScope`] and, honestly, what it still did not cover for this
+/// path (the recover orchestrator's own scope footer carries both halves, so the
+/// wording stays in sync with `recover` — no drift). Absent a scope (defensive;
+/// deep always resolves one) it falls back to the profile description.
+fn deep_footer(scope: Option<RecoverScope>, path_display: &str) -> String {
+    let scope = scope.unwrap_or(RecoverScope::Profile);
+    format!(
+        "Deep recovery ran (standard-tier live-artifact investigation + the recovery engines). {}",
+        crate::recover::recover_footer(scope, path_display)
+    )
 }
 
 /// Colorize a rendered finding's `Priority:` value line as a TTY cue. The
@@ -355,6 +391,7 @@ pub fn render_summary(
     profiles: &[DiscoveredProfile],
     findings: &[Finding],
     tier: Tier,
+    scope: Option<RecoverScope>,
     path_display: &str,
     color: bool,
 ) -> String {
@@ -386,7 +423,7 @@ pub fn render_summary(
         }
     }
 
-    out.push_str(&skipped_footer(tier, path_display));
+    out.push_str(&skipped_footer(tier, scope, path_display));
     out.push('\n');
     out
 }
