@@ -280,11 +280,14 @@ enum Command {
     /// timed sequence of events across every browser artifact, with a per-host
     /// rollup. `PATH` is a profile directory, a home/evidence directory, or a
     /// single history file. `--around <WHEN> --window <DUR>` pivots on a moment;
-    /// `--tz <IANA>` renders timestamps in a zone. This verb absorbs the former
-    /// standalone `correlate` (default view), `chains` (`--chains`: referrer /
-    /// redirect / inferred-session reconstruction), and `graph` (`--graph
-    /// <json|dot>`: the registrable-host entity graph) commands. Correlation is
-    /// co-occurrence by URL/host/time — never proof of intent or causation.
+    /// `--tz <IANA>` renders timestamps in a zone. The DEFAULT view is
+    /// navigation-chain reconstruction (referrer → page → redirect hops +
+    /// inferred sessions) — the navigation story is the point of a timeline;
+    /// `--flat` opts OUT to the plain chronological stream (the unified
+    /// cross-artifact chronology, the former `correlate`). `--graph <json|dot>`
+    /// stays an explicit opt-in alternate artifact (the former `graph`: the
+    /// registrable-host entity graph). Correlation is co-occurrence by
+    /// URL/host/time — never proof of intent or causation.
     Timeline {
         /// A profile directory, a home/evidence directory, or a history file.
         #[arg(value_name = "PATH")]
@@ -300,12 +303,14 @@ enum Command {
         /// Render timestamps in this IANA timezone (e.g. `America/New_York`).
         #[arg(long = "tz", visible_alias = "timezone", value_name = "IANA")]
         tz: Option<String>,
-        /// Reconstruction view: referrer + redirect chains and inferred sessions
-        /// (the former `chains` command) instead of the unified chronology.
+        /// Opt OUT of chain reconstruction: emit the plain chronological stream
+        /// (the unified cross-artifact chronology) WITHOUT referrer/redirect/
+        /// inferred-session enrichment. Makes `--idle-gap` a no-op.
         #[arg(long, group = "mode")]
-        chains: bool,
+        flat: bool,
         /// Idle-gap threshold (minutes) for inferring session boundaries in the
-        /// `--chains` view.
+        /// default chain-reconstructed view (a no-op under `--flat` or a
+        /// `--user`/`--profile`/`--browser` selector, which emit the flat stream).
         #[arg(long, value_name = "MINUTES", default_value_t = DEFAULT_IDLE_GAP_MINUTES)]
         idle_gap: i64,
         /// Entity-graph view: registrable-host nodes with referrer/redirect and
@@ -759,7 +764,7 @@ where
             around,
             window,
             tz,
-            chains,
+            flat,
             idle_gap,
             graph,
             graph_window,
@@ -772,7 +777,7 @@ where
             around.as_deref(),
             &window,
             tz.as_deref(),
-            chains,
+            flat,
             idle_gap,
             graph,
             graph_window,
@@ -2126,11 +2131,51 @@ pub fn reconstruct_history(path: &Path, idle_gap_minutes: i64) -> Result<Vec<Bro
              Firefox `moz_historyvisits`); Safari `History.db` has none"
         ),
     };
-    resolve_referrer_chains(&mut visits);
-    tag_redirect_chains(&mut visits);
-    let idle_gap_ns = idle_gap_minutes.max(0).saturating_mul(60 * 1_000_000_000);
-    sessionize(&mut visits, SessionConfig { idle_gap_ns });
+    enrich_visits(&mut visits, idle_gap_minutes);
     Ok(visits)
+}
+
+/// Add referrer (`referrer_url`/`nav_depth`), redirect-chain
+/// (`redirect_chain_id`/`redirect_role`), and inferred-session (`session_id`)
+/// attrs to a per-visit event slice, in that order (idle-gap heuristic at
+/// `idle_gap_minutes`). Shared by [`reconstruct_history`] and the `timeline`
+/// chain-reconstruction default.
+fn enrich_visits(visits: &mut [BrowserEvent], idle_gap_minutes: i64) {
+    resolve_referrer_chains(visits);
+    tag_redirect_chains(visits);
+    let idle_gap_ns = idle_gap_minutes.max(0).saturating_mul(60 * 1_000_000_000);
+    sessionize(visits, SessionConfig { idle_gap_ns });
+}
+
+/// The `timeline` default's chain reconstruction, degrading gracefully instead
+/// of erroring when there is no per-visit referrer data to reconstruct.
+///
+/// Chain reconstruction is best-effort enrichment layered over the always-
+/// available flat chronology: this returns `Some(enriched visits)` only when a
+/// per-visit table with rows can be read, and `Ok(None)` — the signal to fall
+/// back to the flat chronology — in every "nothing to reconstruct" case:
+/// * a directory with no directly-resolvable single history file (a
+///   multi-profile home, whose discovery-based flat view is the right fallback);
+/// * Safari `History.db`, which has no per-visit `from_visit` table;
+/// * a history whose per-visit table is missing/unreadable or empty (a thin
+///   `urls`-only export, or a Firefox `places` without `from_visit`).
+///
+/// A genuinely unreadable history is NOT swallowed: the flat fallback re-reads
+/// the same file through the simpler `urls`/`moz_places` chronology and fails
+/// loud there if even that cannot be parsed.
+fn reconstruct_timeline_chains(path: &Path, idle_gap_minutes: i64) -> Option<Vec<BrowserEvent>> {
+    let (family, history) = resolve_history(path).ok()?;
+    let mut visits = match family {
+        Family::Chromium => parse_visits(&history).ok()?,
+        Family::Firefox => browser_forensic_firefox::parse_visits(&history).ok()?,
+        // Safari `History.db` has no per-visit `from_visit` table.
+        Family::Safari => return None,
+    };
+    if visits.is_empty() {
+        return None;
+    }
+    enrich_visits(&mut visits, idle_gap_minutes);
+    Some(visits)
 }
 
 /// Collect a profile/home directory's unified event stream, or a single history
@@ -2193,14 +2238,21 @@ fn retain_around(events: &mut Vec<BrowserEvent>, pivot_ns: i64, window_ns: i64) 
     events.retain(|e| e.timestamp_ns >= lo && e.timestamp_ns <= hi);
 }
 
-/// `br4n6 timeline PATH [--around WHEN --window DUR] [--tz IANA] [--chains |
+/// `br4n6 timeline PATH [--around WHEN --window DUR] [--tz IANA] [--flat |
 /// --graph <json|dot>] [--format …]` — the RFC 0001 P5a unified chronology verb.
 ///
-/// The default view is the unified cross-artifact timeline + per-host rollup
-/// (formerly `correlate`). `--chains` switches to referrer/redirect/session
-/// reconstruction (formerly `chains`); `--graph <json|dot>` emits the entity
-/// graph (formerly `graph`). `--around`/`--window` narrow every view to a pivot
-/// moment; `--tz` renders timestamps in an IANA zone.
+/// The DEFAULT view is referrer/redirect/inferred-session chain reconstruction
+/// (formerly the opt-in `--chains`): the navigation story is the point of a
+/// timeline. `--flat` opts OUT to the plain unified cross-artifact chronology +
+/// per-host rollup (formerly the default `correlate`); `--graph <json|dot>`
+/// emits the entity graph (formerly `graph`). `--around`/`--window` narrow every
+/// view to a pivot moment; `--tz` renders timestamps in an IANA zone.
+///
+/// When a `--user`/`--profile`/`--browser` selector is active the run scopes to
+/// the selection and DROPS the path-wide per-visit enrichment (it reads every
+/// profile's `visits` and would reintroduce out-of-scope data, D9), emitting the
+/// flat scoped chronology. Evidence with no per-visit referrer data (Safari, a
+/// visits-less history) degrades to the flat chronology rather than erroring.
 ///
 /// # Errors
 /// Returns a loud error if the path does not exist, a timestamp/duration/timezone
@@ -2211,7 +2263,7 @@ pub fn run_timeline(
     around: Option<&str>,
     window: &str,
     tz: Option<&str>,
-    chains: bool,
+    flat: bool,
     idle_gap: i64,
     graph: Option<GraphFormat>,
     graph_window: i64,
@@ -2246,16 +2298,19 @@ pub fn run_timeline(
 
     let resolved = crate::output::resolve_stdout(format);
 
-    // Reconstruction view (formerly `chains`): referrer/redirect/session-enriched
-    // per-visit navigation.
-    if chains {
-        let mut events = reconstruct_history(path, idle_gap)?;
-        apply_around(&mut events);
-        emit_events(&events, resolved);
-        return Ok(());
+    // Default view: referrer/redirect/inferred-session chain reconstruction. A
+    // selector DROPS this path-wide per-visit enrichment (D9), and `--flat` opts
+    // out — both fall through to the flat chronology below. Evidence with no
+    // per-visit referrer data degrades to the same flat chronology (never fails).
+    if !flat && !selectors.is_active() {
+        if let Some(mut events) = reconstruct_timeline_chains(path, idle_gap) {
+            apply_around(&mut events);
+            emit_events(&events, resolved);
+            return Ok(());
+        }
     }
 
-    // Default: the unified cross-artifact chronology + per-host rollup.
+    // Flat / scoped / degraded: the unified cross-artifact chronology + rollup.
     let mut events = collect_timeline_events(path, selectors)?;
     apply_around(&mut events);
     print!("{}", correlate_output(&events, resolved, tz));
