@@ -179,6 +179,117 @@ fn recover_over_memory_image_carves_ram_and_names_profile_not_run() {
     );
 }
 
+/// Bytes of a Chromium `urls`-shaped SQLite carrying `url`, for planting in the
+/// unallocated space of a raw disk image so the whole-image carve recovers it.
+fn history_db_bytes(url: &str) -> Vec<u8> {
+    let f = NamedTempFile::new().unwrap();
+    {
+        let conn = Connection::open(f.path()).unwrap();
+        conn.execute_batch(
+            "PRAGMA auto_vacuum = NONE;
+             CREATE TABLE urls(id INTEGER PRIMARY KEY, url LONGVARCHAR, title LONGVARCHAR,
+                 visit_count INTEGER, typed_count INTEGER, last_visit_time INTEGER, hidden INTEGER);",
+        )
+        .unwrap();
+        for i in 0..8 {
+            conn.execute(
+                "INSERT INTO urls VALUES (?1,?2,?3,?4,?5,?6,0)",
+                rusqlite::params![
+                    i,
+                    format!("https://filler{i}.example/path"),
+                    format!("Filler {i}"),
+                    i,
+                    i,
+                    13_300_000_000_000_000i64 + i64::from(i)
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO urls VALUES (100,?1,?2,5,2,?3,0)",
+            rusqlite::params![url, "Planted", 13_300_000_000_000_000i64],
+        )
+        .unwrap();
+    }
+    std::fs::read(f.path()).unwrap()
+}
+
+/// A raw disk image (MBR boot signature at byte 510) with a planted history DB in
+/// unallocated space.
+fn planted_disk_image(url: &str, db_off: usize) -> Vec<u8> {
+    let db = history_db_bytes(url);
+    let mut buf = vec![0u8; (db_off + db.len() + 4096).max(512)];
+    for (i, b) in buf.iter_mut().enumerate() {
+        *b = (i % 251) as u8;
+    }
+    buf[510] = 0x55;
+    buf[511] = 0xAA;
+    buf[db_off..db_off + db.len()].copy_from_slice(&db);
+    buf
+}
+
+#[test]
+fn recover_over_whole_disk_image_carves_planted_url_and_footer_says_ran() {
+    // A raw disk image (partition-table signature) with a deleted history DB in
+    // unallocated space: recover auto-selects the whole-image scope purely from
+    // the PATH signature and surfaces the planted URL as a Carved artifact.
+    let url = "https://planted.example/deleted-secret";
+    let dir = TempDir::new().unwrap();
+    let img = dir.path().join("case.dd");
+    std::fs::write(&img, planted_disk_image(url, 2048)).unwrap();
+
+    let out = stdout_of(&["recover", img.to_str().unwrap(), "--format", "text"]);
+    assert!(
+        out.contains(url),
+        "whole-image scope surfaces the planted carved URL: {out}"
+    );
+    let low = out.to_lowercase();
+    assert!(
+        low.contains("carved"),
+        "the recovered artifact carries a Carved state: {out}"
+    );
+    assert!(
+        low.contains("whole-image") && low.contains("ran"),
+        "the footer states whole-image carving RAN: {out}"
+    );
+    assert!(
+        !low.contains("whole-image carving was not run"),
+        "the whole-image footer must not claim the carve was skipped: {out}"
+    );
+}
+
+#[test]
+fn recover_whole_image_flag_forces_scope_over_ambiguous_dump() {
+    // A raw dump with no partition/container signature is ambiguous; --whole-image
+    // opts it into the whole-image carve, and the footer reflects the carve RAN.
+    let url = "https://forced.example/carved";
+    let dir = TempDir::new().unwrap();
+    let img = dir.path().join("ambiguous.raw");
+    // No MBR signature here — only the explicit flag routes it to whole-image.
+    let db = history_db_bytes(url);
+    let mut buf = vec![7u8; 1024];
+    buf.extend_from_slice(&db);
+    buf.extend_from_slice(&[9u8; 4096]);
+    std::fs::write(&img, &buf).unwrap();
+
+    let out = stdout_of(&[
+        "recover",
+        img.to_str().unwrap(),
+        "--whole-image",
+        "--format",
+        "text",
+    ]);
+    let low = out.to_lowercase();
+    assert!(
+        low.contains("whole-image") && low.contains("ran"),
+        "--whole-image footer states the carve RAN: {out}"
+    );
+    assert!(
+        out.contains(url),
+        "the forced whole-image carve surfaces the planted URL: {out}"
+    );
+}
+
 #[test]
 fn recover_nonexistent_path_fails_loudly() {
     br4n6()

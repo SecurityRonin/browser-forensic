@@ -42,6 +42,10 @@ pub enum RecoverScope {
     Database,
     /// A memory image: process-attributed RAM carving only.
     MemoryImage,
+    /// A raw disk / memory image carved as a whole: the unallocated-space
+    /// signature carve (deleted SQLite records + Chromium SimpleCache entries)
+    /// over the image's raw bytes, with no filesystem mount (RFC 0001 P15b).
+    WholeImage,
 }
 
 /// Read a string attribute from an event, if present and a JSON string.
@@ -318,6 +322,20 @@ pub fn memory_findings(events: &[BrowserEvent]) -> Vec<Finding> {
         .collect()
 }
 
+/// Whole-image carve findings: browser artifacts recovered from the raw
+/// unallocated space of a disk / memory image by the signature carve (deleted
+/// SQLite records + Chromium SimpleCache entries). Each carries its absolute
+/// byte-offset provenance and NO filesystem context — state is `Carved`, framed
+/// as consistent with a deleted/evicted artifact, never a proven user act.
+#[must_use]
+pub fn whole_image_findings(
+    artifacts: &[browser_forensic_imagecarve::CarvedArtifact],
+) -> Vec<Finding> {
+    // RED stub: returns nothing so the plant-and-recover wiring test fails.
+    let _ = artifacts;
+    Vec::new()
+}
+
 /// The always-present skipped-work footer for a scope (RFC 0001 D2). Names what
 /// `recover` did NOT attempt for the auto-selected scope so absence of a result
 /// is never false reassurance.
@@ -343,6 +361,8 @@ pub fn recover_footer(scope: RecoverScope, path_display: &str) -> String {
              image, and whole-image carving was NOT run. This run carved browser artifacts from \
              RAM over {path_display}. For on-disk profiles: br4n6 recover <profile-dir>"
         ),
+        // RED stub: intentionally omits the "ran" wording so the footer test fails.
+        RecoverScope::WholeImage => format!("whole-image scope (pending) — {path_display}"),
     }
 }
 
@@ -364,6 +384,10 @@ fn scope_header(scope: RecoverScope, path_display: &str) -> String {
                 "Recovering (memory-image scope): process-attributed RAM carve — {path_display}"
             )
         }
+        RecoverScope::WholeImage => format!(
+            "Recovering (whole-image scope): unallocated-space signature carve for SQLite records \
+             + Chromium SimpleCache entries — {path_display}"
+        ),
     }
 }
 
@@ -663,6 +687,72 @@ mod tests {
         assert!(
             f.contains("not"),
             "footer frames work as NOT attempted: {f}"
+        );
+    }
+
+    fn carved_artifact(url: &str, offset: u64) -> browser_forensic_imagecarve::CarvedArtifact {
+        browser_forensic_imagecarve::CarvedArtifact {
+            kind: browser_forensic_imagecarve::CarvedArtifactKind::SqliteRecord,
+            url: url.to_string(),
+            image_offset: offset,
+            visit_time_raw: Some(13_300_000_000_000_000),
+            detail: format!("[\"{url}\", 13300000000000000]"),
+        }
+    }
+
+    #[test]
+    fn whole_image_finding_is_carved_low_with_offset_and_no_fs_context() {
+        let arts = vec![carved_artifact("https://carved.example/deleted", 1_048_576)];
+        let findings = whole_image_findings(&arts);
+        let f = findings.first().expect("a whole-image carve finding");
+        assert_eq!(
+            f.provenance.source,
+            EvidenceSource::Carved,
+            "raw-bytes carve is sourced from carving"
+        );
+        assert_eq!(
+            f.provenance.state,
+            EvidenceState::Carved,
+            "a whole-image carved artifact is Carved, never Live"
+        );
+        assert_eq!(f.confidence, Confidence::Low);
+        let interp = f.interpretation.to_lowercase();
+        assert!(
+            interp.contains("unallocated space") && interp.contains("no filesystem context"),
+            "keeps the no-filesystem-context hedge: {}",
+            f.interpretation
+        );
+        assert!(
+            f.evidence.contains("carved.example"),
+            "shows the full recovered URL: {}",
+            f.evidence
+        );
+        assert!(
+            f.evidence.contains("1048576"),
+            "shows the absolute byte offset as provenance: {}",
+            f.evidence
+        );
+    }
+
+    #[test]
+    fn footer_whole_image_states_carving_ran() {
+        let f = recover_footer(RecoverScope::WholeImage, "/ev/disk.dd").to_lowercase();
+        assert!(
+            f.contains("whole-image") && f.contains("ran"),
+            "whole-image footer states the carve RAN: {f}"
+        );
+        assert!(
+            !f.contains("carving was not run") && !f.contains("carving is n/a"),
+            "the whole-image footer must NOT claim carving was skipped: {f}"
+        );
+    }
+
+    #[test]
+    fn footer_profile_states_whole_image_is_na_not_a_raw_image() {
+        let f = recover_footer(RecoverScope::Profile, "/ev").to_lowercase();
+        assert!(
+            f.contains("n/a") && f.contains("not a raw image"),
+            "profile footer frames whole-image carving as N/A (not a raw image): {f}"
         );
     }
 

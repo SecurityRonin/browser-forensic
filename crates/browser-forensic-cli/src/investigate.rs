@@ -720,6 +720,22 @@ mod tests {
     }
 
     #[test]
+    fn footer_deep_whole_image_scope_states_carving_ran() {
+        let d = skipped_footer(
+            Tier::Deep,
+            Some(crate::recover::RecoverScope::WholeImage),
+            "/ev/disk.dd",
+        )
+        .to_lowercase();
+        assert!(!d.contains("not yet") && !d.contains("todo"));
+        assert!(d.contains("ran"), "states deep recovery ran: {d}");
+        assert!(
+            d.contains("whole-image") && d.contains("unallocated"),
+            "names the whole-image unallocated-space carve it ran over an image: {d}"
+        );
+    }
+
+    #[test]
     fn dedup_findings_collapses_cross_generator_duplicate() {
         // The same tamper observation surfaces from BOTH the standard integrity
         // generator and the deep tamper generator (different rule_id, identical

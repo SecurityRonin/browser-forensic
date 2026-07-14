@@ -135,6 +135,13 @@ enum Command {
         /// checks (and RAM carve over a memory image), auto-selected by PATH shape.
         #[arg(long, group = "tier")]
         deep: bool,
+        /// Force whole-image carving of PATH (deep tier): an unallocated-space
+        /// signature carve for deleted SQLite records + Chromium SimpleCache
+        /// entries over the image's raw bytes. Auto-runs for a disk image with a
+        /// partition-table / E01 signature; this flag opts a raw dump (e.g. a
+        /// memory image) into whole-image carving instead of RAM scanning.
+        #[arg(long = "whole-image")]
+        whole_image: bool,
         /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
@@ -248,6 +255,14 @@ enum Command {
         /// otherwise the image is auto-profiled. Ignored for on-disk evidence.
         #[arg(long, value_name = "ISF")]
         symbols: Option<PathBuf>,
+        /// Force whole-image carving of PATH: an unallocated-space signature carve
+        /// for deleted SQLite records + Chromium SimpleCache entries over the
+        /// image's raw bytes, with no filesystem mount. Auto-runs for a disk image
+        /// carrying a partition-table / E01 signature; use this flag to opt a raw
+        /// dump (e.g. a memory image) into whole-image carving instead of the
+        /// process-attributed RAM scan.
+        #[arg(long = "whole-image")]
+        whole_image: bool,
         /// Output format. Defaults to a human summary on a TTY, JSONL when piped.
         #[arg(long, value_enum)]
         format: Option<OutputFormat>,
@@ -681,6 +696,7 @@ where
             return run_investigate(
                 &path,
                 crate::investigate::Tier::Standard,
+                false,
                 None,
                 None,
                 false,
@@ -708,6 +724,7 @@ where
             quick,
             standard,
             deep,
+            whole_image,
             format,
             output,
             restart,
@@ -718,6 +735,7 @@ where
         }) => run_investigate(
             &path,
             tier_from_flags(quick, standard, deep),
+            whole_image,
             format,
             output.as_deref(),
             restart,
@@ -754,6 +772,7 @@ where
         Some(Command::Recover {
             path,
             symbols,
+            whole_image,
             format,
             user,
             profile,
@@ -761,6 +780,7 @@ where
         }) => run_recover(
             &path,
             symbols.as_deref(),
+            whole_image,
             format,
             &crate::selectors::Selectors::new(user, profile, browser),
         ),
@@ -1175,6 +1195,7 @@ fn collect_investigation(
 fn collect_investigation_findings(
     path: &Path,
     tier: crate::investigate::Tier,
+    whole_image: bool,
     progress: &dyn crate::progress::InvestigationProgress,
     cancel: &std::sync::atomic::AtomicBool,
     checkpoint: &mut Option<crate::checkpoint::CheckpointSession>,
@@ -1190,7 +1211,7 @@ fn collect_investigation_findings(
             "br4n6 investigate: deep recovery phase — running the recovery engines over {}",
             path.display()
         );
-        let (scope, mut recovered) = recover_findings(path, None, selectors)?;
+        let (scope, mut recovered) = recover_findings(path, None, whole_image, selectors)?;
         findings.append(&mut recovered);
         findings = crate::investigate::dedup_findings(findings);
         Some(scope)
@@ -1308,6 +1329,7 @@ fn write_investigation_outputs(
 pub fn run_investigate(
     path: &Path,
     tier: crate::investigate::Tier,
+    whole_image: bool,
     format: Option<OutputFormat>,
     output: Option<&Path>,
     restart: bool,
@@ -1353,8 +1375,15 @@ pub fn run_investigate(
     // clean run. The resume decision is announced on stderr so stdout stays clean.
     let mut checkpoint = open_checkpoint(path, tier, resume_path.as_deref(), restart)?;
 
-    let (profiles, deep_scope, findings, interrupted) =
-        collect_investigation_findings(path, tier, &progress, &cancel, &mut checkpoint, selectors)?;
+    let (profiles, deep_scope, findings, interrupted) = collect_investigation_findings(
+        path,
+        tier,
+        whole_image,
+        &progress,
+        &cancel,
+        &mut checkpoint,
+        selectors,
+    )?;
 
     // Layered PATH auto-detection (RFC 0001 D8): show what each input was detected
     // as, with confidence + basis, and record it for court defensibility. Custody
@@ -1451,15 +1480,30 @@ pub fn run_investigate(
     Ok(())
 }
 
-/// Classify an evidence path into a [`recover::RecoverScope`] (RFC 0001 P5b,
-/// resolved-decision #2): a directory is a profile/home; a file is a single
-/// SQLite database when it carries the SQLite magic, otherwise a memory image.
-/// The examiner makes no submode choice — the scope is read from the path shape.
-fn recover_scope_of(path: &Path) -> crate::recover::RecoverScope {
+/// Classify an evidence path into a [`recover::RecoverScope`] (RFC 0001 P5b/P15b,
+/// resolved-decision #2). The examiner makes no submode choice — the scope is read
+/// from the path shape plus one explicit opt-in:
+///
+/// * a directory → profile/home recovery;
+/// * `--whole-image` on a file → whole-image signature carve (the explicit opt-in
+///   for an ambiguous raw dump, e.g. a memory image the examiner wants carved as a
+///   whole disk rather than RAM-scanned);
+/// * a file carrying the SQLite magic → single-database recovery;
+/// * a file carrying a confident raw-disk / container signature (MBR/GPT partition
+///   table, or an EnCase/EWF `E01` magic) → whole-image carve, auto (detection is
+///   confident it is a disk image);
+/// * any other file → a memory image (process-attributed RAM carve) — a raw dump
+///   with no partition/container signature is ambiguous, so whole-image carving
+///   there stays gated behind `--whole-image`.
+fn recover_scope_of(path: &Path, whole_image: bool) -> crate::recover::RecoverScope {
     if path.is_dir() {
         crate::recover::RecoverScope::Profile
+    } else if whole_image {
+        crate::recover::RecoverScope::WholeImage
     } else if looks_like_sqlite(path) {
         crate::recover::RecoverScope::Database
+    } else if looks_like_disk_image(path) {
+        crate::recover::RecoverScope::WholeImage
     } else {
         crate::recover::RecoverScope::MemoryImage
     }
@@ -1474,6 +1518,35 @@ fn looks_like_sqlite(path: &Path) -> bool {
     };
     let mut magic = [0_u8; 16];
     f.read_exact(&mut magic).is_ok() && &magic == b"SQLite format 3\0"
+}
+
+/// Whether the head of a file carries a confident raw-disk / container signature:
+/// an MBR boot signature (`0x55AA` at byte 510), a GPT header (`"EFI PART"` at the
+/// start of LBA 1, byte offset 512), or an EnCase/EWF `E01` container magic
+/// (`EVF`/`LVF`). Any of these is a confident "this is a whole disk image" signal,
+/// so whole-image carving auto-runs; their absence over a raw dump is ambiguous
+/// (it could be a memory image), so whole-image carving there is gated behind an
+/// explicit `--whole-image`. A read failure returns `false`, never a panic.
+fn looks_like_disk_image(path: &Path) -> bool {
+    use std::io::Read as _;
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = [0_u8; 520];
+    let n = f.read(&mut head).unwrap_or(0);
+    // EnCase/EWF container magic at offset 0.
+    if n >= 3 && (&head[..3] == b"EVF" || &head[..3] == b"LVF") {
+        return true;
+    }
+    // MBR boot signature at bytes 510..512.
+    if n >= 512 && head[510] == 0x55 && head[511] == 0xAA {
+        return true;
+    }
+    // GPT header "EFI PART" at the start of LBA 1 (byte offset 512).
+    if n >= 520 && &head[512..520] == b"EFI PART" {
+        return true;
+    }
+    false
 }
 
 /// Recover deleted SQLite/WAL records from a single database via both carve
@@ -1624,12 +1697,13 @@ fn recover_memory_findings(
 fn recover_findings(
     path: &Path,
     symbols: Option<&Path>,
+    whole_image: bool,
     selectors: &crate::selectors::Selectors,
 ) -> Result<(
     crate::recover::RecoverScope,
     Vec<browser_forensic_core::finding::Finding>,
 )> {
-    let scope = recover_scope_of(path);
+    let scope = recover_scope_of(path, whole_image);
     let findings = match scope {
         crate::recover::RecoverScope::Profile => {
             // Every profile beneath a home dir, scoped by the selectors (RFC 0001
@@ -1652,8 +1726,26 @@ fn recover_findings(
         }
         crate::recover::RecoverScope::Database => recover_database_findings(path),
         crate::recover::RecoverScope::MemoryImage => recover_memory_findings(path, symbols)?,
+        crate::recover::RecoverScope::WholeImage => recover_whole_image_findings(path)?,
     };
     Ok((scope, findings))
+}
+
+/// Carve browser artifacts from the raw unallocated space of a whole disk / memory
+/// image into recovery findings (RFC 0001 P15b). Opens the image FILE as a
+/// read-only positioned byte source (no filesystem mount) and runs the vetted
+/// whole-image signature carve; a bootstrap failure (the image cannot be opened)
+/// is loud, never a silent empty result.
+///
+/// # Errors
+/// Propagates a failure to open the image path as a byte source.
+fn recover_whole_image_findings(
+    image: &Path,
+) -> Result<Vec<browser_forensic_core::finding::Finding>> {
+    // RED stub: the WholeImage engine is not wired yet, so this yields nothing —
+    // the plant-and-recover integration test fails until GREEN calls carve_image.
+    let _ = image;
+    Ok(Vec::new())
 }
 
 /// `br4n6 recover PATH [--symbols ISF] [--format ...]` — the RFC 0001 P5b
@@ -1669,6 +1761,7 @@ fn recover_findings(
 pub fn run_recover(
     path: &Path,
     symbols: Option<&Path>,
+    whole_image: bool,
     format: Option<OutputFormat>,
     selectors: &crate::selectors::Selectors,
 ) -> Result<()> {
@@ -1680,7 +1773,7 @@ pub fn run_recover(
         anyhow::bail!("path does not exist: {}", path.display());
     }
 
-    let (scope, findings) = recover_findings(path, symbols, selectors)?;
+    let (scope, findings) = recover_findings(path, symbols, whole_image, selectors)?;
     let findings = crate::recover::rank_findings(findings);
 
     let resolved = crate::output::resolve_stdout(format);
@@ -5619,6 +5712,138 @@ mod tests {
     use super::*;
     use browser_forensic_core::{ArtifactKind, BrowserFamily};
 
+    // ---- RFC 0001 P15b: whole-image carve scope + wiring -------------------
+
+    /// Bytes of a Chromium `urls`-shaped SQLite carrying `url` in a row, so the
+    /// whole-image signature carve can recover it from unallocated space.
+    fn history_db_bytes(url: &str) -> Vec<u8> {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        {
+            let conn = rusqlite::Connection::open(f.path()).unwrap();
+            conn.execute_batch(
+                "PRAGMA auto_vacuum = NONE;
+                 CREATE TABLE urls(id INTEGER PRIMARY KEY, url LONGVARCHAR, title LONGVARCHAR,
+                     visit_count INTEGER, typed_count INTEGER, last_visit_time INTEGER,
+                     hidden INTEGER);",
+            )
+            .unwrap();
+            for i in 0..8 {
+                conn.execute(
+                    "INSERT INTO urls VALUES (?1,?2,?3,?4,?5,?6,0)",
+                    rusqlite::params![
+                        i,
+                        format!("https://filler{i}.example/path"),
+                        format!("Filler {i}"),
+                        i,
+                        i,
+                        13_300_000_000_000_000i64 + i64::from(i)
+                    ],
+                )
+                .unwrap();
+            }
+            conn.execute(
+                "INSERT INTO urls VALUES (100,?1,?2,5,2,?3,0)",
+                rusqlite::params![url, "Planted", 13_300_000_000_000_000i64],
+            )
+            .unwrap();
+        }
+        std::fs::read(f.path()).unwrap()
+    }
+
+    /// A raw disk image: an MBR boot signature (0x55AA at 510) + a planted history
+    /// DB embedded at `db_off` inside junk — a whole disk image with a deleted DB
+    /// in unallocated space.
+    fn planted_disk_image(url: &str, db_off: usize) -> Vec<u8> {
+        let db = history_db_bytes(url);
+        let total = db_off + db.len() + 4096;
+        let mut buf = vec![0u8; total.max(512)];
+        for (i, b) in buf.iter_mut().enumerate() {
+            *b = (i % 251) as u8;
+        }
+        buf[510] = 0x55;
+        buf[511] = 0xAA;
+        buf[db_off..db_off + db.len()].copy_from_slice(&db);
+        buf
+    }
+
+    #[test]
+    fn recover_scope_of_dir_is_profile() {
+        let dir = tempfile::TempDir::new().unwrap();
+        assert_eq!(
+            recover_scope_of(dir.path(), false),
+            crate::recover::RecoverScope::Profile
+        );
+    }
+
+    #[test]
+    fn recover_scope_of_sqlite_file_is_database() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = dir.path().join("History");
+        std::fs::write(&db, history_db_bytes("https://x.example/a")).unwrap();
+        assert_eq!(
+            recover_scope_of(&db, false),
+            crate::recover::RecoverScope::Database
+        );
+    }
+
+    #[test]
+    fn recover_scope_of_mbr_disk_image_is_whole_image_auto() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("disk.dd");
+        std::fs::write(&img, planted_disk_image("https://x.example/a", 1024)).unwrap();
+        assert_eq!(
+            recover_scope_of(&img, false),
+            crate::recover::RecoverScope::WholeImage,
+            "a partition-table signature auto-selects the whole-image carve"
+        );
+    }
+
+    #[test]
+    fn recover_scope_of_plain_raw_dump_is_memory_image() {
+        // No SQLite magic, no partition/container signature → ambiguous raw dump,
+        // classified as a memory image (unchanged; whole-image stays opt-in).
+        let dir = tempfile::TempDir::new().unwrap();
+        let dump = dir.path().join("dump");
+        std::fs::write(&dump, b"garbage https://ram.example/x more garbage").unwrap();
+        assert_eq!(
+            recover_scope_of(&dump, false),
+            crate::recover::RecoverScope::MemoryImage
+        );
+    }
+
+    #[test]
+    fn recover_scope_of_whole_image_flag_forces_whole_image() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dump = dir.path().join("dump.mem");
+        std::fs::write(&dump, b"garbage more garbage").unwrap();
+        assert_eq!(
+            recover_scope_of(&dump, true),
+            crate::recover::RecoverScope::WholeImage,
+            "--whole-image opts a raw dump into whole-image carving"
+        );
+    }
+
+    #[test]
+    fn recover_findings_whole_image_surfaces_planted_url_as_carved() {
+        let url = "https://planted.example/deleted-secret";
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("case.dd");
+        std::fs::write(&img, planted_disk_image(url, 2048)).unwrap();
+
+        let (scope, findings) =
+            recover_findings(&img, None, false, &crate::selectors::Selectors::default()).unwrap();
+        assert_eq!(scope, crate::recover::RecoverScope::WholeImage);
+        let hit = findings
+            .iter()
+            .find(|f| f.evidence.contains(url))
+            .unwrap_or_else(|| panic!("planted URL not surfaced: {findings:?}"));
+        assert_eq!(
+            hit.provenance.state,
+            browser_forensic_core::finding::EvidenceState::Carved,
+            "a whole-image carved artifact is Carved, never Live"
+        );
+    }
+
     fn corr_event(ts: i64, browser: BrowserFamily, kind: ArtifactKind, url: &str) -> BrowserEvent {
         BrowserEvent::new(ts, browser, kind, "/src", "desc").with_attr("url", json!(url))
     }
@@ -6908,6 +7133,7 @@ mod tests {
         let (_profiles, scope, findings, _interrupted) = collect_investigation_findings(
             path,
             tier,
+            false,
             &progress,
             &cancel,
             &mut checkpoint,
