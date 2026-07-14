@@ -1,0 +1,27 @@
+[package]
+name = "browser-forensic-imagecarve-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+forensic-vfs = "0.1"
+
+[dependencies.browser-forensic-imagecarve]
+path = ".."
+
+# Prevent this fuzz crate from being pulled into the parent workspace: it is its
+# own workspace root so `cargo build --workspace` never tries to build the
+# libfuzzer target (which requires a nightly sanitizer toolchain).
+[workspace]
+
+[[bin]]
+name = "carve_image"
+path = "fuzz_targets/carve_image.rs"
+test = false
+doc = false
+bench = false

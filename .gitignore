@@ -2,12 +2,13 @@
 .worktrees
 
 # cargo-fuzz build artifacts, corpora and crash reproducers (the targets and
-# Cargo.toml are tracked; generated data is not).
-/fuzz/target
-/fuzz/corpus
-/fuzz/artifacts
-/fuzz/coverage
-/fuzz/Cargo.lock
+# Cargo.toml are tracked; generated data is not). `**/` so per-crate fuzz dirs
+# (e.g. crates/*/fuzz) are covered as well as a repo-root /fuzz.
+**/fuzz/target
+**/fuzz/corpus
+**/fuzz/artifacts
+**/fuzz/coverage
+**/fuzz/Cargo.lock
 
 # Real browser session/history fixtures contain personal, proprietary on-disk
 # data — never commit. Ignore EVERYTHING under the fixtures dir by default
