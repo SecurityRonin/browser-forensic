@@ -513,6 +513,7 @@ dependencies = [
  "disk-forensic",
  "forensic-vfs",
  "rusqlite",
+ "safe-read",
  "sqlite-core",
  "tempfile",
  "thiserror 2.0.18",

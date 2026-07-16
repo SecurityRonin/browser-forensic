@@ -459,7 +459,9 @@ fn read_sqlite_extent(source: &dyn ImageSource, abs: u64) -> Option<Vec<u8>> {
         return None;
     }
     // page_size: u16 big-endian at offset 16; the value 1 encodes 65536.
-    let ps_raw = u16::from_be_bytes([head[16], head[17]]);
+    // `head` is a fixed 100-byte buffer, so the read is always in range; the
+    // shared bounded reader returns its exact value.
+    let ps_raw = safe_read::be_u16(&head, 16);
     let page_size: usize = if ps_raw == 1 {
         65536
     } else {
@@ -469,7 +471,7 @@ fn read_sqlite_extent(source: &dyn ImageSource, abs: u64) -> Option<Vec<u8>> {
         return None;
     }
     // page_count: u32 big-endian at offset 28 (0 when not maintained → derive).
-    let hdr_pages = u32::from_be_bytes([head[28], head[29], head[30], head[31]]) as usize;
+    let hdr_pages = safe_read::be_u32(&head, 28) as usize;
     let remaining = usize::try_from(source.len().saturating_sub(abs)).unwrap_or(usize::MAX);
     let by_header = page_size.saturating_mul(hdr_pages);
     let want = if by_header == 0 { remaining } else { by_header }
