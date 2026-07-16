@@ -645,6 +645,22 @@ mod tests {
         assert!(carve_image(&src, Path::new("empty")).is_empty());
     }
 
+    #[test]
+    fn sqlite_magic_at_image_tail_never_panics() {
+        // A SQLite magic in the final bytes of the image makes the 100-byte
+        // header fill return short; the page_size (offset 16) and page_count
+        // (offset 28) reads must tolerate every such tail length without panic.
+        let magic = b"SQLite format 3\0";
+        for tail in 0..=magic.len() + 40 {
+            let mut img = vec![0x41u8; 4096];
+            let start = img.len().saturating_sub(tail);
+            let take = tail.min(magic.len());
+            img[start..start + take].copy_from_slice(&magic[..take]);
+            let src = MemSource(img);
+            let _ = carve_image(&src, Path::new("tail.bin"));
+        }
+    }
+
     use std::io::Write as _;
 
     /// Write `bytes` to a fresh temp file (kept alive by the returned handle).
