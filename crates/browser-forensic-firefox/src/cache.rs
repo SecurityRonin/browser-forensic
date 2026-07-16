@@ -114,6 +114,21 @@ mod tests {
     }
 
     #[test]
+    fn truncated_entry_files_never_panic() {
+        // A cache entry file truncated to any length — including lengths shorter
+        // than the trailing 4-byte metadata offset — must be skipped, not panic.
+        let mut full = Vec::new();
+        full.extend_from_slice(b"FAKE_DATA_BEFORE_METADATA\x00https://example.com/style.css");
+        let off = 26u32; // header length before the URL
+        full.extend_from_slice(&off.to_be_bytes());
+        for len in 0..=full.len() {
+            let dir = TempDir::new().unwrap();
+            fs::write(dir.path().join("ENTRY0001"), &full[..len]).unwrap();
+            let _ = parse_cache(dir.path()).unwrap();
+        }
+    }
+
+    #[test]
     fn parse_ff_cache_extracts_url() {
         let dir = TempDir::new().unwrap();
         create_ff_cache_file(

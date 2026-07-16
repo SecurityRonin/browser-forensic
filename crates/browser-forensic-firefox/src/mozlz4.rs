@@ -108,6 +108,16 @@ mod tests {
     }
 
     #[test]
+    fn truncation_at_every_length_never_panics() {
+        // The 12-byte header (magic + declared-size u32) read must tolerate any
+        // truncation of a valid buffer without an out-of-bounds panic.
+        let framed = frame(br#"{"version":[1],"children":[]}"#);
+        for len in 0..=framed.len() {
+            let _ = decompress_mozlz4(&framed[..len]);
+        }
+    }
+
+    #[test]
     fn malformed_block_errors_without_panicking() {
         // Valid header declaring 4096 bytes, but the "block" is garbage.
         let mut framed = Vec::new();
