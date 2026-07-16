@@ -486,6 +486,7 @@ dependencies = [
  "forensicnomicon",
  "lz4_flex",
  "rusqlite",
+ "safe-read",
  "serde_json",
  "tempfile",
 ]

@@ -49,7 +49,9 @@ pub fn decompress_mozlz4_capped(data: &[u8], cap: usize) -> Result<Vec<u8>> {
             MOZLZ4_MAGIC
         ));
     }
-    let declared = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+    // data.len() >= MOZLZ4_HEADER_LEN (guard above), so the declared-size u32 at
+    // offset 8 is in range; the shared bounded reader returns its exact value.
+    let declared = safe_read::le_u32(data, 8) as usize;
     if declared > cap {
         return Err(anyhow!(
             "mozLz4 declared uncompressed size {declared} exceeds cap {cap} \

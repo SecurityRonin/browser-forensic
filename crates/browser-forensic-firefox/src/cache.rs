@@ -39,10 +39,10 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
             continue;
         }
 
-        // Last 4 bytes = metadata offset (big-endian u32). The slice is exactly
-        // 4 bytes (guaranteed by the `file_len < 4` guard above); fallback never fires.
-        let metadata_offset =
-            u32::from_be_bytes(data[file_len - 4..].try_into().unwrap_or([0u8; 4])) as usize;
+        // Last 4 bytes = metadata offset (big-endian u32). file_len >= 4 (guard
+        // above), so the read at file_len - 4 is in range; the shared bounded
+        // reader returns its exact value (0 only for an out-of-range window).
+        let metadata_offset = safe_read::be_u32(&data, file_len - 4) as usize;
 
         if metadata_offset >= file_len - 4 {
             continue;
