@@ -342,6 +342,41 @@ mod tests {
     }
 
     #[test]
+    fn truncation_at_every_length_never_panics() {
+        // Every prefix of a valid entry — including lengths that leave an EOF
+        // offset or key_length field pointing past the (now shorter) buffer —
+        // must yield Ok or a descriptive Err, never an out-of-bounds panic.
+        let full = build_entry(
+            "https://a.test/x",
+            b"body-bytes",
+            b"HTTP/1.1 200 OK\0\0",
+            None,
+        );
+        for len in 0..=full.len() {
+            let _ = parse_simple_entry(&full[..len]);
+        }
+    }
+
+    #[test]
+    fn lying_eof_offsets_and_flags_never_panic() {
+        // Corrupt each byte of the stream-0 EOF record (magic, flags, size) to a
+        // hostile value; a lying stream size / flag word must be rejected, not
+        // trusted into an out-of-bounds slice.
+        let base = build_entry(
+            "https://a.test/x",
+            b"12345678",
+            b"HTTP/1.1 200 OK\0\0",
+            None,
+        );
+        let eof0 = base.len() - EOF_SIZE;
+        for byte in eof0..base.len() {
+            let mut data = base.clone();
+            data[byte] = 0xff;
+            let _ = parse_simple_entry(&data);
+        }
+    }
+
+    #[test]
     fn non_utf8_key_errs() {
         let mut data = build_entry("https://a.test/x", b"b", b"HTTP/1.1 200 OK\0\0", None);
         // Corrupt a key byte to invalid UTF-8 (0xff is never valid in UTF-8).

@@ -475,6 +475,20 @@ mod tests {
     }
 
     #[test]
+    fn cache2_truncation_at_every_length_never_panics() {
+        // The trailing big-endian bodyLen read and every offset derived from it
+        // must tolerate a buffer truncated to any length — no OOB panic.
+        let full = build_cache2(":https://x/", b"body-bytes", RH_GZIP, 3);
+        for len in 0..=full.len() {
+            let _ = resource_from_cache2_bytes(
+                &full[..len],
+                PathBuf::from("/tmp/e"),
+                &DecompressLimits::default(),
+            );
+        }
+    }
+
+    #[test]
     fn lying_metadata_offset_beyond_file_errs() {
         let mut data = build_cache2(":https://x/", b"body", "HTTP/2 200 \r\n", 3);
         let n = data.len();

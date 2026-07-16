@@ -562,6 +562,28 @@ mod tests {
     }
 
     #[test]
+    fn index_truncation_at_every_length_never_panics() {
+        // The magic, entry_count and per-entry hash reads sit at offsets derived
+        // from a declared count; every truncation must return Ok/Err, not panic.
+        let full = build_real_index(&[0x1111, 0x2222, 0x3333, 0x4444]);
+        for len in 0..=full.len() {
+            let _ = parse_real_index_hashes(&full[..len]);
+        }
+    }
+
+    #[test]
+    fn index_lying_entry_count_is_capped_not_trusted() {
+        // entry_count (payload offset 12) claims far more entries than the file
+        // holds; the parser must cap to the available stride, never read OOB.
+        let mut idx = build_real_index(&[0x1111]);
+        // payload starts after the 8-byte pickle header; entry_count is at
+        // payload offset 12 -> absolute offset 8 + 12 = 20.
+        idx[20..28].copy_from_slice(&u64::MAX.to_le_bytes());
+        let set = parse_real_index_hashes(&idx).expect("capped, not panicked");
+        assert!(set.len() <= 1);
+    }
+
+    #[test]
     fn recovers_orphan_not_live_entry() {
         let dir = TempDir::new().unwrap();
         // live entry hash 0xAAAA... is in the index; orphan 0xBBBB... is not.

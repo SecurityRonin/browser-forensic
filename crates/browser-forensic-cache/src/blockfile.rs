@@ -573,6 +573,39 @@ mod tests {
         assert!(matches!(err, CacheError::TooSmall { .. }), "{err}");
     }
 
+    #[test]
+    fn index_truncation_at_every_length_never_panics() {
+        // Truncating a valid index at every byte length exercises the header,
+        // num_entries, table_len and per-slot reads against a buffer that no
+        // longer covers the offset each field claims — must never panic.
+        let full = build_index(INDEX_MAGIC, &[0xA001_0000, 0x0000_0000, 0xA001_0001]);
+        for len in 0..=full.len() {
+            let _ = parse_blockfile_index(&full[..len]);
+        }
+    }
+
+    #[test]
+    fn index_lying_table_len_is_capped_not_trusted() {
+        // A hostile num_entries/table_len (offsets 8 and 28) far larger than the
+        // file can hold must be capped to the available slots, never read OOB.
+        let mut idx = build_index(INDEX_MAGIC, &[0xA001_0000]);
+        idx[8..12].copy_from_slice(&0x7fff_ffffi32.to_le_bytes()); // num_entries
+        idx[28..32].copy_from_slice(&0x7fff_ffffi32.to_le_bytes()); // table_len
+        let parsed = parse_blockfile_index(&idx).expect("capped, not panicked");
+        assert!(parsed.table.len() <= (idx.len() - INDEX_HEADER_SIZE) / 4);
+    }
+
+    #[test]
+    fn entry_store_truncation_never_panics() {
+        // parse_entry_store reads eight 4/8-byte fields at fixed offsets; every
+        // truncation of a full 256-byte block must return None or a value, never
+        // an out-of-bounds panic.
+        let full = vec![0xABu8; ENTRY_META_SIZE + 8];
+        for len in 0..=full.len() {
+            let _ = parse_entry_store(&full[..len]);
+        }
+    }
+
     // -- end-to-end backend --------------------------------------------------
 
     fn block_header(this_file: i16, entry_size: i32) -> Vec<u8> {
