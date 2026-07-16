@@ -366,6 +366,7 @@ dependencies = [
  "anyhow",
  "browser-forensic-core",
  "rusqlite",
+ "safe-read",
  "serde_json",
  "snss-core",
  "tempfile",

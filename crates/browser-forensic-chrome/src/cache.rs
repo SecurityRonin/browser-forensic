@@ -46,9 +46,9 @@ pub fn parse_cache(cache_dir: &Path) -> Result<Vec<BrowserEvent>> {
 
         // Bytes 8-12 of EOF record = key_size as u32 LE. `eof_record` is the
         // trailing 24 bytes (guaranteed by the `file_len < 24` guard above), so
-        // `[8..12]` is always exactly 4 bytes; the fallback never fires.
-        let key_size =
-            u32::from_le_bytes(eof_record[8..12].try_into().unwrap_or([0u8; 4])) as usize;
+        // the read at offset 8 is in range; the shared bounded reader returns its
+        // exact value (0 only for an out-of-range window, which this precludes).
+        let key_size = safe_read::le_u32(eof_record, 8) as usize;
 
         if key_size == 0 || key_size > 8192 {
             continue;
