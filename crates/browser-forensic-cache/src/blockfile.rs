@@ -193,15 +193,15 @@ pub fn parse_blockfile_index(index: &[u8]) -> Result<BlockfileIndex, CacheError>
             need: INDEX_HEADER_SIZE,
         });
     }
-    let magic = rd_u32(index, 0).unwrap_or(0);
+    let magic = safe_read::le_u32(index, 0);
     if magic != INDEX_MAGIC {
         return Err(CacheError::BadHeaderMagic {
             found: u64::from(magic),
             expected: u64::from(INDEX_MAGIC),
         });
     }
-    let num_entries = rd_i32(index, 8).unwrap_or(0);
-    let mut table_len = match rd_i32(index, 28).unwrap_or(0) {
+    let num_entries = safe_read::le_u32(index, 8) as i32;
+    let mut table_len = match safe_read::le_u32(index, 28) as i32 {
         n if n <= 0 => DEFAULT_TABLE_LEN,
         n => n as usize,
     };
@@ -211,7 +211,7 @@ pub fn parse_blockfile_index(index: &[u8]) -> Result<BlockfileIndex, CacheError>
 
     let mut table = Vec::with_capacity(table_len);
     for slot in 0..table_len {
-        table.push(rd_u32(index, INDEX_HEADER_SIZE + slot * 4).unwrap_or(0));
+        table.push(safe_read::le_u32(index, INDEX_HEADER_SIZE + slot * 4));
     }
     Ok(BlockfileIndex { num_entries, table })
 }
@@ -600,7 +600,7 @@ mod tests {
         // parse_entry_store reads eight 4/8-byte fields at fixed offsets; every
         // truncation of a full 256-byte block must return None or a value, never
         // an out-of-bounds panic.
-        let full = vec![0xABu8; ENTRY_META_SIZE + 8];
+        let full = [0xABu8; ENTRY_META_SIZE + 8];
         for len in 0..=full.len() {
             let _ = parse_entry_store(&full[..len]);
         }

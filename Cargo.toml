@@ -39,6 +39,13 @@ repository = "https://github.com/SecurityRonin/browser-forensic"
 
 [workspace.dependencies]
 anyhow = "1"
+# safe-read: the shared, fuzzed, no_std panic-free bounded integer readers
+# (le/be u16/u32/u64) — the single front door for every offset/length field
+# parsed from an attacker-controllable artifact. Out-of-range reads return 0
+# (which the surrounding length/offset validation then rejects), never a panic.
+# Replaces the per-crate hand-rolled bounded readers so the substrate is shared
+# and fuzzed once, not re-derived per reader.
+safe-read = "0.1"
 dirs = "6"
 lz4_flex = "0.11"
 plist = "1"

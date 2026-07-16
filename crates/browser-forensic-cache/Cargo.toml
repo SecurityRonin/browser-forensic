@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+safe-read = { workspace = true }
 thiserror = { workspace = true }
 flate2 = { workspace = true }
 brotli = { workspace = true }

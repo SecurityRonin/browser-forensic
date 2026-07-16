@@ -55,22 +55,6 @@ pub struct SimpleEntry {
     pub has_key_sha256: bool,
 }
 
-#[inline]
-fn read_u32_le(data: &[u8], off: usize) -> Option<u32> {
-    let end = off.checked_add(4)?;
-    let slice = data.get(off..end)?;
-    Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
-}
-
-#[inline]
-fn read_u64_le(data: &[u8], off: usize) -> Option<u64> {
-    let end = off.checked_add(8)?;
-    let slice = data.get(off..end)?;
-    let mut b = [0u8; 8];
-    b.copy_from_slice(slice);
-    Some(u64::from_le_bytes(b))
-}
-
 /// Parse a SimpleCache `[hash]_0` entry from its raw bytes.
 ///
 /// Returns the URL plus the raw stream-0 (headers) and stream-1 (body) byte
@@ -91,10 +75,10 @@ pub fn parse_simple_entry(data: &[u8]) -> Result<SimpleEntry, CacheError> {
     }
 
     // --- SimpleFileHeader ---
-    let header_magic = read_u64_le(data, 0).ok_or(CacheError::TooSmall {
-        found: file_len,
-        need: min,
-    })?;
+    // Offsets 0/12 are covered by the `file_len < min` guard above; the shared
+    // bounded reader returns the exact value here (0 only if out of range, which
+    // this guard already precludes) — a bad magic is still caught below.
+    let header_magic = safe_read::le_u64(data, 0);
     if header_magic != HEADER_MAGIC {
         return Err(CacheError::BadHeaderMagic {
             found: header_magic,
@@ -102,11 +86,7 @@ pub fn parse_simple_entry(data: &[u8]) -> Result<SimpleEntry, CacheError> {
         });
     }
     // version at [8..12], key_length at [12..16], key_hash at [16..20].
-    let key_length = read_u32_le(data, 12).ok_or(CacheError::OutOfBounds {
-        field: "key_length",
-        value: 0,
-        file_len,
-    })? as usize;
+    let key_length = safe_read::le_u32(data, 12) as usize;
     if key_length == 0 || key_length > MAX_KEY_LEN {
         return Err(CacheError::OutOfBounds {
             field: "key_length",
@@ -157,12 +137,11 @@ fn locate_streams(
     key_end: usize,
 ) -> Result<StreamLayout, CacheError> {
     // --- stream-0 EOF (the final 24 bytes) ---
+    // eof0_off = file_len - 24 and file_len >= HEADER_SIZE + EOF_SIZE, so the
+    // magic/flags/size reads at eof0_off, +8 and +16 are all in range; the
+    // bounded reader yields their exact values (0 only if out of range).
     let eof0_off = file_len - EOF_SIZE;
-    let eof0_magic = read_u64_le(data, eof0_off).ok_or(CacheError::OutOfBounds {
-        field: "eof0_offset",
-        value: eof0_off as u64,
-        file_len,
-    })?;
+    let eof0_magic = safe_read::le_u64(data, eof0_off);
     if eof0_magic != EOF_MAGIC {
         return Err(CacheError::BadEofMagic {
             found: eof0_magic,
@@ -170,8 +149,8 @@ fn locate_streams(
             expected: EOF_MAGIC,
         });
     }
-    let eof0_flags = read_u32_le(data, eof0_off + 8).unwrap_or(0);
-    let stream0_size = read_u32_le(data, eof0_off + 16).unwrap_or(0) as usize;
+    let eof0_flags = safe_read::le_u32(data, eof0_off + 8);
+    let stream0_size = safe_read::le_u32(data, eof0_off + 16) as usize;
     let stream0_has_crc32 = eof0_flags & FLAG_HAS_CRC32 != 0;
     let has_key_sha256 = eof0_flags & FLAG_HAS_KEY_SHA256 != 0;
     let sha_len = if has_key_sha256 { KEY_SHA256_SIZE } else { 0 };
@@ -207,11 +186,9 @@ fn locate_streams(
             file_len,
         });
     }
-    let eof1_magic = read_u64_le(data, eof1_off).ok_or(CacheError::OutOfBounds {
-        field: "eof1_offset",
-        value: eof1_off as u64,
-        file_len,
-    })?;
+    // eof1_off < stream0_start <= file_len - EOF_SIZE, so the 8-byte magic read
+    // is in range; the bounded reader returns its exact value.
+    let eof1_magic = safe_read::le_u64(data, eof1_off);
     if eof1_magic != EOF_MAGIC {
         return Err(CacheError::BadEofMagic {
             found: eof1_magic,

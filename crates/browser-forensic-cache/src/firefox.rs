@@ -171,8 +171,9 @@ fn parse_cache2_metadata(data: &[u8]) -> Result<Cache2Metadata, CacheError> {
     if n < 4 {
         return Err(CacheError::TooSmall { found: n, need: 4 });
     }
-    let body_len =
-        u32::from_be_bytes([data[n - 4], data[n - 3], data[n - 2], data[n - 1]]) as usize;
+    // n >= 4 (guard above), so the trailing big-endian bodyLen read is in range;
+    // the shared bounded reader returns its exact value (0 only if out of range).
+    let body_len = safe_read::be_u32(data, n - 4) as usize;
     if body_len > n {
         return Err(CacheError::OutOfBounds {
             field: "metadataOffset",

@@ -161,14 +161,16 @@ pub fn parse_real_index_hashes(bytes: &[u8]) -> Result<HashSet<u64>, CacheError>
             need: META_END,
         });
     }
-    let magic = rd_u64(bytes, HEADER).unwrap_or(0);
+    // Offsets HEADER and HEADER+12 are covered by the `bytes.len() < META_END`
+    // guard above; the shared bounded reader returns their exact values.
+    let magic = safe_read::le_u64(bytes, HEADER);
     if magic != INDEX_MAGIC {
         return Err(CacheError::BadHeaderMagic {
             found: magic,
             expected: INDEX_MAGIC,
         });
     }
-    let entry_count = rd_u64(bytes, HEADER + 12).unwrap_or(0);
+    let entry_count = safe_read::le_u64(bytes, HEADER + 12);
     // Bound the declared count against what the file can actually hold (the
     // trailing i64 cache_modified sits after the last entry).
     let available = bytes.len().saturating_sub(META_END).saturating_sub(8) / ENTRY_STRIDE;
