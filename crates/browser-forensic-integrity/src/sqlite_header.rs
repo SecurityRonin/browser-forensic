@@ -47,13 +47,6 @@ pub struct SqliteHeader {
     pub sqlite_version_number: u32,
 }
 
-/// Read a big-endian `u32` at `offset`, returning `None` if it would run past
-/// the end of `bytes` (never panics, never indexes out of bounds).
-fn be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    let slice = bytes.get(offset..offset.checked_add(4)?)?;
-    Some(u32::from_be_bytes([slice[0], slice[1], slice[2], slice[3]]))
-}
-
 /// Parse the 100-byte SQLite header from the start of `bytes`.
 ///
 /// Returns `None` when `bytes` is shorter than the header or does not begin with
@@ -65,9 +58,13 @@ pub fn parse_header(bytes: &[u8]) -> Option<SqliteHeader> {
         return None;
     }
 
+    // `header` is exactly HEADER_LEN (100) bytes, so every fixed field offset
+    // below is in range; the shared bounded reader returns each field's exact
+    // value (0 only for an out-of-range window, which this slice precludes).
+    //
     // page_size is a 2-byte BE value at offset 16; the stored value 1 encodes the
     // real page size 65536 (file-format spec §1.3.2).
-    let raw_page_size = u16::from_be_bytes([header[16], header[17]]);
+    let raw_page_size = safe_read::be_u16(header, 16);
     let page_size = if raw_page_size == 1 {
         65_536
     } else {
@@ -78,16 +75,16 @@ pub fn parse_header(bytes: &[u8]) -> Option<SqliteHeader> {
         page_size,
         write_version: header[18],
         read_version: header[19],
-        change_counter: be_u32(header, 24)?,
-        page_count: be_u32(header, 28)?,
-        freelist_pages: be_u32(header, 36)?,
-        schema_cookie: be_u32(header, 40)?,
-        schema_format: be_u32(header, 44)?,
-        text_encoding: be_u32(header, 56)?,
-        user_version: be_u32(header, 60)?,
-        application_id: be_u32(header, 68)?,
-        version_valid_for: be_u32(header, 92)?,
-        sqlite_version_number: be_u32(header, 96)?,
+        change_counter: safe_read::be_u32(header, 24),
+        page_count: safe_read::be_u32(header, 28),
+        freelist_pages: safe_read::be_u32(header, 36),
+        schema_cookie: safe_read::be_u32(header, 40),
+        schema_format: safe_read::be_u32(header, 44),
+        text_encoding: safe_read::be_u32(header, 56),
+        user_version: safe_read::be_u32(header, 60),
+        application_id: safe_read::be_u32(header, 68),
+        version_valid_for: safe_read::be_u32(header, 92),
+        sqlite_version_number: safe_read::be_u32(header, 96),
     })
 }
 

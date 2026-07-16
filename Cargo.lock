@@ -523,6 +523,7 @@ dependencies = [
  "anyhow",
  "browser-forensic-core",
  "rusqlite",
+ "safe-read",
  "serde",
  "serde_json",
  "sqlite-core",
