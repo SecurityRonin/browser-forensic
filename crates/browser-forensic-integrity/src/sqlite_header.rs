@@ -135,6 +135,17 @@ mod tests {
     }
 
     #[test]
+    fn truncation_at_every_length_never_panics() {
+        // Every prefix of a real database header — including lengths shorter than
+        // a field's offset+width — must return None or a header, never an
+        // out-of-bounds panic on the fixed-offset big-endian field reads.
+        let bytes = real_db_bytes();
+        for len in 0..=bytes.len().min(HEADER_LEN + 4) {
+            let _ = parse_header(&bytes[..len]);
+        }
+    }
+
+    #[test]
     fn extracts_manual_edit_fields() {
         let bytes = real_db_bytes();
         let h = parse_header(&bytes).expect("valid header");
