@@ -119,6 +119,24 @@ mod tests {
     }
 
     #[test]
+    fn truncated_entry_files_never_panic() {
+        // A cache entry file truncated to any length — including lengths shorter
+        // than the 24-byte EOF record the key_size read lives in — must be
+        // skipped, not panic.
+        let mut full = Vec::new();
+        full.extend_from_slice(b"\x00\x00\x00\x00https://example.com/resource.js");
+        let mut eof_record = vec![0u8; 24];
+        eof_record[8..12]
+            .copy_from_slice(&("https://example.com/resource.js".len() as u32).to_le_bytes());
+        full.extend_from_slice(&eof_record);
+        for len in 0..=full.len() {
+            let dir = TempDir::new().unwrap();
+            fs::write(dir.path().join("entry0001"), &full[..len]).unwrap();
+            let _ = parse_cache(dir.path()).unwrap();
+        }
+    }
+
+    #[test]
     fn parse_cache_extracts_url_from_entry() {
         let dir = TempDir::new().unwrap();
         create_cache_file(&dir, "abcdef1234567890", "https://example.com/resource.js");
