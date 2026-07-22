@@ -82,7 +82,7 @@ fn empty_result(bytes_scanned: u64) -> CarveResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::RecoveryMethod;
+    use crate::SqliteRecoveryMethod;
     use rusqlite::Connection;
     use std::path::PathBuf;
     use tempfile::{tempdir, NamedTempFile};
@@ -152,7 +152,7 @@ mod tests {
             result
                 .records
                 .iter()
-                .all(|r| matches!(r.method, RecoveryMethod::WalUncommitted)),
+                .all(|r| matches!(r.method, SqliteRecoveryMethod::WalUncommitted)),
             "WAL recoveries carry the WalUncommitted method"
         );
     }

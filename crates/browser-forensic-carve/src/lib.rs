@@ -26,9 +26,11 @@ use serde::Serialize;
 use sqlite_core::Value;
 use sqlite_forensic::{Attribution, RecoverySource};
 
-/// How a deleted record was recovered.
+/// How a deleted SQLite record was recovered — the recovery *substrate* within a
+/// SQLite database (fleet ADR 0001 §3 reserves the bare `RecoveryMethod` name for
+/// the fleet-level `forensic-carve` type).
 #[derive(Debug, Clone, Serialize)]
-pub enum RecoveryMethod {
+pub enum SqliteRecoveryMethod {
     /// Recovered from a SQLite free (deallocated) page.
     FreePage,
     /// Recovered from uncommitted WAL transactions.
@@ -38,6 +40,13 @@ pub enum RecoveryMethod {
     /// Found via direct byte-pattern scanning.
     DirectScan,
 }
+
+/// Deprecated alias for [`SqliteRecoveryMethod`], kept for source compatibility.
+#[deprecated(
+    since = "0.3.0",
+    note = "renamed to SqliteRecoveryMethod (fleet ADR 0001 §3)"
+)]
+pub type RecoveryMethod = SqliteRecoveryMethod;
 
 /// Quality of the recovered record.
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +65,7 @@ pub struct CarvedRecord {
     pub offset: u64,
     pub table: String,
     pub fields: HashMap<String, serde_json::Value>,
-    pub method: RecoveryMethod,
+    pub method: SqliteRecoveryMethod,
     pub quality: RecoveryQuality,
 }
 
@@ -85,7 +94,7 @@ const COMPLETE_CONFIDENCE: f32 = 0.7;
 /// Map a [`sqlite_forensic`] carved record plus its table attribution onto the
 /// browser-forensic [`CarvedRecord`] the CLI and triage consume. Shared by the
 /// free-space ([`carve_sqlite_free_pages`]) and WAL ([`recover_from_wal`]) paths;
-/// the [`RecoveryMethod`] is derived from the recovery substrate.
+/// the [`SqliteRecoveryMethod`] is derived from the recovery substrate.
 pub(crate) fn map_carved_record(
     rec: &sqlite_forensic::CarvedRecord,
     attr: &Attribution,
@@ -113,9 +122,11 @@ pub(crate) fn map_carved_record(
     // residue is uncommitted WAL state; a rollback journal is JournalRollback;
     // every on-disk free-space class is a free page.
     let method = match rec.source {
-        RecoverySource::WalFrame | RecoverySource::CommitSnapshot => RecoveryMethod::WalUncommitted,
-        RecoverySource::RollbackJournal(_) => RecoveryMethod::JournalRollback,
-        _ => RecoveryMethod::FreePage,
+        RecoverySource::WalFrame | RecoverySource::CommitSnapshot => {
+            SqliteRecoveryMethod::WalUncommitted
+        }
+        RecoverySource::RollbackJournal(_) => SqliteRecoveryMethod::JournalRollback,
+        _ => SqliteRecoveryMethod::FreePage,
     };
 
     CarvedRecord {
@@ -159,7 +170,7 @@ mod tests {
 
     #[test]
     fn recovery_method_serializes() {
-        let method = RecoveryMethod::FreePage;
+        let method = SqliteRecoveryMethod::FreePage;
         let json = serde_json::to_string(&method).expect("serialize");
         assert!(json.contains("FreePage"));
     }
@@ -201,7 +212,7 @@ mod tests {
                 m.insert("title".to_string(), serde_json::json!("Carved Page"));
                 m
             },
-            method: RecoveryMethod::FreePage,
+            method: SqliteRecoveryMethod::FreePage,
             quality: RecoveryQuality::Complete,
         };
         let json = serde_json::to_string(&record).expect("serialize");
@@ -236,12 +247,15 @@ mod tests {
             offset: 0,
             table: "test".to_string(),
             fields: HashMap::new(),
-            method: RecoveryMethod::WalUncommitted,
+            method: SqliteRecoveryMethod::WalUncommitted,
             quality: RecoveryQuality::Partial,
         };
         let cloned = record.clone();
         assert_eq!(cloned.table, "test");
-        assert!(matches!(cloned.method, RecoveryMethod::WalUncommitted));
+        assert!(matches!(
+            cloned.method,
+            SqliteRecoveryMethod::WalUncommitted
+        ));
     }
 
     #[test]

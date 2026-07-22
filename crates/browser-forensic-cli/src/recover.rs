@@ -65,27 +65,29 @@ fn carved_fields_summary(record: &browser_forensic_carve::CarvedRecord) -> Strin
 /// a deliberate user act.
 #[must_use]
 pub fn carved_record_findings(records: &[browser_forensic_carve::CarvedRecord]) -> Vec<Finding> {
-    use browser_forensic_carve::{RecoveryMethod, RecoveryQuality};
+    use browser_forensic_carve::{RecoveryQuality, SqliteRecoveryMethod};
     records
         .iter()
         .map(|rec| {
             // Free-space / direct-scan residue is precisely "carved"; WAL /
             // rollback-journal residue is an uncommitted-then-deleted record.
             let state = match rec.method {
-                RecoveryMethod::WalUncommitted | RecoveryMethod::JournalRollback => {
+                SqliteRecoveryMethod::WalUncommitted | SqliteRecoveryMethod::JournalRollback => {
                     EvidenceState::Deleted
                 }
-                RecoveryMethod::FreePage | RecoveryMethod::DirectScan => EvidenceState::Carved,
+                SqliteRecoveryMethod::FreePage | SqliteRecoveryMethod::DirectScan => {
+                    EvidenceState::Carved
+                }
             };
             let confidence = match rec.quality {
                 RecoveryQuality::Complete => Confidence::Medium,
                 RecoveryQuality::Partial | RecoveryQuality::Corrupt => Confidence::Low,
             };
             let substrate = match rec.method {
-                RecoveryMethod::FreePage => "a SQLite free (deallocated) page",
-                RecoveryMethod::WalUncommitted => "an uncommitted WAL frame",
-                RecoveryMethod::JournalRollback => "a rollback journal",
-                RecoveryMethod::DirectScan => "a raw byte-pattern scan",
+                SqliteRecoveryMethod::FreePage => "a SQLite free (deallocated) page",
+                SqliteRecoveryMethod::WalUncommitted => "an uncommitted WAL frame",
+                SqliteRecoveryMethod::JournalRollback => "a rollback journal",
+                SqliteRecoveryMethod::DirectScan => "a raw byte-pattern scan",
             };
             let provenance = Provenance::new(
                 EvidenceSource::Carved,
@@ -515,7 +517,7 @@ mod tests {
             offset: 4096,
             table: table.to_string(),
             fields,
-            method: browser_forensic_carve::RecoveryMethod::FreePage,
+            method: browser_forensic_carve::SqliteRecoveryMethod::FreePage,
             quality: browser_forensic_carve::RecoveryQuality::Complete,
         }
     }
