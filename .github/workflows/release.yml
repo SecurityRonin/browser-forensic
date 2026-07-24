@@ -1,0 +1,257 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-15
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          # Must match rust-toolchain.toml's pin: that file overrides the
+          # toolchain cargo uses, so the cross-target has to be installed onto
+          # the pinned version, not the action's default `stable`.
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools (Linux)
+        if: contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-musl" ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          fi
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Azure login (OIDC)
+        if: runner.os == 'Windows'
+        uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows .exe (Azure Trusted Signing)
+        if: runner.os == 'Windows'
+        uses: azure/trusted-signing-action@208f8af4bf26cf2af8597424e3cb5582801523ba # v2.0.0
+        with:
+          endpoint: https://neu.codesigning.azure.net
+          trusted-signing-account-name: securityronin
+          certificate-profile-name: securityronin-public
+          files-folder: target/${{ matrix.target }}/release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../br4n6-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz br4n6
+          cd ../../..
+
+      - name: Install cargo-wix (Windows)
+        if: runner.os == 'Windows'
+        run: cargo install cargo-wix --version 0.3.9 --locked
+
+      - name: Build MSI (Windows)
+        if: runner.os == 'Windows'
+        run: cargo wix --no-build --target ${{ matrix.target }} --output br4n6-${{ steps.version.outputs.version }}-${{ matrix.target }}.msi
+
+      - name: Sign Windows .msi (Azure Trusted Signing)
+        if: runner.os == 'Windows'
+        uses: azure/trusted-signing-action@208f8af4bf26cf2af8597424e3cb5582801523ba # v2.0.0
+        with:
+          endpoint: https://neu.codesigning.azure.net
+          trusted-signing-account-name: securityronin
+          certificate-profile-name: securityronin-public
+          files-folder: ${{ github.workspace }}
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: br4n6-${{ steps.version.outputs.version }}-${{ matrix.target }}
+          path: br4n6-${{ steps.version.outputs.version }}-${{ matrix.target }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+          pattern: 'br4n6-*-*-*'
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        with:
+          files: |
+            artifacts/br4n6-*
+            artifacts/checksums.txt
+          generate_release_notes: true
+
+      - name: Dispatch to homebrew tap
+        continue-on-error: true
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        with:
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          repository: SecurityRonin/homebrew-tap
+          event-type: update-br4n6
+          client-payload: '{"version": "${{ github.ref_name }}"}'
+
+  crate:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Publish to crates.io
+        run: |
+          output=$(cargo publish --allow-dirty 2>&1) && echo "$output" || {
+            echo "$output"
+            echo "$output" | grep -q "already exists on crates.io" || exit 1
+            echo "Version already published to crates.io, skipping"
+          }
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  winget:
+    needs: release
+    runs-on: windows-latest
+    # First-time winget submission requires a manual PR; continue-on-error until registered
+    continue-on-error: true
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
+        with:
+          identifier: SecurityRonin.br4n6
+          installers-regex: '\.msi$'
+          token: ${{ secrets.WINGET_TOKEN }}
+          fork-user: securityronin-bot
+
+  deb:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          # Must match rust-toolchain.toml's pin: that file overrides the
+          # toolchain cargo uses, so the cross-target has to be installed onto
+          # the pinned version, not the action's default `stable`.
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --version 2.11.2 --locked
+
+      - name: Build .deb package
+        run: cargo deb --target ${{ matrix.target }}
+
+      - name: Find .deb file
+        id: find_deb
+        run: |
+          DEB_FILE=$(find target/${{ matrix.target }}/debian -name '*.deb' | head -1)
+          echo "deb_path=$DEB_FILE" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-forensic-${{ matrix.arch }}.deb
+          path: ${{ steps.find_deb.outputs.deb_path }}
+
+  release-deb:
+    needs: [release, deb]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: browser-forensic-*.deb
+          path: debs
+          merge-multiple: true
+
+      - name: Upload .deb to release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        with:
+          files: debs/*.deb
+
+  cloudsmith:
+    needs: release-deb
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: browser-forensic-*.deb
+          path: debs
+          merge-multiple: true
+
+      - name: Install Cloudsmith CLI
+        run: |
+          pip install --user cloudsmith-cli==1.16.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Push amd64 to Cloudsmith
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: cloudsmith push deb securityronin/browser-forensic/any-distro/any-version debs/browser-forensic_*_amd64.deb
+
+      - name: Push arm64 to Cloudsmith
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: cloudsmith push deb securityronin/browser-forensic/any-distro/any-version debs/browser-forensic_*_arm64.deb

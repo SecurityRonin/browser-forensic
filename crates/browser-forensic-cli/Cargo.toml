@@ -1,4 +1,5 @@
 [package]
+authors = ["Albert Hui <albert@securityronin.com>"]
 name = "browser-forensic-cli"
 publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.3.0"
