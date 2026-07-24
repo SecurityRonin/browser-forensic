@@ -1,0 +1,1503 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://securityronin.github.io/browser-forensic/rfcs/0001-cli-ux-redesign/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>RFC 0001 — br4n6 CLI UX Redesign - browser-forensic</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rfc-0001-br4n6-cli-ux-redesign" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="browser-forensic" class="md-header__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            browser-forensic
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              RFC 0001 — br4n6 CLI UX Redesign
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../prd/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Product Requirements
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../migration-v2/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Migrating to v2 (command surface)
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../validation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Decryption validation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../decisions/0001-layered-multi-crate-workspace/" class="md-tabs__link">
+          
+  
+  
+  Decisions
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../privacy/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Privacy Policy
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../terms/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Terms of Service
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="browser-forensic" class="md-nav__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    browser-forensic
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Product Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration-v2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating to v2 (command surface)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decryption validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0001-layered-multi-crate-workspace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layered multi-crate workspace
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0002-normalized-browserevent-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One normalized BrowserEvent schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0003-two-track-sqlite-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Two-track SQLite access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0004-reuse-leveldb-forensic-for-web-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reuse leveldb-forensic for web storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0005-knowledge-as-code-forensicnomicon/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge-as-code via forensicnomicon
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0006-capable-by-default-no-feature-gating/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capable by default
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0007-panic-free-fuzzed-parsing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Panic-free, fuzzed parsing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0008-structural-signature-sweep-for-containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Structural signature sweep
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0009-clean-room-hindsight-interpretation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clean-room Hindsight interpretation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0010-dual-mode-cli-tui-binary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dual-mode CLI and TUI binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../decisions/0011-secret-free-redacted-mcp-bridge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Secret-free, redacted MCP bridge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terms of Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#problem-why-a-tired-examiner-has-to-think" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem — why a tired examiner has to think
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-redesigned-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The redesigned surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions-each-carries-the-critic-finding-it-resolves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decisions (each carries the critic finding it resolves)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decisions (each carries the critic finding it resolves)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#d1-task-verbs-are-the-default-help-surface-artifact-preserves-all-power" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D1 — Task-verbs are the default help surface; artifact preserves all power
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d2-bounded-tiering-is-the-default-skipped-work-is-impossible-to-miss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D2 — Bounded tiering is the default; skipped work is impossible to miss
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d3-bare-br4n6-path-is-convenience-only-ambiguity-guarded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D3 — Bare br4n6 &lt;PATH&gt; is convenience-only, ambiguity-guarded
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d4-find-preserves-provenance-it-does-not-homogenize-evidence-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D4 — find preserves provenance; it does NOT homogenize evidence classes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d5-split-priority-confidence-interpretation-kill-the-bare-high" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D5 — Split Priority / Confidence / Interpretation (kill the bare "HIGH")
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d6-reconstruct-not-show-what-the-user-saw" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D6 — reconstruct, not "show what the user SAW"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d7-keys-is-evidence-root-constrained-secrets-are-output-oriented-keys-are-audited" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D7 — --keys is evidence-root-constrained; secrets are output-oriented; keys are audited
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d8-auto-detect-with-layered-confidence-logged-to-the-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D8 — Auto-detect with layered confidence, logged to the manifest
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d9-multi-user-multi-profile-selectors-every-finding-stamped-with-origin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D9 — Multi-user / multi-profile selectors; every finding stamped with origin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d10-output-ux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D10 — Output UX
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d11-auditability-is-first-class-the-redesign-is-a-clean-break-no-backward-compat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D11 — Auditability is first-class; the redesign is a clean break (no backward compat)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rejected-both-critics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rejected (both critics)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phased-implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phased implementation plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resolved-decisions-owner-review-2026-07-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolved decisions (owner review, 2026-07-13)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="rfc-0001-br4n6-cli-ux-redesign">RFC 0001 — br4n6 CLI UX Redesign<a class="headerlink" href="#rfc-0001-br4n6-cli-ux-redesign" title="Permanent link">&para;</a></h1>
+<p><strong>Status:</strong> Accepted (2026-07-13) — decisions settled; implementation begins at P0.
+<strong>Persona:</strong> an overworked, tired incident-response examiner at 2am.
+<strong>Mantra:</strong> <em>don't make them think</em> (Krug), by <em>doing less magic and showing more provenance</em>.</p>
+<p><strong>Resolved on review:</strong> (1) default tier = <code>--standard</code>; (2) <code>recover</code> is an orchestrator over <code>artifact</code> primitives <em>discoverable from its <code>--help</code></em>, no <code>recover deleted/carve/memory</code> submodes (the examiner asks "what's deleted?", not "carve vs memory"); (3) <strong>clean break — remove ALL backward compatibility</strong>, no aliases/shims (see D11); (4) ship the guarded bare-path convenience (D3, P7); (5) P3 includes full checkpoint/resumability for huge images. The <code>bw</code> short binary-name is retained (a convenience alias, not backward-compat).</p>
+<h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
+<p><code>br4n6</code> today exposes <strong>46 flat subcommands</strong>. That is a wall: the examiner must already know the forensic taxonomy <em>and</em> this tool's vocabulary to pick one. This RFC proposes a <strong>two-layer surface</strong> — a small set of <strong>task-oriented verbs</strong> the examiner already thinks in (their questions), over the existing 46 primitives (kept as capabilities, reachable under an <code>artifact &lt;name&gt;</code> namespace). It is a <strong>clean break at a major version</strong>: the old flat command names are removed outright — no aliases, no compatibility shims (see D11).</p>
+<p>The design was generated by one model (Fable 5) and independently pressure-tested by two critics (Codex and Gemini 3.1 Pro). Their two convergent objections — a heavy default that <em>looks crashed or hides evidence</em> at 2am, and overclaiming labels that <em>don't hold in court</em> — shape the decisions below. Where the critics rejected an idea, this RFC rejects it too.</p>
+<h2 id="problem-why-a-tired-examiner-has-to-think">Problem — why a tired examiner has to think<a class="headerlink" href="#problem-why-a-tired-examiner-has-to-think" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Problem</th>
+<th>Cost at 2am</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>46 flat commands, no hierarchy</td>
+<td><code>--help</code> is a wall; must know the tool's vocabulary to choose</td>
+</tr>
+<tr>
+<td>2</td>
+<td>No "just tell me what happened"</td>
+<td>bare <code>br4n6 &lt;path&gt;</code> errors today — the most likely first invocation fails</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Synonym verb-sets (<code>chains</code>/<code>correlate</code>/<code>graph</code>; <code>search</code>/<code>extract-iocs</code>/<code>match-domains</code>; 4× <code>cache*</code>)</td>
+<td>wrong pick → fear of missed evidence</td>
+</tr>
+<tr>
+<td>4</td>
+<td>PATH ambiguity (file? profile? image? home? dump?)</td>
+<td>examiner must classify their own evidence before the tool will</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Decryption flag soup (<code>--decrypt-win --local-state --dpapi-masterkey</code>)</td>
+<td>3-flag, platform-specific incantation; silent encrypted blobs on failure</td>
+</tr>
+<tr>
+<td>6</td>
+<td>6 Chromium micro-artifacts at top level</td>
+<td>must know Chromium internals to know they're usually skippable</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Output defaults to per-artifact row dumps</td>
+<td>answer buried in a wall</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Court-honesty is per-finding copy, not structural</td>
+<td>a renderer <em>can</em> still emit an absolute ("user deleted history")</td>
+</tr>
+</tbody>
+</table>
+<h2 id="design-principles">Design principles<a class="headerlink" href="#design-principles" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Verbs are the examiner's questions, not the format's nouns.</strong> What happened → <code>investigate</code>. Did they touch X → <code>find</code>. When → <code>timeline</code>. What's deleted → <code>recover</code>. What did it look like → <code>reconstruct</code>. What do I hand the lawyer → <code>report</code>.</li>
+<li><strong>Do less magic, show more provenance.</strong> Every auto-decision (path type, key source, severity) is <em>shown with its basis and confidence</em>, never silently applied.</li>
+<li><strong>Bounded by default, exhaustive on request.</strong> The default must never look crashed (Gemini's "black hole") and never silently skip the evidence they fear missing (Codex's "false reassurance").</li>
+<li><strong>Court-safe by construction.</strong> Priority ≠ confidence ≠ interpretation, enforced by the data model — not by careful wording a future renderer could violate.</li>
+<li><strong>Clean break — the new surface is the only surface.</strong> The 46 primitives live on as capabilities under <code>artifact &lt;name&gt;</code>, but the old flat command names are removed at a major version. No aliases, no shims: one honest way to do each thing, and migration is a one-time doc, not permanent code.</li>
+</ol>
+<h2 id="the-redesigned-surface">The redesigned surface<a class="headerlink" href="#the-redesigned-surface" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>br4n6 investigate &lt;PATH&gt;     # bounded triage → ranked, provenance-tagged summary   (canonical)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>br4n6 find &lt;TERM&gt; &lt;PATH&gt;     # &quot;did they visit/download/search X?&quot; — provenance-first
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>br4n6 timeline &lt;PATH&gt;        # unified chronology across artifacts
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>br4n6 recover &lt;PATH&gt;         # deleted/carved/tamper — orchestrator with explicit submodes
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>br4n6 reconstruct &lt;URL&gt; &lt;PATH&gt;  # cached representations consistent with access (html/warc/gallery)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>br4n6 report &lt;PATH&gt;          # reproducible court/exam bundle (html+xlsx+jsonl+manifest+hashes)
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a># power / discovery layer
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>br4n6 artifact &lt;NAME&gt; &lt;PATH&gt; # the 46 primitives, one namespace, current semantics + --format
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>br4n6 artifact --list        # table: name · browser family · what it proves
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>br4n6 ls &lt;PATH&gt;              # instant inventory: browsers, profiles, users, artifact counts
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>br4n6 tui &lt;PATH&gt;             # interactive viewer (unchanged)
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>br4n6 schema [NAME]          # BrowserEvent JSON Schema (unchanged)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>br4n6 &lt;PATH&gt;                 # CONVENIENCE ONLY → investigate, guarded (see D3)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>br4n6                        # no args on a TTY → tldr-style cheat sheet, then exit
+</code></pre></div>
+<h2 id="decisions-each-carries-the-critic-finding-it-resolves">Decisions (each carries the critic finding it resolves)<a class="headerlink" href="#decisions-each-carries-the-critic-finding-it-resolves" title="Permanent link">&para;</a></h2>
+<h3 id="d1-task-verbs-are-the-default-help-surface-artifact-preserves-all-power">D1 — Task-verbs are the default help surface; <code>artifact</code> preserves all power<a class="headerlink" href="#d1-task-verbs-are-the-default-help-surface-artifact-preserves-all-power" title="Permanent link">&para;</a></h3>
+<p>Default <code>--help</code> shows the 6 verbs + <code>ls</code>/<code>tui</code>. The 46 primitives are reachable, discoverable from <code>br4n6 artifact --list</code> and from each verb's <code>--help</code> "Next:" pointers — <strong>not hidden so well experts can't find artifact-specific workflows</strong> (Codex). <em>Build as-is (unanimous).</em></p>
+<h3 id="d2-bounded-tiering-is-the-default-skipped-work-is-impossible-to-miss">D2 — Bounded tiering is the default; skipped work is impossible to miss<a class="headerlink" href="#d2-bounded-tiering-is-the-default-skipped-work-is-impossible-to-miss" title="Permanent link">&para;</a></h3>
+<p>Both critics rejected a heavy <code>investigate</code> as the zero-thought default (Gemini: looks crashed; Codex: hides deleted evidence). Instead:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>--quick     live artifacts + cheap integrity
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>--standard  quick + bounded deleted-SQLite/WAL recovery        ← DEFAULT
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>--deep      standard + carving + cache reconstruction + memory + disk-wide scans
+</code></pre></div>
+<p>Bare <code>investigate</code> runs <strong><code>--standard</code></strong>. The summary footer <strong>always states what it did not do</strong>:
+<code>Deep recovery not run: carving, cache reconstruction, memory skipped. Deleted evidence may be missed → br4n6 investigate --deep &lt;PATH&gt;</code>.
+Plus <strong>progress heartbeats</strong> (<code>indicatif</code>: phase, rows, ETA) and <strong>Ctrl-C flushes the partial ranked summary</strong> and exits clean (a silent terminal is a dead terminal — Gemini).</p>
+<h3 id="d3-bare-br4n6-path-is-convenience-only-ambiguity-guarded">D3 — Bare <code>br4n6 &lt;PATH&gt;</code> is convenience-only, ambiguity-guarded<a class="headerlink" href="#d3-bare-br4n6-path-is-convenience-only-ambiguity-guarded" title="Permanent link">&para;</a></h3>
+<p><code>investigate &lt;PATH&gt;</code> is the canonical, documented form. Bare path is accepted <strong>only</strong> when the single token exists on disk <strong>and</strong> is not an exact command name; a token that is both a command and a path fails with a specific diagnostic:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Ambiguous: &quot;find&quot; is both a br4n6 command and a path.
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Use: br4n6 investigate ./find   |   or: br4n6 find &lt;term&gt; &lt;path&gt;
+</code></pre></div>
+Test matrix: paths named after every verb, paths beginning with <code>-</code>, <code>--</code> passthrough. "PATH always last" is <strong>rejected</strong> as a rigid rule; support <code>--</code> and explicit <code>--term</code>/<code>--regex</code>/<code>--terms-file</code> for the awkward cases (Codex).</p>
+<h3 id="d4-find-preserves-provenance-it-does-not-homogenize-evidence-classes">D4 — <code>find</code> preserves provenance; it does NOT homogenize evidence classes<a class="headerlink" href="#d4-find-preserves-provenance-it-does-not-homogenize-evidence-classes" title="Permanent link">&para;</a></h3>
+<p>Collapsing <code>search</code>/<code>extract-iocs</code>/<code>match-domains</code>/<code>recovered-domains</code> into one verb is fine as a front door, <strong>lossy as a data model</strong>. A live history hit, a carved string, and a recovered deleted domain have different confidence and courtroom value. Default <code>find</code> output carries columns:</p>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>TERM       SOURCE    STATE       CONF  TIME BASIS   USER-ACTION       MATCH
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>evil.com   history   live        high  explicit     visited           https://evil.com/a
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>evil.com   cache     live        med   surrounding  observed-string   https://evil.com/a.js
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>evil.com   carved    deleted     low   none         unknown           &lt;fragment&gt;
+</code></pre></div>
+<code>source · state(live/deleted/carved/reconstructed/inferred) · confidence(+rule id) · timestamp_basis · user_action_claim</code> are structural fields, present in text and JSONL.</p>
+<h3 id="d5-split-priority-confidence-interpretation-kill-the-bare-high">D5 — Split Priority / Confidence / Interpretation (kill the bare "HIGH")<a class="headerlink" href="#d5-split-priority-confidence-interpretation-kill-the-bare-high" title="Permanent link">&para;</a></h3>
+<p>A single <code>HIGH</code> reads as <em>high confidence of wrongdoing</em> in a legal/exec context. Each finding renders three separate axes, and the split is <strong>enforced by the finding data model</strong> so no renderer can emit an absolute:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Priority:       High            (look here first — a triage attention cue)
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>Confidence:     Medium          (+ rule id)
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>Interpretation: consistent with manual deletion, DB maintenance, or profile sync
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>Rule:           integrity.history.rowid_gap.v1
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>Evidence:       Chrome History urls rowid gap 128 → 944
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>Next:           br4n6 artifact integrity --rule history.rowid_gap &lt;PATH&gt;
+</code></pre></div>
+A one-line <code>report</code> footer states once that Priority is an attention cue, not a finding of malice.</p>
+<h3 id="d6-reconstruct-not-show-what-the-user-saw">D6 — <code>reconstruct</code>, not "show what the user SAW"<a class="headerlink" href="#d6-reconstruct-not-show-what-the-user-saw" title="Permanent link">&para;</a></h3>
+<p>Cache shows what was <em>stored</em>, not what was rendered, foregrounded, or seen by a human. The verb is <code>reconstruct</code>; output is phrased <em>"cached representations consistent with access to <code>&lt;url&gt;</code>"</em>, with the existing found-vs-missing sub-resource provenance manifest. (Rename also sets the "heavy operation" expectation — Gemini.)</p>
+<h3 id="d7-keys-is-evidence-root-constrained-secrets-are-output-oriented-keys-are-audited">D7 — <code>--keys</code> is evidence-root-constrained; secrets are output-oriented; keys are audited<a class="headerlink" href="#d7-keys-is-evidence-root-constrained-secrets-are-output-oriented-keys-are-audited" title="Permanent link">&para;</a></h3>
+<p>One-flag <code>--keys &lt;PATH&gt;</code> (both critics' favorite idea) — but auto-locating keys is a <strong>contamination/attribution hazard</strong> (Codex). Rules:
+- <strong>Never search outside the evidence root</strong> unless <code>--keys &lt;external&gt;</code> is given explicitly.
+- Print exactly which key sources were used; <strong>hash/identify every key file into the manifest</strong>.
+- Distinguish "key found" from "key successfully decrypted this item."
+- Without keys: encrypted material is <strong>counted and reported</strong>, never silently dropped (<code>1,022 cookies encrypted — add --keys &lt;path&gt;</code>).
+- Passwords render <code>[decrypted — write to file with --reveal-secrets &lt;file&gt;]</code>. <strong><code>--reveal-secrets</code> is file-output-oriented</strong>, never terminal by default (scrollback/tmux/screen-share leak PII). Password input via <code>--password-stdin</code> / prompt, <strong>never <code>user:pw</code> on argv</strong> (leaks to shell history + <code>ps</code>).</p>
+<h3 id="d8-auto-detect-with-layered-confidence-logged-to-the-manifest">D8 — Auto-detect with layered confidence, logged to the manifest<a class="headerlink" href="#d8-auto-detect-with-layered-confidence-logged-to-the-manifest" title="Permanent link">&para;</a></h3>
+<p>Magic bytes alone say "SQLite," not "Chrome History vs Cookies vs Firefox places." Detection is <strong>layered</strong> (magic → schema probe → directory markers → container/partition probe) and every result reports basis + confidence:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Detected: Chromium History (SQLite)   Confidence: high
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>Basis:    SQLite header + urls/visits schema + parent path .../Default/History
+</code></pre></div>
+Memory-dump and raw-disk detection are <strong>explicitly low-confidence</strong> unless a known header/container is present. The detection basis is <strong>written into the manifest</strong> for court defensibility. A <code>--type &lt;kind&gt;</code> override always exists (Gemini: the tool <em>will</em> guess wrong on carved/stomped data).</p>
+<h3 id="d9-multi-user-multi-profile-selectors-every-finding-stamped-with-origin">D9 — Multi-user / multi-profile selectors; every finding stamped with origin<a class="headerlink" href="#d9-multi-user-multi-profile-selectors-every-finding-stamped-with-origin" title="Permanent link">&para;</a></h3>
+<p>"2 users, 3 browsers" is not enough — the examiner needs to know <em>which</em> user/profile each finding came from. Stable selectors: <code>--user &lt;SID|name&gt;</code>, <code>--profile "Chrome/Default"</code>, <code>--browser chrome</code>. Every event/finding carries its <code>user</code>/<code>profile</code>/<code>browser</code> provenance in text and JSONL.</p>
+<h3 id="d10-output-ux">D10 — Output UX<a class="headerlink" href="#d10-output-ux" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>TTY → ranked summary render; pipe → JSONL</strong> (<code>isatty(stdout)</code>), <code>--json</code>/<code>--plain</code> force. On a pipe, <strong>stderr announces loudly</strong>: <code>[notice] piped output → JSONL; use --format summary to override</code> (Gemini: a silent schema switch confuses <code>tee</code>/<code>grep</code> users).</li>
+<li><strong>No box-drawing characters</strong> — markdown-clean tables that survive paste into Jira/Word/ServiceNow (Gemini; matches the fleet no-box-drawing rule). Severity <strong>word</strong> always printed (survives <code>tee</code>); color is a TTY-only cue, <code>NO_COLOR</code> honored.</li>
+<li><strong>Full values never ellipsized</strong> (URLs/hashes/GUIDs) — truncated evidence is destroyed evidence.</li>
+<li><strong>Negative-result discipline:</strong> <code>find X</code> with no hits says <em>where it looked and what it skipped</em> — <code>no hits in live history/downloads/bookmarks; skipped: encrypted cookies, memory, carving</code>. An empty result must prove it looked.</li>
+<li><strong>Actionable errors:</strong> a locked/dirty-WAL DB suggests the fix (<code>try: br4n6 recover &lt;PATH&gt; --ignore-wal</code>), never a bare <code>SQLITE_CORRUPT</code>.</li>
+</ul>
+<h3 id="d11-auditability-is-first-class-the-redesign-is-a-clean-break-no-backward-compat">D11 — Auditability is first-class; the redesign is a clean break (no backward compat)<a class="headerlink" href="#d11-auditability-is-first-class-the-redesign-is-a-clean-break-no-backward-compat" title="Permanent link">&para;</a></h3>
+<p>Every run records into a manifest: exact command line, tool + rule + parser versions + build hash, evidence path identity + hashes, detection basis + confidence, <strong>skipped sources + failed parsers</strong>, timezone source + conversion rule, redaction policy, output schema version.</p>
+<p><strong>Migration is a clean break at a major version — no aliases, no compatibility shims.</strong> The old flat command names (<code>br4n6 history</code>, <code>chains</code>, <code>predictor</code>, <code>recovered-domains</code>, …) are <strong>removed</strong>; their capability is reachable only via the new verbs or <code>artifact &lt;name&gt;</code>. Rationale (owner decision on review): this is a solo-owned tool at the right moment to break — before an external user base ossifies around the old strings — and permanent alias plumbing (46 shims + a byte-identical golden test each, forever) is real cost for a compatibility promise no external lab has yet relied on. The accepted tradeoff: any existing script or SOP citing an old command breaks at the version bump. <strong>Mitigation:</strong> a one-time <strong>migration guide</strong> (<code>docs/migration-v2.md</code>, delivered in P8) mapping every old command → its new form — a document, not runtime code. The <code>bw</code> short binary-name is retained (a convenience alias for <code>br4n6</code>, not backward-compat).</p>
+<h2 id="rejected-both-critics">Rejected (both critics)<a class="headerlink" href="#rejected-both-critics" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Bare-path as the <em>core</em> contract (D3 demotes it to guarded convenience).</li>
+<li>"show what the user SAW" wording (D6).</li>
+<li>Auto-locating keys from broad system locations (D7 constrains to evidence root).</li>
+<li>A one-screen ranked summary that can <em>imply completeness</em> (D2 footer + D5 axes).</li>
+<li>A guided TUI menu on bare <code>br4n6</code> (→ tldr cheat sheet + exit).</li>
+<li>Hiding primitives so well experts can't discover artifact workflows (D1).</li>
+<li>"PATH always last" as a rigid rule (D3).</li>
+<li><strong>Backward-compat aliases / shims (superseded on review)</strong> — the earlier draft kept the 46 old names as hidden aliases forever; the accepted decision is a clean break with a one-time migration guide instead (D11).</li>
+</ul>
+<h2 id="phased-implementation-plan">Phased implementation plan<a class="headerlink" href="#phased-implementation-plan" title="Permanent link">&para;</a></h2>
+<p>Each phase is independently shippable, strict-TDD, non-breaking, and lands green. No phase removes a command.</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Deliverable</th>
+<th>Acceptance</th>
+<th>Risk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>P0 — Foundations (no user-visible change)</strong></td>
+<td>The <strong>finding/provenance data model</strong>: <code>Finding { priority, confidence(+rule_id), interpretation, evidence, source, state, timestamp_basis, user_action_claim, user/profile/browser }</code>; the manifest gains detection-basis + skipped-sources + versions fields. Rendered nowhere new yet.</td>
+<td>New types + JSON Schema; existing outputs unchanged; round-trip tests</td>
+<td>Low — additive</td>
+</tr>
+<tr>
+<td><strong>P1 — <code>artifact</code> namespace + clean break</strong></td>
+<td><code>br4n6 artifact &lt;name&gt; &lt;PATH&gt;</code> wrapping all 46 primitives; <strong>the old flat command names are removed</strong> (no aliases). <code>artifact --list</code>; default <code>--help</code> shows only verbs+ls+tui.</td>
+<td>46 primitives reachable via <code>artifact</code>; old flat names gone; help shows only the new surface</td>
+<td>Low — routing + deletions</td>
+</tr>
+<tr>
+<td><strong>P2 — Output engine</strong></td>
+<td>isatty summary/JSONL split + loud stderr notice; markdown-clean tables (no box-drawing); full-value rendering; <code>NO_COLOR</code>; negative-result discipline; actionable errors. Applied to existing verbs first.</td>
+<td>Snapshot tests TTY vs pipe; paste-survival check; <code>find</code>-no-hits shows skipped-sources</td>
+<td>Med — touches every renderer</td>
+</tr>
+<tr>
+<td><strong>P3 — <code>investigate</code> tiering + summary</strong></td>
+<td><code>--quick/--standard/--deep</code>, default standard; ranked summary from the P0 finding model with the split axes + skipped-work footer; <strong>progress heartbeats + Ctrl-C partial flush</strong>.</td>
+<td>Tiers do bounded work (timed on a large fixture); footer always lists skipped; SIGINT flushes</td>
+<td><strong>High</strong> — the core, and the streaming/interrupt engine</td>
+</tr>
+<tr>
+<td><strong>P4 — <code>find</code> with provenance</strong></td>
+<td>Auto-classify TERM (domain/url/ip/hash/regex/@file), search across sources, <strong>provenance columns</strong>; negative-result discipline. Absorbs search/extract-iocs/match-domains/recovered-domains as one <em>front door</em> over distinct data.</td>
+<td>Provenance columns in text+JSONL; recovered ≠ live never merged; <code>--</code> + <code>--term</code>/<code>--regex</code></td>
+<td>Med</td>
+</tr>
+<tr>
+<td><strong>P5 — <code>timeline</code> / <code>recover</code> / <code>reconstruct</code></strong></td>
+<td><code>timeline</code> (chronology + <code>--around</code>); <code>recover</code> as a single orchestrator that runs all recovery (deleted records, carving, cache carve, memory, tamper) and ranks results — <strong>no submodes</strong>; the underlying primitives stay discoverable from <code>recover --help</code> (as <code>artifact</code> pointers) for specialists. <code>reconstruct</code> (renamed, "consistent with access" phrasing).</td>
+<td><code>recover &lt;PATH&gt;</code> runs everything, one call, no mode choice; primitives discoverable but not required; reconstruct wording; timeline <code>--around</code></td>
+<td>Med</td>
+</tr>
+<tr>
+<td><strong>P6 — <code>--keys</code> decryption UX</strong></td>
+<td>One-flag <code>--keys</code>, <strong>evidence-root-constrained</strong> auto-locate, key sources hashed→manifest, "found vs decrypted" distinction, <code>--reveal-secrets &lt;file&gt;</code> (file-only), <code>--password-stdin</code>.</td>
+<td>Constrained search (test it won't read outside root); manifest logs key hashes; no secret to TTY by default</td>
+<td>Med — security-critical</td>
+</tr>
+<tr>
+<td><strong>P7 — Auto-detect + selectors + bare-path</strong></td>
+<td>Layered detection with confidence + basis→manifest + <code>--type</code> override; <code>--user/--profile/--browser</code> selectors; guarded bare-path convenience with the ambiguity diagnostic + full test matrix.</td>
+<td>Detection basis shown+logged; ambiguity tests for verb-named paths; selectors stamp findings</td>
+<td>Med</td>
+</tr>
+<tr>
+<td><strong>P8 — <code>report</code> bundle + docs + migration guide</strong></td>
+<td>Reproducible <code>report</code> (html+xlsx+jsonl+manifest+hashes, one shot); README rewritten around the 6 verbs; <strong><code>docs/migration-v2.md</code></strong> mapping every removed old command → its new form; shell completions.</td>
+<td>One command → full bundle + SHA sidecar; migration guide covers all 46 removed names; docs; completions</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Sequencing rationale:</strong> P0 (data model) and P2 (honest rendering) de-risk the hard P3 streaming/tiering core. P1 is the clean-break cut-over — after it lands, the tool speaks only the 6-verb + <code>artifact</code> surface. Because it's a clean break (not an additive alias layer), P1 is a single decisive version bump rather than a compatibility-preserving shim, and the migration guide (P8) is the safety net for anyone with old scripts.</p>
+<p><strong>Full checkpoint/resumability (P3):</strong> huge-image runs write a resumable checkpoint (parsed-so-far state + a content-addressed progress marker) so a killed or crashed <code>investigate</code>/<code>report</code> on a multi-TB image resumes from the last completed unit rather than restarting — over and above the SIGINT-flush-partial-summary behavior.</p>
+<h2 id="resolved-decisions-owner-review-2026-07-13">Resolved decisions (owner review, 2026-07-13)<a class="headerlink" href="#resolved-decisions-owner-review-2026-07-13" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Default tier = <code>--standard</code></strong> — bounded deleted-SQLite/WAL recovery in the zero-thought default; whole-image carving stays opt-in (<code>--deep</code>). The <code>--standard</code> footer always names what it skipped, so speed and the "did I miss deleted evidence" fear are both addressed.</li>
+<li><strong><code>recover</code> has no submodes</strong> — one orchestrator runs all recovery and ranks results; the examiner never chooses carve-vs-memory-vs-WAL. Underlying primitives remain discoverable from <code>recover --help</code> for specialists.</li>
+<li><strong>Clean break, no backward compat</strong> — old flat command names removed; no aliases/shims; one-time <code>docs/migration-v2.md</code> (P8) instead. <code>bw</code> short-name retained. (D11.)</li>
+<li><strong>Bare-path shipped, guarded</strong> — <code>br4n6 &lt;PATH&gt;</code> runs <code>investigate</code>, accepted only when the token is an on-disk path and not a command name, with the ambiguity diagnostic + full test matrix (D3, P7).</li>
+<li><strong>P3 = full checkpoint/resumability now</strong> — resumable checkpoints for multi-TB images, not just SIGINT-flush.</li>
+</ol>
+<h2 id="non-goals">Non-goals<a class="headerlink" href="#non-goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Rewriting the parsers or the forensic logic (this is a UX/CLI-surface RFC).</li>
+<li>A GUI (the TUI stays as-is).</li>
+<li>Removing any capability.</li>
+</ul>
+<hr />
+<p><em>Process note: design by Fable 5; adversarial critique by Codex; independent second opinion by Gemini 3.1 Pro. The two critics independently converged on the heavy-default and overclaiming-label objections, which drove D2 and D5/D6.</em></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.tabs", "navigation.sections", "navigation.top", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

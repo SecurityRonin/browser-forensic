@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BrowserEvent",
+  "description": "A single browser forensic event.",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "$ref": "#/$defs/ArtifactKind"
+    },
+    "attrs": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "browser": {
+      "$ref": "#/$defs/BrowserFamily"
+    },
+    "description": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "timestamp_ns": {
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "required": [
+    "timestamp_ns",
+    "browser",
+    "artifact",
+    "source",
+    "description",
+    "attrs"
+  ],
+  "$defs": {
+    "ArtifactKind": {
+      "description": "Kind of browser artifact.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "History",
+            "Cookies",
+            "Downloads",
+            "Extensions",
+            "LoginData",
+            "Cache",
+            "Bookmarks",
+            "Autofill",
+            "Session",
+            "Integrity",
+            "Carved",
+            "Memory",
+            "Preferences",
+            "LocalStorage"
+          ]
+        },
+        {
+          "description": "Per-site permission grant (geolocation, camera, mic, notifications, …).",
+          "type": "string",
+          "const": "Permission"
+        },
+        {
+          "description": "Stored payment-card metadata. The card number is never decrypted.",
+          "type": "string",
+          "const": "CreditCard"
+        },
+        {
+          "description": "OAuth / sync auth-token metadata. The token itself is never decrypted.",
+          "type": "string",
+          "const": "AuthToken"
+        },
+        {
+          "description": "A domain/origin the browser contacted, recovered from a network/state\nartifact that survives a history wipe (HTTP server properties, NEL/\nReporting, DIPS/BTM bounce records, HSTS). Read-only, no secrets.",
+          "type": "string",
+          "const": "RecoveredDomain"
+        },
+        {
+          "description": "A page the browser stored a favicon for (Chromium `Favicons`). The\n`page_url` is an independent, cleartext source of visited URLs.",
+          "type": "string",
+          "const": "Favicon"
+        },
+        {
+          "description": "A most-visited page cached for the new-tab page (Chromium `Top Sites`).\nFrecency-ranked; no per-visit timestamp.",
+          "type": "string",
+          "const": "TopSite"
+        },
+        {
+          "description": "A string the user typed into the omnibox and the URL they selected\n(Chromium `Shortcuts`). Direct evidence of user intent.",
+          "type": "string",
+          "const": "Shortcut"
+        },
+        {
+          "description": "A (often partial) omnibox string the user typed and the URL Chromium\nlearned to predict (Chromium `Network Action Predictor`).",
+          "type": "string",
+          "const": "NetworkPrediction"
+        },
+        {
+          "description": "Audio/video playback recorded by Chromium `Media History` (watch time,\nresume position, media title).",
+          "type": "string",
+          "const": "MediaPlayback"
+        },
+        {
+          "description": "A string the user typed into the address bar and the page it resolved to\n(Firefox `moz_inputhistory`). Direct evidence of typed intent; carries a\ndecayed `use_count`, not a per-keystroke timestamp.",
+          "type": "string",
+          "const": "TypedInput"
+        },
+        {
+          "description": "A page annotation recorded by Firefox (`moz_annos` +\n`moz_anno_attributes`): a named key/value the browser attached to a page\n(reading-list state, visit-count metadata, …). Stated as recorded.",
+          "type": "string",
+          "const": "Annotation"
+        },
+        {
+          "description": "A bookmark found in a Firefox `bookmarkbackups/*.jsonlz4` backup but\nabsent from the current `moz_bookmarks` — consistent with deletion after\nthat backup was written. The backup date bounds *when*, not who or why.",
+          "type": "string",
+          "const": "RecoveredBookmark"
+        }
+      ]
+    },
+    "BrowserFamily": {
+      "description": "Browser engine family.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Chromium",
+            "Firefox",
+            "Safari"
+          ]
+        },
+        {
+          "description": "Internet Explorer (Trident) — history/cookies/cache live in the ESE\n`WebCacheV01.dat`, not SQLite.",
+          "type": "string",
+          "const": "InternetExplorer"
+        },
+        {
+          "description": "Legacy (EdgeHTML/Spartan) Microsoft Edge — shares the ESE\n`WebCacheV01.dat` store with Internet Explorer.",
+          "type": "string",
+          "const": "EdgeLegacy"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1817 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://securityronin.github.io/browser-forensic/validation/">
+      
+      
+        <link rel="prev" href="../migration-v2/">
+      
+      
+        <link rel="next" href="../decisions/0001-layered-multi-crate-workspace/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Decryption validation - browser-forensic</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#validation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="browser-forensic" class="md-header__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            browser-forensic
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Decryption validation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../prd/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Product Requirements
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../migration-v2/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Migrating to v2 (command surface)
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Decryption validation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../decisions/0001-layered-multi-crate-workspace/" class="md-tabs__link">
+          
+  
+  
+  Decisions
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../privacy/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Privacy Policy
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../terms/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Terms of Service
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="browser-forensic" class="md-nav__button md-logo" aria-label="browser-forensic" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    browser-forensic
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SecurityRonin/browser-forensic" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SecurityRonin/browser-forensic
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Product Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migration-v2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating to v2 (command surface)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decryption validation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decryption validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-read-this" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to read this
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consolidated-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consolidated map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsing-correctness-counts-reconciled-against-independent-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parsing correctness — counts reconciled against independent tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-decode-cross-checked-against-curl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache decode — cross-checked against curl
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#web-storage-indexeddb-differential-against-ccl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web storage — IndexedDB differential against CCL
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#carving-and-integrity-real-engine-controlled-scenarios-tier-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Carving and integrity — real-engine controlled scenarios (tier 2)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interpretation-hashing-serializers-iocs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpretation, hashing, serializers, IOCs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decryption-opt-in-per-path-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decryption (opt-in) — per-path validation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decryption (opt-in) — per-path validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#macos-chromium-v10-tier-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        macOS Chromium v10 — tier 1
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#firefox-nss-tier-1-pbes2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firefox NSS — tier 1 (PBES2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#windows-chromium-dpapi-aes-256-gcm-tier-1-dpapi-chain-gcm-primitive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows Chromium (DPAPI + AES-256-GCM) — tier 1 (DPAPI chain + GCM primitive)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honest-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Honest gaps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-four-hard-rules-decryption-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The four hard rules (decryption paths)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0001-layered-multi-crate-workspace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layered multi-crate workspace
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0002-normalized-browserevent-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One normalized BrowserEvent schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0003-two-track-sqlite-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Two-track SQLite access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0004-reuse-leveldb-forensic-for-web-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reuse leveldb-forensic for web storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0005-knowledge-as-code-forensicnomicon/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge-as-code via forensicnomicon
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0006-capable-by-default-no-feature-gating/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capable by default
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0007-panic-free-fuzzed-parsing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Panic-free, fuzzed parsing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0008-structural-signature-sweep-for-containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Structural signature sweep
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0009-clean-room-hindsight-interpretation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clean-room Hindsight interpretation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0010-dual-mode-cli-tui-binary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dual-mode CLI and TUI binary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/0011-secret-free-redacted-mcp-bridge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Secret-free, redacted MCP bridge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../terms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terms of Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-read-this" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to read this
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consolidated-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consolidated map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsing-correctness-counts-reconciled-against-independent-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parsing correctness — counts reconciled against independent tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-decode-cross-checked-against-curl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache decode — cross-checked against curl
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#web-storage-indexeddb-differential-against-ccl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web storage — IndexedDB differential against CCL
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#carving-and-integrity-real-engine-controlled-scenarios-tier-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Carving and integrity — real-engine controlled scenarios (tier 2)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interpretation-hashing-serializers-iocs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpretation, hashing, serializers, IOCs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decryption-opt-in-per-path-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decryption (opt-in) — per-path validation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decryption (opt-in) — per-path validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#macos-chromium-v10-tier-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        macOS Chromium v10 — tier 1
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#firefox-nss-tier-1-pbes2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firefox NSS — tier 1 (PBES2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#windows-chromium-dpapi-aes-256-gcm-tier-1-dpapi-chain-gcm-primitive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows Chromium (DPAPI + AES-256-GCM) — tier 1 (DPAPI chain + GCM primitive)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honest-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Honest gaps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-four-hard-rules-decryption-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The four hard rules (decryption paths)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h1>
+<p>How every capability in <code>browser-forensic</code> is checked, by which independent
+oracle, and at what tier. This is the trust document: it states what an examiner
+can rely on, what is checked only against synthetic construction, and where the
+honest gaps are.</p>
+<h2 id="how-to-read-this">How to read this<a class="headerlink" href="#how-to-read-this" title="Permanent link">&para;</a></h2>
+<p>Tiers follow the project's evidence standard — the axis is <em>who confirms the
+answer</em>, not whether the data is synthetic:</p>
+<ul>
+<li><strong>Tier 1</strong> — an independent third party authored the artifact <em>and</em> the answer
+  key, or the data is real-world (a browser wrote it, the OS hashed it, an
+  unrelated tool decoded it).</li>
+<li><strong>Tier 2</strong> — real engine/tool output whose ground truth is derivable from the
+  documented construction or confirmed by an independent oracle. Genuinely
+  checked, but the scenario was chosen here.</li>
+<li><strong>Tier 3</strong> — fixture and expected answer both authored here. Legitimate for
+  <em>detection rules</em> (correctness is defined by the rule + spec) and robustness
+  tests; never the sole check on a value-producing path that an oracle could
+  cross-check.</li>
+</ul>
+<p><strong>Env-gate philosophy.</strong> Every check against real browser data is an env-gated
+oracle test that <strong>skips cleanly</strong> when the artifact or the reference tool is
+absent, so CI stays green on a minimal image and no personal data is committed
+(fleet Test-Data Provenance Standard). The real corpora are copied to an
+ephemeral location, read there, and never committed; small clearly-licensed
+fixtures are committed with provenance in the owning crate's <code>tests/data/</code>. The
+counts quoted below were observed during development on real artifacts; re-run
+the named test with its env var set to reproduce.</p>
+<h2 id="consolidated-map">Consolidated map<a class="headerlink" href="#consolidated-map" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Independent oracle</th>
+<th>Tier</th>
+<th>Env-gate / test</th>
+<th>Committed data</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chromium coverage parsers (Favicons, Top Sites, Shortcuts, Network Action Predictor, Media History, Extension Cookies)</td>
+<td><code>sqlite3</code> CLI row counts</td>
+<td>1</td>
+<td><code>BR4N6_REAL_PROFILE</code> · chrome <code>coverage_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Chromium recovered-domain parsers (DIPS, NEL, CHIPS, Extension Cookies)</td>
+<td><code>sqlite3</code> + <code>jq</code></td>
+<td>1</td>
+<td><code>BR4N6_REAL_PROFILE</code> · chrome <code>recovered_domains_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Chromium credential/account metadata (Login Data, Web Data, Preferences)</td>
+<td>independent query/walk of same source + no-secret-leak assertion</td>
+<td>1</td>
+<td><code>BR4N6_LOGIN_DATA</code> / <code>BR4N6_WEB_DATA</code> / <code>BR4N6_CHROME_PREFERENCES</code> · cli <code>credentials_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td><strong>Firefox history / downloads / cookies (Milestone 10)</strong></td>
+<td><strong>dumpzilla</strong> (independent Python tool) + <code>sqlite3</code> bridge</td>
+<td>1</td>
+<td><code>BR4N6_FIREFOX_PROFILE</code> + <code>BR4N6_DUMPZILLA</code> + <code>sqlite3</code> · firefox <code>dumpzilla_differential</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Firefox parsers, structural</td>
+<td>real Mozilla-written <code>places.sqlite</code></td>
+<td>1</td>
+<td><code>BR4N6_FIREFOX_PROFILE</code> · firefox <code>real_profile_gated</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Navigation reconstruction (Milestone 3)</td>
+<td>real Chrome <code>History</code> / Firefox <code>places.sqlite</code>, structural invariants</td>
+<td>1</td>
+<td><code>BR4N6_CHROME_HISTORY</code> / <code>BR4N6_FIREFOX_PLACES</code> · cli <code>reconstruct_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Chromium cache decode (SimpleCache)</td>
+<td><code>curl</code> SHA-256 of same URL, byte-for-byte</td>
+<td>1</td>
+<td><code>BFCACHE_CHROME_CACHE_DIR</code> · cache <code>chrome_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Firefox cache decode (<code>cache2/entries</code>)</td>
+<td><code>curl</code> SHA-256, byte-for-byte</td>
+<td>1</td>
+<td><code>BFCACHE_FIREFOX_ENTRIES_DIR</code> · cache <code>firefox_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Safari / <code>CFURLCache</code> <code>Cache.db</code></td>
+<td>on-disk structure over 273 real DBs (15 836 bodies)</td>
+<td>1/2</td>
+<td><code>BFCACHE_SAFARI_DB</code> · cache <code>safari_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Service Worker CacheStorage</td>
+<td>on-disk structure; <code>protoc --decode_raw</code> + CCL <code>ccl_chromium_cache</code> on same bytes</td>
+<td>1</td>
+<td><code>BFCACHE_CACHESTORAGE_DIR</code> · cache <code>cachestorage_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Page reconstruction from cache</td>
+<td>real Chromium cache; sub-resources inlined, misses listed</td>
+<td>1</td>
+<td><code>BFRECON_CHROME_CACHE_DIR</code> · reconstruct <code>chrome_reconstruct_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Chromium IndexedDB decode</td>
+<td><strong>CCL <code>ccl_chromium_indexeddb</code></strong> (Alex Caithness) differential, byte-identical values</td>
+<td>1</td>
+<td><code>BR4N6_IDB_DIR</code> + <code>BR4N6_IDB_EXPECT</code> · storage <code>indexeddb_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>SQLite free-page / freeblock carving</td>
+<td>real SQLite engine builds + deletes; ground truth from documented construction</td>
+<td>2</td>
+<td>carve <code>recovery_via_sqlite_forensic</code></td>
+<td>fixture built at runtime</td>
+</tr>
+<tr>
+<td>Integrity / tampering indicators</td>
+<td>real SQLite engine mutates a copy; detector fires on changed, silent on pristine</td>
+<td>2</td>
+<td>integrity <code>controlled_scenarios</code></td>
+<td>fixture built at runtime</td>
+</tr>
+<tr>
+<td>Interpretation engine (Hindsight-style)</td>
+<td>OS <code>date -u</code> for timestamps; documented provider params; Python <code>struct</code> for BIG-IP</td>
+<td>1/2</td>
+<td>interpret <code>plugins</code>, <code>search_query</code></td>
+<td>vectors in-test</td>
+</tr>
+<tr>
+<td>File hashing (SHA-256 / MD5)</td>
+<td>OS <code>shasum -a 256</code> / <code>md5</code> (or coreutils)</td>
+<td>1</td>
+<td>manifest <code>system_oracle</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>DFIR-interop serializers (TSK bodyfile / mactime 3.x, plaso <code>l2t_csv</code>, XLSX)</td>
+<td>11-field bodyfile contract; XLSX read back with <code>calamine</code></td>
+<td>1/2</td>
+<td>cli <code>report</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>IOC extractors (email, IPv4/IPv6, crypto address, card)</td>
+<td>std <code>Ipv4Addr</code>/<code>Ipv6Addr</code> parsers as oracle; documented vectors</td>
+<td>2/3</td>
+<td>search <code>ioc_*</code></td>
+<td>vectors in-test</td>
+</tr>
+<tr>
+<td>Firefox NSS decryption (opt-in)</td>
+<td><strong>firepwd</strong> (independent)</td>
+<td>1 (PBES2)</td>
+<td>decrypt fixtures — see below</td>
+<td>yes (synthetic)</td>
+</tr>
+<tr>
+<td>macOS Chromium <code>v10</code> decryption (opt-in)</td>
+<td>live Chrome + real login-Keychain key</td>
+<td>1</td>
+<td>see below</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Windows Chromium DPAPI decryption (opt-in)</td>
+<td><strong>real Windows DPAPI blob</strong> (<code>ProtectedData.Protect</code>) recovered by <code>dpapi-core</code> from password+SID+masterkey → exact known plaintext; NIST CAVP for GCM; impacket on synthetic vectors</td>
+<td>1 (DPAPI chain, GCM)</td>
+<td>decrypt vectors — see below</td>
+<td>real Windows blob</td>
+</tr>
+</tbody>
+</table>
+<h2 id="parsing-correctness-counts-reconciled-against-independent-tools">Parsing correctness — counts reconciled against independent tools<a class="headerlink" href="#parsing-correctness-counts-reconciled-against-independent-tools" title="Permanent link">&para;</a></h2>
+<p>The core forensic claim is that browser-forensic's parsers extract the same
+records an independent tool does. Each parser family is differenced against a
+tool that reads the same on-disk artifact:</p>
+<ul>
+<li><strong>Chromium (Brave/Edge/Chrome)</strong> — the Milestone-4 coverage parsers and the
+  recovered-domain parsers (DIPS, NEL, CHIPS partitioned cookies, Extension
+  Cookies) are counted against the <code>sqlite3</code> CLI (and <code>jq</code> for JSON-backed
+  sources) running the equivalent query over a WAL-honoring copy of the same
+  database. The CLI is the independent actor; agreement on the row count is the
+  answer key.</li>
+<li><strong>Firefox — dumpzilla differential (Milestone 10).</strong> browser-forensic's
+  <code>parse_history</code>, <code>parse_downloads</code>, and <code>parse_cookies</code> are reconciled against
+  <a href="https://github.com/Busindre/dumpzilla">dumpzilla</a>, an unrelated Python
+  forensic tool that reads the same <code>places.sqlite</code> / <code>cookies.sqlite</code>. The two
+  parsers apply different documented <code>WHERE</code>-clauses — an <em>interpretation</em>
+  difference, not a bug — so each count reconciles against dumpzilla's total
+  minus a precise bridge quantity computed by the neutral <code>sqlite3</code> CLI:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Count</th>
+<th>browser-forensic emits</th>
+<th>dumpzilla emits</th>
+<th>bridge (never in browser-forensic)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>history</td>
+<td>visited places (<code>last_visit_date IS NOT NULL</code>)</td>
+<td>all <code>moz_places</code></td>
+<td>places never visited (<code>last_visit_date IS NULL</code>) — bookmark/redirect/download-source URLs</td>
+</tr>
+<tr>
+<td>downloads</td>
+<td><code>moz_annos</code> attr <code>downloads/destinationFileURI</code></td>
+<td><code>moz_annos</code> <code>content LIKE 'file%'</code></td>
+<td>file-content annotations that are not <code>destinationFileURI</code></td>
+</tr>
+<tr>
+<td>cookies</td>
+<td><code>moz_cookies</code> <code>creationTime &gt; 0</code></td>
+<td>all <code>moz_cookies</code></td>
+<td>cookies with <code>creationTime &lt;= 0</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>browser-forensic + bridge == dumpzilla_total</code> proves the two independently
+  authored parsers partition the same universe; browser-forensic emits the
+  forensically-meaningful subset (an event only where a visit/download/cookie
+  actually exists). Observed on a real profile: history <code>901 + 4 == 905</code>,
+  downloads <code>0 + 0 == 0</code>, cookies <code>419 == 419</code> (exact — that profile's cookies
+  all carry a positive creation time). The evidence is never touched: the DBs
+  are copied to a temp dir and both tools run on the copy, because dumpzilla
+  opens SQLite read-write.</p>
+<ul>
+<li><strong>Chromium credential/account metadata (Milestone 14)</strong> — the Login Data, Web
+  Data, and Preferences parsers are counted against an independent walk of the
+  same source, and every event is additionally asserted to carry <strong>no encrypted
+  secret</strong> (passwords and encrypted cookie values are never surfaced, by design).</li>
+</ul>
+<h2 id="cache-decode-cross-checked-against-curl">Cache decode — cross-checked against <code>curl</code><a class="headerlink" href="#cache-decode-cross-checked-against-curl" title="Permanent link">&para;</a></h2>
+<p>Compressed cache bodies are decoded and the plaintext compared byte-for-byte to
+<code>curl</code> of the same URL:</p>
+<ul>
+<li><strong>Chromium SimpleCache</strong> — decoded brotli bodies for two immutable,
+  content-hashed <code>iana.org</code> assets (78 748 B JS, 82 866 B CSS) matched <code>curl</code>'s
+  SHA-256 exactly.</li>
+<li><strong>Firefox <code>cache2</code></strong> — a content-hashed <code>gstatic.com</code> SVG (688 stored bytes,
+  brotli wire-compressed) decoded to the same SHA-256 as <code>curl</code>.</li>
+<li><strong>Safari / <code>CFURLCache</code></strong> — examined across 273 real <code>Cache.db</code> files (15 836
+  bodies): <code>CFURLCache</code> usually stores the already-decoded body and occasionally
+  the wire-compressed one; the oracle asserts this holds without any decode
+  silently failing. Opened read-only + immutable.</li>
+<li><strong>Service Worker CacheStorage</strong> — ground truth derived from the on-disk
+  structure itself (every cache named in <code>index.txt</code> exists; recovered-resource
+  count equals the parsing <code>_0</code> SimpleCache entries), with the metadata proto
+  additionally cross-checked against <code>protoc --decode_raw</code> and CCL
+  <code>ccl_chromium_cache</code>.</li>
+</ul>
+<h2 id="web-storage-indexeddb-differential-against-ccl">Web storage — IndexedDB differential against CCL<a class="headerlink" href="#web-storage-indexeddb-differential-against-ccl" title="Permanent link">&para;</a></h2>
+<p>Chromium IndexedDB decode is differenced against <strong>CCL <code>ccl_chromium_indexeddb</code></strong>
+(Alex Caithness' reverse-engineering reference). Every <code>{store, key, value}</code>
+tuple CCL decodes must be present and byte-identical among browser-forensic's
+events (browser-forensic may surface <em>more</em> — superseded and tombstoned records).
+Observed byte-for-byte match on real stores from five Chromium/Electron apps —
+WhatsApp Web (51/51), Ludwig (314/314), Reddit (2/2), LinkedIn (1/1), GoTo
+(1/1): 369/369 tuples identical. IndexedDB <em>values</em> are surfaced as opaque
+Blink/v8-serialized records, not decoded into structured fields (by design).</p>
+<h2 id="carving-and-integrity-real-engine-controlled-scenarios-tier-2">Carving and integrity — real-engine controlled scenarios (tier 2)<a class="headerlink" href="#carving-and-integrity-real-engine-controlled-scenarios-tier-2" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Carving</strong> — <code>carve_sqlite_free_pages</code> recovers a deleted history row from an
+  in-page <strong>freeblock</strong> (the dominant deletion pattern: deleting a row frees a
+  cell in place, so a free-<em>page</em> scan alone finds nothing). The fixture is built
+  by the real SQLite engine via rusqlite, then rows are deleted; ground truth is
+  the documented construction, not a hand-encoded fixture. The recovered row is
+  attributed to its real table.</li>
+<li><strong>Integrity indicators</strong> — a real SQLite database is built, a baseline
+  recorded, then one specific anomaly applied to a copy (history clearing,
+  visit-ID gap, non-monotonic timestamp, cookie access-before-creation, …). Each
+  detector must <strong>fire on the changed copy and stay silent on the pristine
+  one</strong>. The engine is the independent actor; the scenario was chosen here, so
+  this is tier 2.</li>
+</ul>
+<h2 id="interpretation-hashing-serializers-iocs">Interpretation, hashing, serializers, IOCs<a class="headerlink" href="#interpretation-hashing-serializers-iocs" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Interpretation engine</strong> — a clean-room reimplementation of the Hindsight
+  interpretation plugins. Expected timestamp renderings are cross-checked against
+  the OS <code>date -u</code> oracle; search-term extraction uses the percent-decoded value
+  of each provider's documented query parameter (a fact read from the URL); the
+  F5 BIG-IP cookie vector is verified independently with Python <code>struct</code>.</li>
+<li><strong>File hashing</strong> — SHA-256 / MD5 of a real file must equal the OS's own
+  <code>shasum -a 256</code> / <code>md5</code> (or GNU coreutils), an independent third-party
+  implementation shipped with the OS.</li>
+<li><strong>DFIR-interop serializers</strong> — the TSK bodyfile output holds exactly 11
+  pipe-delimited fields (mactime 3.x contract) with pipes in values sanitized to
+  preserve the field count; plaso <code>l2t_csv</code> and the XLSX export are read back
+  (XLSX via <code>calamine</code>) and reconciled against the source events.</li>
+<li><strong>IOC extractors</strong> — email / IPv4 / IPv6 / crypto-address / card detectors are
+  checked with the standard-library <code>Ipv4Addr</code>/<code>Ipv6Addr</code> parsers as the oracle
+  (out-of-range octets rejected) and documented vectors. These are detection
+  rules: correctness is defined by the rule + spec, legitimately tier 2/3.</li>
+</ul>
+<h2 id="decryption-opt-in-per-path-validation">Decryption (opt-in) — per-path validation<a class="headerlink" href="#decryption-opt-in-per-path-validation" title="Permanent link">&para;</a></h2>
+<p>Decryption is opt-in, never fabricates plaintext (a wrong/absent key or a failed
+tag/signature/padding is always a typed <code>Err</code>), and uses audited RustCrypto
+primitives only. Every path is checked as follows.</p>
+<h3 id="macos-chromium-v10-tier-1">macOS Chromium <code>v10</code> — tier 1<a class="headerlink" href="#macos-chromium-v10-tier-1" title="Permanent link">&para;</a></h3>
+<p>A throwaway cookie <code>br4n6probe</code> on host <code>127.0.0.1</code> was written by a live Chrome,
+then its real <code>Cookies</code> ciphertext decrypted with the real macOS login-Keychain
+"Chrome Safe Storage" key. The recovered plaintext was
+<code>SHA-256("127.0.0.1") || "br4n6-tier1-probe-7f3a91c2"</code> — the planted known value
+recovered exactly behind the 32-byte domain-binding prefix that Chromium cookie
+schema v24+ prepends (<code>net/extras/sqlite/sqlite_persistent_cookie_store.cc</code>).
+Both the value and the key material were held outside this code (Chrome + the OS
+Keychain), so the answer key is independent. <code>strip_domain_hash_prefix</code> removes
+and verifies that prefix; a 32-byte prefix that is not <code>SHA-256(host_key)</code> is
+surfaced raw with <code>domain_bound=false</code> rather than silently stripped. The
+AES-128-CBC + PBKDF2 primitive is additionally cross-checked against a Python
+<code>hashlib</code> + <code>cryptography</code> oracle under an externally-fixed key (tier 2).</p>
+<h3 id="firefox-nss-tier-1-pbes2">Firefox NSS — tier 1 (PBES2)<a class="headerlink" href="#firefox-nss-tier-1-pbes2" title="Permanent link">&para;</a></h3>
+<p>The <code>ff3des</code> (legacy <code>pbeWithSha1AndTripleDES-CBC</code>) and <code>ffpbes2</code> (modern
+PKCS#5 PBES2, PBKDF2-HMAC-SHA256 → AES-256-CBC) fixtures carry known credentials
+and were decrypted by the unrelated <strong>firepwd</strong> tool. On <code>ffpbes2</code> firepwd
+recovered the exact <code>alice@example.com</code> / <code>S3cr3t-Passw0rd!</code> pair. On <code>ff3des</code>
+firepwd confirmed the password-check and unwrapped the master key; its <code>main()</code>
+cannot complete the 3DES login loop, so the 3DES login-blob step falls back to
+the shared, firepwd-confirmed ASN.1 decoder plus standard 3DES-CBC. Provenance
+in <code>crates/browser-forensic-decrypt/tests/data/README.md</code>.</p>
+<h3 id="windows-chromium-dpapi-aes-256-gcm-tier-1-dpapi-chain-gcm-primitive">Windows Chromium (DPAPI + AES-256-GCM) — tier 1 (DPAPI chain + GCM primitive)<a class="headerlink" href="#windows-chromium-dpapi-aes-256-gcm-tier-1-dpapi-chain-gcm-primitive" title="Permanent link">&para;</a></h3>
+<p><strong>Tier-1 on real Windows DPAPI.</strong> On a Parallels Windows 11 VM, Windows' own
+<code>ProtectedData.Protect</code> (run as a real logged-on user) produced a genuine DPAPI
+blob over a known plaintext; that user's masterkey files were extracted via VSS.
+<code>dpapi-core</code> — from only the account password + SID + masterkey file — derived the
+masterkey (<code>prekey_from_password</code> → masterkey KDF) and decrypted the blob (session-
+key derivation + AES-256-CBC), recovering the exact known plaintext
+(<code>br4n6-dpapi-tier1-9f3a</code>; masterkey GUID <code>714a87f2-f4f0-4cc5-8841-454567e67983</code>).
+The producer (Windows) and the answer key are independent of our code, so the DPAPI
+masterkey+blob chain is <strong>tier-1 on real Windows data</strong>. The DPAPI format + crypto
+is delegated to the audited, fuzz-hardened fleet crate <code>dpapi-core</code>; this crate
+keeps only thin glue plus its own AES-256-GCM <code>v10</code>/<code>v11</code> value decryption and the
+<code>v20</code> App-Bound refusal. Not yet run end-to-end: the full <code>Local State</code>-key-unwrap +
+<code>v10</code> cookie decrypt on a real Edge <em>profile</em> — but each of its parts is validated
+(DPAPI here on real Windows; AES-256-GCM by NIST CAVP below).</p>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Validation</th>
+<th>Tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>decrypt_chromium_value_win</code> (<code>v10</code>/<code>v11</code>)</td>
+<td>RustCrypto <code>aes-gcm</code> decrypts a PyCryptodome-oracle value under an externally-fixed key → known plaintext; flipped tag → <code>Err</code>.</td>
+<td>2</td>
+</tr>
+<tr>
+<td>AES-256-GCM primitive</td>
+<td>NIST CAVP KAT (<code>gcmEncryptExtIV256</code>, published tag <code>bdc1ac88…76f0</code>) verifies; flipped tag → <code>Err</code>.</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>decrypt_masterkey_file</code> (→ <code>dpapi-core</code>)</td>
+<td><strong>Real Windows masterkey</strong> (VSS-extracted from a Win 11 VM) decrypted by <code>dpapi-core</code> from the account password + SID → the masterkey that then recovers a real DPAPI blob to its known plaintext. Also: a synthetic <code>[MS-DPAPI]</code> master-key file cross-checked against <strong>impacket</strong>; wrong password → <code>WrongDpapiPassword</code>.</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>decrypt_dpapi_blob</code> (→ <code>dpapi-core</code>)</td>
+<td><strong>Real Windows <code>ProtectedData.Protect</code> blob</strong> recovered by <code>dpapi-core</code> to its exact known plaintext (real Win 11 VM). Also: impacket decrypts the same synthetic blob to the same 32-byte Chromium key; tampering → <code>Err</code>.</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>decrypt_chromium_key_dpapi</code> (Local State, → <code>dpapi-core</code>)</td>
+<td>End-to-end <code>base64("DPAPI"+blob)</code> → the 32-byte key, via a supplied master key and via password+SID+master-key file.</td>
+<td>2</td>
+</tr>
+<tr>
+<td><code>v20</code> App-Bound detection</td>
+<td>Refused with <code>AppBoundUnsupported</code> (needs the SYSTEM key); never fabricated.</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
+<p>"Tier-2, impacket-confirmed" means: the DPAPI encoder in <code>tests/data/gen_win.py</code>
+is written to the <code>[MS-DPAPI]</code> spec; impacket (unrelated third-party code)
+recovering the known keys from those synthetic artifacts — and rejecting a wrong
+password — confirms the artifacts are genuine DPAPI structures. It is <em>not</em> a
+real-Windows-profile validation. Only the modern <code>CALG_SHA_512</code> + <code>CALG_AES_256</code>
+pair is supported; other algorithm ids are refused loudly with the offending
+value; legacy 3DES/SHA1 blobs are rejected with <code>UnsupportedAlgorithm</code>. The DPAPI
+blob + Local State parsers are exercised by the <code>fuzz_decrypt_dpapi</code> cargo-fuzz
+target (must-not-panic).</p>
+<h2 id="honest-gaps">Honest gaps<a class="headerlink" href="#honest-gaps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Windows Chromium DPAPI is not validated on a real Windows profile</strong> — no
+  Windows host is available; the path is tier-2 (impacket on synthetic
+  <code>[MS-DPAPI]</code> vectors) with a tier-1 NIST CAVP check on the GCM primitive.</li>
+<li><strong>Safari coverage is partial by design</strong> — autofill, login data, cache,
+  preferences, and web storage are not parsed; the cache decode above covers the
+  shared <code>CFURLCache</code> <code>Cache.db</code> only.</li>
+<li><strong>IndexedDB values are opaque</strong> — surfaced as Blink/v8-serialized records, not
+  decoded into structured fields (by design).</li>
+<li><strong>Real-data oracle tests skip in CI</strong> — real browser data is not
+  redistributable, so every count above is reproduced by re-running the named
+  test with its env var set, not by CI.</li>
+<li><strong>The Milestone-10 differential covers Firefox via dumpzilla on macOS.</strong>
+  dumpzilla is the differential-parser tool exercised on this host. <strong>Hindsight</strong>
+  (Chrome, Python) is a candidate second differential and is not run here.
+  <strong>NirSoft</strong> (BrowsingHistoryView / ChromeCookiesView) is <strong>Windows-only and
+  unavailable on this macOS host</strong>; it is documented here as a future
+  cross-check rather than an executed one.</li>
+</ul>
+<h2 id="the-four-hard-rules-decryption-paths">The four hard rules (decryption paths)<a class="headerlink" href="#the-four-hard-rules-decryption-paths" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>RustCrypto only</strong> — every primitive is an audited crate (<code>aes</code>, <code>aes-gcm</code>,
+   <code>cbc</code>, <code>des</code>, <code>pbkdf2</code>, <code>hmac</code>, <code>sha1</code>, <code>sha2</code>); nothing hand-rolled.</li>
+<li><strong>Never fabricate</strong> — a wrong/absent key or a failed tag/signature/padding is
+   always a typed <code>Err</code>, never plausible-but-wrong bytes.</li>
+<li><strong>Secure by default</strong> — decryption requires an explicitly supplied secret;
+   never silent, never on by default.</li>
+<li><strong>Passwords double-gated</strong> — a plaintext password needs both <code>--decrypt</code> and
+   <code>--include-passwords</code>; default output never contains one.</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.tabs", "navigation.sections", "navigation.top", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
