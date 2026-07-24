@@ -44,6 +44,7 @@ release = true # first-publish pending review
 [[package]]
 name = "browser-forensic-reconstruct"
 release = false # first-publish pending review
+publish = false
 
 [[package]]
 name = "browser-forensic-decrypt"
@@ -52,14 +53,17 @@ release = true # first-publish pending review
 [[package]]
 name = "browser-forensic-imagecarve"
 release = false # first-publish pending review
+publish = false
 
 [[package]]
 name = "browser-forensic-interpret"
 release = false # first-publish pending review
+publish = false
 
 [[package]]
 name = "browser-forensic-search"
 release = false # first-publish pending review
+publish = false
 
 [[package]]
 name = "browser-forensic-storage"
@@ -72,14 +76,17 @@ release = true # first-publish pending review (blocks triage + cli until publish
 [[package]]
 name = "browser-forensic-manifest"
 release = false # first-publish pending review
+publish = false
 
 [[package]]
 name = "browser-forensic-image"
 release = false # first-publish pending review
+publish = false
 
 [[package]]
 name = "browser-forensic-correlate"
 release = false # first-publish pending review
+publish = false
 
 # ---------------------------------------------------------------------------
 # Published crates temporarily gated: their CURRENT source depends on
