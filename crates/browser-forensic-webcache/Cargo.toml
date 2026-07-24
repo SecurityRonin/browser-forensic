@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
 serde_json = { workspace = true }
 # ESE reading is owned by the fleet `ese-core` crate — this crate NEVER parses
 # ESE itself. Pinned to the ese-forensic git revision that reads a real large-page

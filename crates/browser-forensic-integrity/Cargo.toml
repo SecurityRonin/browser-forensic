@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-integrity"
-version = "0.2.0"
+version = "0.2.1"
 description = "Detects anomalies indicating tampering, clearing, or corruption in browser artifacts"
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ safe-read = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
 rusqlite = { workspace = true }
 sqlite-core = { workspace = true }
 sqlite-forensic = { workspace = true }

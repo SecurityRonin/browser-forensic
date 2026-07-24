@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-memory"
-version = "0.2.0"
+version = "0.2.1"
 description = "Browser memory forensics — process-attributed artifact carving from memory images (memf) plus raw byte-scan fallback"
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,7 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
 url = { workspace = true }
 # memory-forensic (memf) framework — Volatility-class page-table translation,
 # kernel-object reading, and analysis bootstrap. Reused rather than reinvented.

@@ -14,8 +14,8 @@ sha2 = { workspace = true }
 md-5 = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
-browser-forensic-discovery = { version = "0.2.0", path = "../browser-forensic-discovery" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
+browser-forensic-discovery = { version = "0.3.0", path = "../browser-forensic-discovery" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
