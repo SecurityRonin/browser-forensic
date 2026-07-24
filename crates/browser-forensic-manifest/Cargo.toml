@@ -1,5 +1,6 @@
 [package]
 name = "browser-forensic-manifest"
+publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.2.0"
 description = "Case-level chain-of-custody manifest (SHA-256/MD5 + run metadata) for browser evidence"
 edition.workspace = true

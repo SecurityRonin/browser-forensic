@@ -1,5 +1,6 @@
 [package]
 name = "browser-forensic-cli"
+publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.3.0"
 description = "br4n6 / bw — dual-mode browser-forensic tool: a scriptable CLI (history, cookies, downloads, integrity, carve, triage) and a Midnight-Commander-style, vi-keyed TUI for on-disk browser history and session state"
 edition.workspace = true

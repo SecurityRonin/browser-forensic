@@ -1,5 +1,6 @@
 [package]
 name = "browser-forensic-interpret"
+publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.2.0"
 description = "Interpretation plugins for browser artifacts (search terms, tracking cookies, timestamps)"
 edition.workspace = true

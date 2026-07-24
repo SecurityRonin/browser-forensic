@@ -1,5 +1,6 @@
 [package]
 name = "browser-forensic-reconstruct"
+publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.1.0"
 description = "Viewable page reconstruction from browser cache: self-contained single-file HTML, replayable WARC, and cached-image galleries, each carrying a prominent provenance manifest of found vs missing sub-resources (consistent-with, not a rendered capture)"
 edition.workspace = true

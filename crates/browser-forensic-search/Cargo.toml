@@ -1,5 +1,6 @@
 [package]
 name = "browser-forensic-search"
+publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.2.0"
 description = "Search/filter and entity/IOC extraction over normalized browser events (emails, IPs, crypto addresses, Luhn-checked card candidates, known-bad domains)"
 edition.workspace = true

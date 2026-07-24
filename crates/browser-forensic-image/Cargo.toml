@@ -1,5 +1,6 @@
 [package]
 name = "browser-forensic-image"
+publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.1.0"
 description = "Disk-image ingest for browser-forensic: a thin, read-only adapter over the forensic-vfs FileSystem contract that locates browser profiles across an image's volumes and runs the existing parsers. Owns zero container/partition/filesystem code."
 edition.workspace = true

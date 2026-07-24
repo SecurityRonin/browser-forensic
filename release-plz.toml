@@ -39,7 +39,7 @@ release_commits = "^(feat|fix|perf|refactor|doc|revert)"
 
 [[package]]
 name = "browser-forensic-cache"
-release = false # first-publish pending review
+release = true # first-publish pending review
 
 [[package]]
 name = "browser-forensic-reconstruct"
@@ -47,7 +47,7 @@ release = false # first-publish pending review
 
 [[package]]
 name = "browser-forensic-decrypt"
-release = false # first-publish pending review
+release = true # first-publish pending review
 
 [[package]]
 name = "browser-forensic-imagecarve"
@@ -63,11 +63,11 @@ release = false # first-publish pending review
 
 [[package]]
 name = "browser-forensic-storage"
-release = false # first-publish pending review (blocks triage + cli until published)
+release = true # first-publish pending review (blocks triage + cli until published)
 
 [[package]]
 name = "browser-forensic-webcache"
-release = false # first-publish pending review (blocks triage + cli until published)
+release = true # first-publish pending review (blocks triage + cli until published)
 
 [[package]]
 name = "browser-forensic-manifest"

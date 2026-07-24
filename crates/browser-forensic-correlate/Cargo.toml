@@ -1,5 +1,6 @@
 [package]
 name = "browser-forensic-correlate"
+publish = false            # internal to browser-forensic suite — ADR-0005 (br4n6 ships via app pipeline)
 version = "0.1.0"
 description = "Cross-artifact / cross-browser correlation: unified timeline, per-host rollup, and entity graph over the normalized BrowserEvent stream (read-only)"
 edition.workspace = true
