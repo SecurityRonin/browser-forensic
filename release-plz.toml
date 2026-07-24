@@ -106,4 +106,7 @@ name = "browser-forensic-cli"
 # BLOCKED: local 0.3.0 is already ahead of crates.io 0.2.0 but depends on 11
 # unpublished workspace crates — release-plz would attempt (and fail) a publish
 # on its very first run. Unblock after the first-publish wave.
+# publish = false mirrors the crate's Cargo.toml (br4n6 ships via the app/tag
+# pipeline, not crates.io); release-plz requires the two to agree.
 release = false
+publish = false

@@ -131,10 +131,23 @@ fn artifact_webcache_routes_like_legacy() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert_eq!(
-        normalize(&out.stderr, path).trim_end(),
-        "br4n6: parsing WebCache from <PATH>: opening ESE WebCache database <PATH>: \
-         io: No such file or directory (os error 2): No such file or directory (os error 2)"
+    // The stable, br4n6/handler-generated prefix (through `io:`) proves `artifact
+    // webcache` reaches the same ESE WebCache handler as the legacy flat command.
+    // The trailing text is the OS's own file/path-not-found string, which differs
+    // by platform (Unix "No such file or directory (os error 2)" vs Windows "The
+    // system cannot find the path specified. (os error 3)"), so assert only that
+    // an underlying OS io error surfaced — not its platform-specific wording.
+    let stderr = normalize(&out.stderr, path);
+    let stderr = stderr.trim_end();
+    assert!(
+        stderr.starts_with(
+            "br4n6: parsing WebCache from <PATH>: opening ESE WebCache database <PATH>: io:"
+        ),
+        "webcache routing prefix changed: {stderr}"
+    );
+    assert!(
+        stderr.contains("os error"),
+        "webcache error did not surface an OS io error: {stderr}"
     );
 }
 

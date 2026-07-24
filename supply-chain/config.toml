@@ -17,37 +17,37 @@ url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.to
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
 [policy.browser-forensic-carve]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-chrome]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-cli]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-core]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-discovery]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-firefox]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-integrity]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-mcp]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-memory]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-safari]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.browser-forensic-triage]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy."ese-core:0.2.1"]
 
