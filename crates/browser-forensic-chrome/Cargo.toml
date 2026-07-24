@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-chrome"
-version = "0.2.0"
+version = "0.2.1"
 description = "Chromium-family (Chrome, Edge, Brave, Opera) browser artifact parsers"
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 safe-read = { workspace = true }
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 snss-core = "0.1.0"

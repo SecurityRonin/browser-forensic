@@ -16,13 +16,13 @@ path = "src/main.rs"
 
 [dependencies]
 snss-core = "0.1.0"
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core", features = ["schema"] }
-browser-forensic-chrome = { version = "0.2.0", path = "../browser-forensic-chrome" }
-browser-forensic-firefox = { version = "0.2.0", path = "../browser-forensic-firefox" }
-browser-forensic-safari = { version = "0.2.0", path = "../browser-forensic-safari" }
-browser-forensic-discovery = { version = "0.2.0", path = "../browser-forensic-discovery" }
-browser-forensic-integrity = { version = "0.2.0", path = "../browser-forensic-integrity" }
-browser-forensic-carve = { version = "0.2.0", path = "../browser-forensic-carve" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core", features = ["schema"] }
+browser-forensic-chrome = { version = "0.2.1", path = "../browser-forensic-chrome" }
+browser-forensic-firefox = { version = "0.2.1", path = "../browser-forensic-firefox" }
+browser-forensic-safari = { version = "0.2.1", path = "../browser-forensic-safari" }
+browser-forensic-discovery = { version = "0.3.0", path = "../browser-forensic-discovery" }
+browser-forensic-integrity = { version = "0.2.1", path = "../browser-forensic-integrity" }
+browser-forensic-carve = { version = "0.3.0", path = "../browser-forensic-carve" }
 browser-forensic-storage = { version = "0.2.0", path = "../browser-forensic-storage" }
 browser-forensic-webcache = { version = "0.2.0", path = "../browser-forensic-webcache" }
 browser-forensic-manifest = { version = "0.2.0", path = "../browser-forensic-manifest" }
@@ -33,7 +33,7 @@ browser-forensic-image = { version = "0.1.0", path = "../browser-forensic-image"
 browser-forensic-imagecarve = { version = "0.1.0", path = "../browser-forensic-imagecarve" }
 browser-forensic-correlate = { version = "0.1.0", path = "../browser-forensic-correlate" }
 browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-interpret" }
-browser-forensic-memory = { version = "0.2.0", path = "../browser-forensic-memory" }
+browser-forensic-memory = { version = "0.2.1", path = "../browser-forensic-memory" }
 browser-forensic-search = { version = "0.2.0", path = "../browser-forensic-search" }
 browser-forensic-decrypt = { version = "0.2.0", path = "../browser-forensic-decrypt" }
 ratatui = "0.30"

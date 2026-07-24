@@ -12,7 +12,7 @@ anyhow = { workspace = true }
 forensic-vfs = { workspace = true }
 forensicnomicon = { workspace = true }
 tempfile = { workspace = true }
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
 browser-forensic-triage = { version = "0.2.0", path = "../browser-forensic-triage" }
 
 [dev-dependencies]

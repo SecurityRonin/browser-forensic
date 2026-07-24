@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

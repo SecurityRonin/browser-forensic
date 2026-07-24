@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-browser-forensic-core = { version = "0.2.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
 browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-interpret" }
 regex = "1"
 linkify = "0.11"
