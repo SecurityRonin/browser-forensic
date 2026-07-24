@@ -6,6 +6,8 @@ rust-version = "1.80"
 license = "Apache-2.0"
 repository = "https://github.com/SecurityRonin/browser-forensic"
 description = "Python bindings for browser-forensic (br4n6): discover browser profiles and parse artifacts into BrowserEvents"
+# A PyO3 cdylib shipped as a PyPI wheel via maturin — never a crates.io library.
+publish = false
 
 # EXCLUDED from the parent workspace (see the root Cargo.toml `exclude`). A PyO3
 # cdylib links libpython when built without `extension-module`; keeping it out of

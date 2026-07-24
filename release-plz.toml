@@ -1,0 +1,102 @@
+# release-plz owns crates.io publishing + changelog + version bumps for the
+# browser-forensic workspace crates. It runs on pushes to main (see
+# .github/workflows/release-plz.yml):
+#   - `release-pr`  opens a human-reviewed version-bump PR (conventional commits)
+#   - `release`     publishes each crate whose Cargo.toml version is ahead of
+#                   crates.io and creates its git tag
+#
+# Only the crates already published on crates.io (0.2.0) are managed:
+#   browser-forensic-core / -chrome / -firefox / -safari / -discovery /
+#   -integrity / -carve / -memory / -mcp
+# Everything else is gated `release = false` below. The workspace-EXCLUDED
+# crates (browser-forensic-py — a PyO3/maturin PyPI wheel with `publish = false`
+# — and the two fuzz packages) are invisible to release-plz and need no entry.
+
+[workspace]
+# Package-prefixed tag, e.g. `browser-forensic-core-v0.2.1`. A bare
+# `v{{ version }}` tag would collide with the fleet's binary `v[0-9]*` release
+# trigger; the `{{ package }}-v` prefix has a letter (not a digit) after the
+# first `v`, so it never matches that glob.
+git_tag_name = "{{ package }}-v{{ version }}"
+git_tag_enable = true
+# Library crates get a git tag + CHANGELOG entry, not a GitHub Release with assets.
+git_release_enable = false
+changelog_update = true
+# Only prepare a release when a real change exists since the last one. release-plz's
+# release detection is file-based, so a changelog-only "chore: release" commit
+# otherwise re-triggers a release (the churn loop). This allowlist makes
+# feat/fix/perf/refactor/doc/revert the only release triggers; chore/ci/test/style/
+# build (incl. release-plz's own release commits) never prepare a release.
+release_commits = "^(feat|fix|perf|refactor|doc|revert)"
+
+# ---------------------------------------------------------------------------
+# Never-published crates — first publish pending review.
+# Each is a real library a third party could reuse, but an unreviewed
+# 11-crate first-publish must not fire on a merge to main (crates.io names
+# are claimed forever). Flip a crate's `release = false` off deliberately
+# when it is ready for its first publish.
+# ---------------------------------------------------------------------------
+
+[[package]]
+name = "browser-forensic-cache"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-reconstruct"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-decrypt"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-imagecarve"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-interpret"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-search"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-storage"
+release = false # first-publish pending review (blocks triage + cli until published)
+
+[[package]]
+name = "browser-forensic-webcache"
+release = false # first-publish pending review (blocks triage + cli until published)
+
+[[package]]
+name = "browser-forensic-manifest"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-image"
+release = false # first-publish pending review
+
+[[package]]
+name = "browser-forensic-correlate"
+release = false # first-publish pending review
+
+# ---------------------------------------------------------------------------
+# Published crates temporarily gated: their CURRENT source depends on
+# never-published workspace crates (path+version deps), so any publish would
+# fail until those deps' first-publish wave lands. Flip these back on in the
+# same pass that publishes the crates above.
+# ---------------------------------------------------------------------------
+
+[[package]]
+name = "browser-forensic-triage"
+# BLOCKED: depends on unpublished -storage and -webcache. crates.io has 0.2.0;
+# the next release would fail to publish. Unblock after their first publish.
+release = false
+
+[[package]]
+name = "browser-forensic-cli"
+# BLOCKED: local 0.3.0 is already ahead of crates.io 0.2.0 but depends on 11
+# unpublished workspace crates — release-plz would attempt (and fail) a publish
+# on its very first run. Unblock after the first-publish wave.
+release = false
