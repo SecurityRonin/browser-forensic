@@ -143,6 +143,11 @@ pub fn profile_label(p: &DiscoveredProfile) -> String {
 /// The originating user recovered from a profile path: the component following a
 /// `Users` or `home` path segment (case-insensitive). `None` when the layout
 /// carries no user segment (e.g. a bare profile directory).
+///
+/// The segment CLOSEST to the profile wins (scanned from the profile end), so a
+/// mount / temp prefix that itself carries a `Users`/`home` segment does not
+/// shadow the real owner — e.g. a Windows tempdir under `C:\Users\runneradmin\`
+/// or an image mounted under an analyst's own `/home/analyst/`.
 #[must_use]
 pub fn user_of(p: &DiscoveredProfile) -> Option<String> {
     let comps: Vec<String> = p
@@ -150,8 +155,8 @@ pub fn user_of(p: &DiscoveredProfile) -> Option<String> {
         .components()
         .map(|c| c.as_os_str().to_string_lossy().to_string())
         .collect();
-    for (i, c) in comps.iter().enumerate() {
-        let lc = c.to_lowercase();
+    for i in (0..comps.len()).rev() {
+        let lc = comps[i].to_lowercase();
         if (lc == "users" || lc == "home") && i + 1 < comps.len() {
             return Some(comps[i + 1].clone());
         }
@@ -261,6 +266,29 @@ mod tests {
     #[test]
     fn user_recovered_from_users_segment() {
         assert_eq!(user_of(&two()[0]).as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn user_of_prefers_the_users_segment_closest_to_the_profile() {
+        // A mount / temp prefix that itself carries a `Users/<name>` (or `home/<name>`)
+        // segment must not shadow the profile's real owner. This is exactly the
+        // Windows CI layout: `tempfile` roots under `C:\Users\runneradmin\...`, so a
+        // synthetic `Users\alice` profile ends up nested below it; likewise an image
+        // an analyst mounts under their own `/home/analyst/...`. The owning user is
+        // the `Users`/`home` segment CLOSEST to the profile, not the first one.
+        let p = profile(
+            BrowserFamily::Chromium,
+            "Default",
+            "/C/Users/runneradmin/AppData/Local/Temp/t/Users/alice/AppData/Local/Google/Chrome/User Data/Default",
+        );
+        assert_eq!(user_of(&p).as_deref(), Some("alice"));
+
+        let p = profile(
+            BrowserFamily::Firefox,
+            "abcd.default-release",
+            "/home/analyst/cases/home/bob/.mozilla/firefox/abcd.default-release",
+        );
+        assert_eq!(user_of(&p).as_deref(), Some("bob"));
     }
 
     #[test]
