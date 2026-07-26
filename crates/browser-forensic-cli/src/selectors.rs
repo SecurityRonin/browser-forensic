@@ -143,6 +143,11 @@ pub fn profile_label(p: &DiscoveredProfile) -> String {
 /// The originating user recovered from a profile path: the component following a
 /// `Users` or `home` path segment (case-insensitive). `None` when the layout
 /// carries no user segment (e.g. a bare profile directory).
+///
+/// The segment CLOSEST to the profile wins (scanned from the profile end), so a
+/// mount / temp prefix that itself carries a `Users`/`home` segment does not
+/// shadow the real owner — e.g. a Windows tempdir under `C:\Users\runneradmin\`
+/// or an image mounted under an analyst's own `/home/analyst/`.
 #[must_use]
 pub fn user_of(p: &DiscoveredProfile) -> Option<String> {
     let comps: Vec<String> = p
@@ -150,8 +155,8 @@ pub fn user_of(p: &DiscoveredProfile) -> Option<String> {
         .components()
         .map(|c| c.as_os_str().to_string_lossy().to_string())
         .collect();
-    for (i, c) in comps.iter().enumerate() {
-        let lc = c.to_lowercase();
+    for i in (0..comps.len()).rev() {
+        let lc = comps[i].to_lowercase();
         if (lc == "users" || lc == "home") && i + 1 < comps.len() {
             return Some(comps[i + 1].clone());
         }
