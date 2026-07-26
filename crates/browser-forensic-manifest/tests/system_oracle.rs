@@ -20,7 +20,13 @@ fn oracle_digest(program: &str, args: &[&str], path: &std::path::Path) -> Option
         return None;
     }
     let text = String::from_utf8(out.stdout).ok()?;
-    text.split_whitespace().next().map(str::to_lowercase)
+    // GNU coreutils escaped-output format: when the filename contains a backslash,
+    // newline, or CR, the line is prefixed with `\` and those chars in the name are
+    // escaped. On Windows the tempfile path contains `\`, so sha256sum/md5sum emit
+    // `\<hash>  C:\\Users\\...` — strip the leading backslash to recover the digest.
+    text.split_whitespace()
+        .next()
+        .map(|tok| tok.trim_start_matches('\\').to_lowercase())
 }
 
 /// First working SHA-256 oracle: BSD `shasum -a 256` or GNU `sha256sum`.
