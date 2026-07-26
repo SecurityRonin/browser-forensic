@@ -264,6 +264,29 @@ mod tests {
     }
 
     #[test]
+    fn user_of_prefers_the_users_segment_closest_to_the_profile() {
+        // A mount / temp prefix that itself carries a `Users/<name>` (or `home/<name>`)
+        // segment must not shadow the profile's real owner. This is exactly the
+        // Windows CI layout: `tempfile` roots under `C:\Users\runneradmin\...`, so a
+        // synthetic `Users\alice` profile ends up nested below it; likewise an image
+        // an analyst mounts under their own `/home/analyst/...`. The owning user is
+        // the `Users`/`home` segment CLOSEST to the profile, not the first one.
+        let p = profile(
+            BrowserFamily::Chromium,
+            "Default",
+            "/C/Users/runneradmin/AppData/Local/Temp/t/Users/alice/AppData/Local/Google/Chrome/User Data/Default",
+        );
+        assert_eq!(user_of(&p).as_deref(), Some("alice"));
+
+        let p = profile(
+            BrowserFamily::Firefox,
+            "abcd.default-release",
+            "/home/analyst/cases/home/bob/.mozilla/firefox/abcd.default-release",
+        );
+        assert_eq!(user_of(&p).as_deref(), Some("bob"));
+    }
+
+    #[test]
     fn profile_selector_scopes_to_one() {
         let s = Selectors::new(None, Some("Chrome/Default".to_string()), None);
         let kept = s.filter(two()).unwrap();
