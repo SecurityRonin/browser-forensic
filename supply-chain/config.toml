@@ -54,6 +54,18 @@ audit-as-crates-io = false
 [policy."ese-core:0.2.1@git:856758d1e9899a36684f4d67050b31ee554f87f4"]
 audit-as-crates-io = true
 
+[policy.browser-forensic-cache]
+audit-as-crates-io = false
+
+[policy.browser-forensic-decrypt]
+audit-as-crates-io = false
+
+[policy.browser-forensic-storage]
+audit-as-crates-io = false
+
+[policy.browser-forensic-webcache]
+audit-as-crates-io = false
+
 [[exemptions.adler32]]
 version = "1.2.0"
 criteria = "safe-to-deploy"
