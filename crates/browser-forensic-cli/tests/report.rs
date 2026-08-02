@@ -112,6 +112,35 @@ fn l2t_header_is_exact() {
     assert_eq!(out.lines().next().unwrap(), L2T_HEADER);
 }
 
+/// `l2t_csv` is opened in a spreadsheet as often as it is fed to a timeline
+/// tool, and its `host`, `desc` and `short` columns carry site-controlled
+/// strings. A cell beginning with `=`, `+`, `-` or `@` must not reach the file
+/// with the formula lead-in intact.
+#[test]
+fn l2t_neutralizes_formula_lead_ins() {
+    for lead in ['=', '+', '-', '@'] {
+        let payload = format!("{lead}cmd|'/c calc'!A1");
+        let e = BrowserEvent::new(
+            TS_NS,
+            BrowserFamily::Chromium,
+            ArtifactKind::History,
+            "/p/History",
+            payload.clone(),
+        )
+        .with_attr("url", json!(payload.clone()))
+        .with_attr("title", json!(payload.clone()))
+        .with_attr("host", json!(payload.clone()));
+        let out = to_l2t_csv(&[e], None);
+        let row = out.lines().nth(1).unwrap();
+        for cell in row.split(',') {
+            assert!(
+                !cell.starts_with(lead),
+                "unguarded formula cell {cell:?} in row: {row}"
+            );
+        }
+    }
+}
+
 #[test]
 fn l2t_empty_events_header_only() {
     let out = to_l2t_csv(&[], None);

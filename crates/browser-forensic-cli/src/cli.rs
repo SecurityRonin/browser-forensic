@@ -6093,6 +6093,24 @@ mod tests {
         assert_eq!(csv_escape("plain"), "plain");
     }
 
+    /// The values reaching these escapers — profile names and paths, event
+    /// descriptions, page titles, URLs — are attacker-controlled. A cell
+    /// beginning with `=`, `+`, `-` or `@` executes as a formula the moment the
+    /// examiner opens the CSV, so both escapers must neutralize the lead-in.
+    #[test]
+    fn csv_escape_neutralizes_formula_lead_ins() {
+        for lead in ['=', '+', '-', '@'] {
+            let payload = format!("{lead}cmd|'/c calc'!A1");
+            let out = csv_escape(&payload);
+            assert!(!out.starts_with(lead), "csv_escape left {out:?} unguarded");
+            let out = fmt::csv_escape(&payload);
+            assert!(
+                !out.starts_with(lead),
+                "fmt::csv_escape left {out:?} unguarded"
+            );
+        }
+    }
+
     #[test]
     fn format_ts_is_rfc3339() {
         assert!(format_ts(1_648_000_000_000_000_000).contains('T'));
