@@ -22,6 +22,27 @@ user-id = 1281
 user-login = "nical"
 user-name = "Nicolas Silva"
 
+[[publisher.forensic-carve]]
+version = "0.1.0"
+when = "2026-07-23"
+user-id = 347968
+user-login = "h4x0r"
+user-name = "Albert Hui"
+
+[[publisher.sqlite-core]]
+version = "0.10.3"
+when = "2026-07-25"
+user-id = 347968
+user-login = "h4x0r"
+user-name = "Albert Hui"
+
+[[publisher.sqlite-forensic]]
+version = "0.10.3"
+when = "2026-07-25"
+user-id = 347968
+user-login = "h4x0r"
+user-name = "Albert Hui"
+
 [[publisher.unicode-segmentation]]
 version = "1.13.3"
 when = "2026-06-01"
