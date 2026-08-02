@@ -1597,6 +1597,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "forensic-carve"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce0033fbf842b95264c3af1c568bc4e6b5c4f21d295ab9a2e75248aa2ce766ff"
+dependencies = [
+ "aho-corasick",
+ "inventory",
+]
+
+[[package]]
 name = "forensic-vfs"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3921,20 +3931,23 @@ checksum = "9e3785e094b7380928e000155a8973e2a7073a4e1759e504cc4e013a0887d089"
 
 [[package]]
 name = "sqlite-core"
-version = "0.9.0"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9beb05e4966c9eb8c5b1902c08274769366295e6d046a1bf8de3872fe4df6216"
+checksum = "fb0c546ae560e1dbbedb72df7079bbcde3f04fd691bd84cd3e711c0f4cbc24ae"
 dependencies = [
  "forensicnomicon",
 ]
 
 [[package]]
 name = "sqlite-forensic"
-version = "0.9.0"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4039e64da317cc0ec656d480d255384592229ea900075ba9f8743311fe24cdcf"
+checksum = "cf8f5b8d3aa3a550598a39b2a67d9b559cf47414e5338ebd1d5a8d08ada4d43d"
 dependencies = [
+ "forensic-carve",
  "forensicnomicon",
+ "inventory",
+ "sha2",
  "sqlite-core",
 ]
 
