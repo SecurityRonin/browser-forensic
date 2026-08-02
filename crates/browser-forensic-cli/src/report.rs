@@ -169,14 +169,10 @@ pub fn to_bodyfile(events: &[BrowserEvent]) -> String {
 const L2T_HEADER: &str =
     "date,time,timezone,MACB,source,sourcetype,type,user,host,short,desc,version,filename,inode,notes,format,extra";
 
-/// RFC 4180 field escaping: wrap in double quotes and double any embedded quote
-/// when the value contains a comma, quote, CR, or LF.
+/// RFC 4180 field escaping plus a spreadsheet formula guard, via the fleet's
+/// shared `jsonguard` sanitizer rather than a local escaper.
 fn csv_field(s: &str) -> String {
-    if s.contains([',', '"', '\n', '\r']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
+    jsonguard::csv_field(s).value
 }
 
 /// Render (date `MM/DD/YYYY`, time `HH:MM:SS`) for an event in the given zone

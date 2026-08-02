@@ -38,6 +38,8 @@ browser-forensic-interpret = { version = "0.2.0", path = "../browser-forensic-in
 browser-forensic-memory = { version = "0.2.1", path = "../browser-forensic-memory" }
 browser-forensic-search = { version = "0.2.0", path = "../browser-forensic-search" }
 browser-forensic-decrypt = { version = "0.2.0", path = "../browser-forensic-decrypt" }
+# Output sanitization: RFC 4180 CSV quoting + spreadsheet formula guard.
+jsonguard = "0.2"
 ratatui = "0.30"
 crossterm = "0.29"
 arboard = "3.6"
