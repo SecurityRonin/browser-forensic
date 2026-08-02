@@ -22,6 +22,13 @@ user-id = 1281
 user-login = "nical"
 user-name = "Nicolas Silva"
 
+[[publisher.jsonguard]]
+version = "0.2.5"
+when = "2026-08-02"
+user-id = 347968
+user-login = "h4x0r"
+user-name = "Albert Hui"
+
 [[publisher.unicode-segmentation]]
 version = "1.13.3"
 when = "2026-06-01"
