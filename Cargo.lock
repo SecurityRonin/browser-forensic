@@ -2182,9 +2182,9 @@ dependencies = [
 
 [[package]]
 name = "jsonguard"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd01eca4cd153fbfbe7963679c361528ecd994e262488b3e1773bcd09cc10729"
+checksum = "da69c0e1ea0a8594c077882aa53d25698a10238a47f3beff2fe961c0576bcdc2"
 
 [[package]]
 name = "kasuari"
