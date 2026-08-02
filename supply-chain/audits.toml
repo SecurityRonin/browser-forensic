@@ -2,3 +2,9 @@
 # cargo-vet audits file
 
 [audits]
+
+[[trusted.jsonguard]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-05-21"
+end = "2027-08-02"
