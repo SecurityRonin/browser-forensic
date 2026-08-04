@@ -67,8 +67,8 @@ forensicnomicon = { version = "1.5", features = ["serde"] }
 # container/partition/filesystem code (the disk-format readers and the Vfs::open
 # resolver live behind it in the forensic-vfs fleet).
 forensic-vfs = "0.1"
-sqlite-core = "0.9"
-sqlite-forensic = "0.9"
+sqlite-core = "0.10"
+sqlite-forensic = "0.10"
 # disk-forensic: the published container abstraction. `container::open(path)`
 # sniffs the wrapper and returns a decoded (decompressed) `Read + Seek` view for
 # E01/EWF, VMDK, VHDX, VHD, QCOW2, DMG, ISO9660, and raw — one code path, no

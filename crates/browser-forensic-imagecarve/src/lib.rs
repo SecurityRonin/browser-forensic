@@ -434,8 +434,8 @@ fn carve_sqlite_at(source: &dyn ImageSource, abs: u64, out: &mut Vec<CarvedArtif
         };
         // Allocated cells (the DB itself is unallocated residue, so its live rows
         // are recovered too) plus freed in-page residue.
-        let mut cells = db.carve_leaf_cells(page_bytes);
-        cells.extend(db.carve_free_regions(page_bytes, 0));
+        let mut cells = db.carve_leaf_cells(&page_bytes);
+        cells.extend(db.carve_free_regions(&page_bytes, 0));
         for cell in &cells {
             let Some(art) = history_artifact_from_cell(cell, abs, page, page_size) else {
                 continue;
