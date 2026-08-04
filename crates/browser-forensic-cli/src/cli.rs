@@ -2933,12 +2933,10 @@ fn format_ts_tz(ns: i64, tz: Option<chrono_tz::Tz>) -> String {
     )
 }
 
+/// RFC 4180 quoting plus a spreadsheet formula guard, via the fleet's shared
+/// `jsonguard` sanitizer rather than a local escaper.
 fn csv_escape(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
+    jsonguard::csv_field(s).value
 }
 
 // ===========================================================================
@@ -2964,15 +2962,11 @@ pub mod fmt {
     /// CSV header for timeline/artifact output.
     pub const TIMELINE_CSV_HEADER: &str = "timestamp,browser,artifact,source,description";
 
-    /// Escape a string for CSV: wraps in double quotes if it contains commas or quotes.
+    /// RFC 4180 quoting plus a spreadsheet formula guard, via the fleet's
+    /// shared `jsonguard` sanitizer rather than a local escaper.
     #[must_use]
     pub fn csv_escape(s: &str) -> String {
-        if s.contains(',') || s.contains('"') || s.contains('\n') {
-            let escaped = s.replace('"', "\"\"");
-            format!("\"{escaped}\"")
-        } else {
-            s.to_string()
-        }
+        jsonguard::csv_field(s).value
     }
 
     /// Format a Unix nanosecond timestamp as RFC3339.
@@ -5051,15 +5045,13 @@ fn tamper_host_of(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_string())
 }
 
-/// CSV-escape a field: neutralize a spreadsheet formula trigger, quote, and
-/// double any embedded quotes.
+/// RFC 4180 quoting plus a spreadsheet formula guard, via the fleet's shared
+/// `jsonguard` sanitizer rather than a local escaper. (This escaper already
+/// guarded; routing it through `jsonguard` too keeps one definition of a safe
+/// cell across the crate. It quotes only when RFC 4180 requires it, where the
+/// previous local version quoted unconditionally — both parse identically.)
 fn csv_field(value: &str) -> String {
-    let guarded = if value.starts_with(['=', '+', '-', '@']) {
-        format!("'{value}")
-    } else {
-        value.to_string()
-    };
-    format!("\"{}\"", guarded.replace('"', "\"\""))
+    jsonguard::csv_field(value).value
 }
 
 /// `br4n6 artifact storage PATH` — parse web storage (Local/Session Storage, IndexedDB)
@@ -6093,6 +6085,24 @@ mod tests {
         assert_eq!(csv_escape("plain"), "plain");
     }
 
+    /// The values reaching these escapers — profile names and paths, event
+    /// descriptions, page titles, URLs — are attacker-controlled. A cell
+    /// beginning with `=`, `+`, `-` or `@` executes as a formula the moment the
+    /// examiner opens the CSV, so both escapers must neutralize the lead-in.
+    #[test]
+    fn csv_escape_neutralizes_formula_lead_ins() {
+        for lead in ['=', '+', '-', '@'] {
+            let payload = format!("{lead}cmd|'/c calc'!A1");
+            let out = csv_escape(&payload);
+            assert!(!out.starts_with(lead), "csv_escape left {out:?} unguarded");
+            let out = fmt::csv_escape(&payload);
+            assert!(
+                !out.starts_with(lead),
+                "fmt::csv_escape left {out:?} unguarded"
+            );
+        }
+    }
+
     #[test]
     fn format_ts_is_rfc3339() {
         assert!(format_ts(1_648_000_000_000_000_000).contains('T'));
@@ -6545,7 +6555,9 @@ mod tests {
 
     #[test]
     fn csv_field_guards_formula_and_quotes() {
-        assert_eq!(csv_field("=SUM(A1)"), "\"'=SUM(A1)\"");
+        // Quoting is applied only where RFC 4180 requires it; the formula guard
+        // is applied regardless.
+        assert_eq!(csv_field("=SUM(A1)"), "'=SUM(A1)");
         assert_eq!(csv_field("a,b"), "\"a,b\"");
         assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
     }

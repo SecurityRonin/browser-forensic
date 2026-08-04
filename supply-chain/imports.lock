@@ -29,6 +29,13 @@ user-id = 347968
 user-login = "h4x0r"
 user-name = "Albert Hui"
 
+[[publisher.jsonguard]]
+version = "0.2.5"
+when = "2026-08-02"
+user-id = 347968
+user-login = "h4x0r"
+user-name = "Albert Hui"
+
 [[publisher.sqlite-core]]
 version = "0.10.3"
 when = "2026-07-25"

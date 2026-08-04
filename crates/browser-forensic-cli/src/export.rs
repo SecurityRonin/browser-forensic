@@ -122,12 +122,10 @@ fn row(e: &BrowserEvent, tz: Option<Tz>) -> Vec<String> {
     COLUMNS.iter().map(|c| cell(e, c, tz)).collect()
 }
 
+/// RFC 4180 quoting plus a spreadsheet formula guard, via the fleet's shared
+/// `jsonguard` sanitizer rather than a local escaper.
 fn csv_escape(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
+    jsonguard::csv_field(s).value
 }
 
 /// Write text/jsonl/csv events to a stream.

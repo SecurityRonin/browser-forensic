@@ -408,6 +408,7 @@ dependencies = [
  "crossterm",
  "ctrlc",
  "dirs",
+ "jsonguard",
  "lz4_flex",
  "open",
  "ratatui",
@@ -2188,6 +2189,12 @@ dependencies = [
  "once_cell",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "jsonguard"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da69c0e1ea0a8594c077882aa53d25698a10238a47f3beff2fe961c0576bcdc2"
 
 [[package]]
 name = "kasuari"

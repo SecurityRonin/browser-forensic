@@ -83,6 +83,36 @@ fn cell_reads_columns_and_attrs() {
     assert_eq!(cell(&e, "timestamp", None), "2023-11-14T22:13:20+00:00");
 }
 
+/// A page title and a URL are written by the site, not by the examiner — they
+/// are attacker-controlled. A value beginning with `=`, `+`, `-` or `@` becomes
+/// a live formula the moment the examiner opens the exported CSV in a
+/// spreadsheet, so the lead-in must be neutralized before the cell is written.
+#[test]
+fn csv_stream_neutralizes_formula_lead_ins() {
+    for lead in ['=', '+', '-', '@'] {
+        let payload = format!("{lead}cmd|'/c calc'!A1");
+        let e = BrowserEvent::new(
+            TS_NS,
+            BrowserFamily::Chromium,
+            ArtifactKind::History,
+            "/p/History",
+            payload.clone(),
+        )
+        .with_attr("url", json!(payload.clone()))
+        .with_attr("title", json!(payload.clone()));
+        let mut buf = Vec::new();
+        write_stream(&[e], ExportFormat::Csv, None, &mut buf).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        let row = text.lines().nth(1).unwrap();
+        for cell in row.split(',') {
+            assert!(
+                !cell.starts_with(lead),
+                "unguarded formula cell {cell:?} in row: {row}"
+            );
+        }
+    }
+}
+
 #[test]
 fn csv_stream_has_header_and_rows() {
     let events = vec![search_event()];
