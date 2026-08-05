@@ -3,11 +3,95 @@
 
 [audits]
 
+[[trusted.apm-partition-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.apm-partition-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.disk-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-05"
+end = "2027-08-05"
+
+[[trusted.dmg-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-16"
+end = "2027-08-05"
+
+[[trusted.dpapi-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-24"
+end = "2027-08-05"
+
+[[trusted.ese-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-13"
+end = "2027-08-05"
+
+[[trusted.ewf]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-03-05"
+end = "2027-08-05"
+
 [[trusted.forensic-carve]]
 criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-07-23"
 end = "2027-08-04"
+
+[[trusted.forensic-vfs]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-07-07"
+end = "2027-08-05"
+
+[[trusted.forensicnomicon]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-05"
+end = "2027-08-05"
+
+[[trusted.forensicnomicon-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-28"
+end = "2027-08-05"
+
+[[trusted.forensicnomicon-data]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-28"
+end = "2027-08-05"
+
+[[trusted.gpt-partition-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.gpt-partition-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.iso9660-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-02"
+end = "2027-08-05"
 
 [[trusted.jsonguard]]
 criteria = "safe-to-deploy"
@@ -15,14 +99,134 @@ user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-05-21"
 end = "2027-08-02"
 
+[[trusted.leveldb-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-07-11"
+end = "2027-08-05"
+
+[[trusted.leveldb-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-07-11"
+end = "2027-08-05"
+
+[[trusted.livedisk-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-18"
+end = "2027-08-05"
+
+[[trusted.livedisk-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-18"
+end = "2027-08-05"
+
+[[trusted.lzo]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-07"
+end = "2027-08-05"
+
+[[trusted.mbr-partition-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.mbr-partition-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.memf-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-15"
+end = "2027-08-05"
+
+[[trusted.memf-correlate]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-15"
+end = "2027-08-05"
+
+[[trusted.memf-format]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-15"
+end = "2027-08-05"
+
+[[trusted.memf-linux]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-15"
+end = "2027-08-05"
+
+[[trusted.memf-session]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-25"
+end = "2027-08-05"
+
+[[trusted.memf-symbols]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-15"
+end = "2027-08-05"
+
+[[trusted.protobuf-forensic-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-07-11"
+end = "2027-08-05"
+
+[[trusted.qcow2-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.safe-read]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-07-15"
+end = "2027-08-05"
+
+[[trusted.snss-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-15"
+end = "2027-08-05"
+
 [[trusted.sqlite-core]]
 criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-06-16"
-end = "2027-08-04"
+end = "2027-08-05"
 
 [[trusted.sqlite-forensic]]
 criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-06-16"
-end = "2027-08-04"
+end = "2027-08-05"
+
+[[trusted.vhdx-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.vmdk-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-05"
+
+[[trusted.vmdk-forensic]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-06"
+end = "2027-08-05"
