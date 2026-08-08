@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/SecurityRonin/browser-forensic/compare/browser-forensic-firefox-v0.2.1...browser-forensic-firefox-v0.2.2) - 2026-08-08
+
+### Other
+
+- updated the following local packages: browser-forensic-core
+
 ## [0.2.1](https://github.com/SecurityRonin/browser-forensic/compare/browser-forensic-firefox-v0.2.0...browser-forensic-firefox-v0.2.1) - 2026-07-24
 
 ### Added

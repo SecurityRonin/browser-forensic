@@ -14,7 +14,7 @@ disk-forensic = { workspace = true }
 safe-read = { workspace = true }
 sqlite-core = { workspace = true }
 thiserror = { workspace = true }
-browser-forensic-cache = { version = "0.1.0", path = "../browser-forensic-cache" }
+browser-forensic-cache = { version = "0.1.1", path = "../browser-forensic-cache" }
 
 [dev-dependencies]
 rusqlite = { workspace = true }

@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-cache"
-version = "0.1.0"
+version = "0.1.1"
 description = "Browser cache response-body extraction (Chromium SimpleCache, Firefox cache2, Safari Cache.db) and panic-free HTTP decompression"
 edition.workspace = true
 rust-version = "1.88"

@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-decrypt"
-version = "0.2.0"
+version = "0.2.1"
 description = "Opt-in decryption of Firefox NSS, macOS Chromium (v10) and Windows Chromium (v10/v11 AES-256-GCM via DPAPI) encrypted browser secrets — RustCrypto only, never fabricates plaintext"
 edition.workspace = true
 # Raised above the workspace floor because `dpapi-core` requires Rust 1.85.
@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-browser-forensic-core = { version = "0.3.0", path = "../browser-forensic-core" }
+browser-forensic-core = { version = "0.3.1", path = "../browser-forensic-core" }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
