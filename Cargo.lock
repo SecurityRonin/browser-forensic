@@ -408,6 +408,8 @@ dependencies = [
  "crossterm",
  "ctrlc",
  "dirs",
+ "disk-forensic",
+ "forensic-vfs",
  "jsonguard",
  "lz4_flex",
  "open",
@@ -420,6 +422,7 @@ dependencies = [
  "sha2",
  "snss-core",
  "tempfile",
+ "thiserror 2.0.18",
  "url",
 ]
 
@@ -508,10 +511,9 @@ dependencies = [
 
 [[package]]
 name = "browser-forensic-imagecarve"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "browser-forensic-cache",
- "disk-forensic",
  "forensic-vfs",
  "rusqlite",
  "safe-read",
