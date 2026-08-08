@@ -1,0 +1,42 @@
+title = "browser-forensic gitleaks config"
+
+[extend]
+useDefault = true
+
+# browser-forensic-decrypt reads Chromium's encrypted credential stores, so its
+# test data necessarily contains key material shaped exactly like the real thing.
+# gitleaks flags the fixtures the decryptor is validated against.
+#
+# Every flagged value is a published constant or is DERIVED from inputs printed
+# in the clear in the same files. This is demonstrable, not asserted:
+#
+#   PREKEY_HEX        = HMAC-SHA1(SHA1("Password123!" as UTF-16LE),
+#                                 SID + "\0" as UTF-16LE)
+#                       with the synthetic SID
+#                       S-1-5-21-1111111111-2222222222-3333333333-1001.
+#                       Recomputing that expression from tests/data/gen_win.py's
+#                       own published PASSWORD and SID reproduces the flagged
+#                       value byte for byte.
+#   NIST_GCM_KEY_HEX  = the NIST CAVP AES-256-GCM known-answer-test key
+#                       (gcmEncryptExtIV256, empty PT/AAD) — a published answer
+#                       key, tier-1 for the primitive.
+#   MASTERKEY64_HEX   = the synthetic DPAPI masterkey generated to [MS-DPAPI]
+#                       layout by gen_win.py and confirmed through impacket's
+#                       decrypt path as an independent oracle.
+#
+# None of these opens anything: the "password" is Password123!, the SID is a
+# placeholder, and the Chromium key is bytes(range(32)). No rotation applies.
+#
+# Scoped to these three exact values — NOT to the rules and NOT to the files.
+# A real credential appearing in win_dpapi_vectors.json or gen_win.py still
+# fails the job. See docs/validation.md for the full provenance and tiering.
+[allowlist]
+description = "Documented DPAPI/NIST test vectors, derivable from published inputs"
+regexes = [
+  '''^8900443d1a0fa53f568c1d43a8577dc18e30ee0f$''',
+  # The 64-byte masterkey; gitleaks reports it both whole and truncated to its
+  # first 32 bytes depending on which rule fires, so both forms are anchored.
+  '''^312a41376b1c7a438d09f643d63bd30d147f18756232b62e204f7ddcabc5cd7b$''',
+  '''^312a41376b1c7a438d09f643d63bd30d147f18756232b62e204f7ddcabc5cd7b5e04f2e4bd8bddc9f80e08724ed88cf44c552a16335b3243f2d879be6b516d9f$''',
+  '''^b52c505a37d78eda5dd34f20c22540ea1b58963cf8e5bf8ffa85f9f2492505b4$''',
+]
