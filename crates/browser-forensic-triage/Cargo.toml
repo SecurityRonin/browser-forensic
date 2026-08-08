@@ -3,7 +3,7 @@ name = "browser-forensic-triage"
 version = "0.2.0"
 description = "Rapid-triage orchestration for browser forensics — merges parsing, carving, integrity, and discovery into one report"
 edition.workspace = true
-rust-version.workspace = true
+rust-version = "1.88"
 license.workspace = true
 repository.workspace = true
 [dependencies]

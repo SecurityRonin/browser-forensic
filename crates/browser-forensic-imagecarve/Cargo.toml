@@ -4,7 +4,7 @@ publish = false            # internal to browser-forensic suite — ADR-0005 (br
 version = "0.1.0"
 description = "Whole-image / physical-disk carving: recover browser SQLite records and Chromium SimpleCache entries from the raw unallocated space of a disk or memory image by streaming windowed signature carving over a forensic-vfs ImageSource. Orchestration over vetted carvers (sqlite-core + browser-forensic-cache) — owns zero record-decode logic."
 edition.workspace = true
-rust-version.workspace = true
+rust-version = "1.96"
 license.workspace = true
 repository.workspace = true
 
