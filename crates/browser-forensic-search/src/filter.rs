@@ -78,7 +78,7 @@ pub fn filter_events<'a>(events: &'a [BrowserEvent], query: &EventQuery) -> Vec<
 
 /// Inclusive `[from_ns, to_ns]` bounds check; an absent bound never excludes.
 fn in_window(ts: i64, query: &EventQuery) -> bool {
-    query.from_ns.map_or(true, |from| ts >= from) && query.to_ns.map_or(true, |to| ts <= to)
+    query.from_ns.is_none_or(|from| ts >= from) && query.to_ns.is_none_or(|to| ts <= to)
 }
 
 /// True when the query has no pattern (time-only), or any in-scope field of the

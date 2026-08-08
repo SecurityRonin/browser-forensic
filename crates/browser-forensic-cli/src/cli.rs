@@ -3440,7 +3440,7 @@ pub fn resolve_dpapi_key(
 
 /// Decode a lowercase/uppercase hex string into bytes.
 fn decode_hex(s: &str) -> Result<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         anyhow::bail!("hex string has an odd length ({})", s.len());
     }
     (0..s.len())

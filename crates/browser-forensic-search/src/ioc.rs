@@ -231,7 +231,7 @@ fn luhn_valid(digits: &str) -> bool {
         sum += d;
         double = !double;
     }
-    sum % 10 == 0
+    sum.is_multiple_of(10)
 }
 
 /// Bitcoin base58check address candidates (P2PKH `1…` / P2SH `3…`). The shape is

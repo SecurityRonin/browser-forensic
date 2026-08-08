@@ -67,7 +67,7 @@ fn create_chrome_history_with_redirect() -> (TempDir, PathBuf) {
 // ── SNSS session fixture builders (mirror browser-chrome/src/session.rs) ──────
 
 fn pad4(v: &mut Vec<u8>) {
-    while v.len() % 4 != 0 {
+    while !v.len().is_multiple_of(4) {
         v.push(0);
     }
 }
