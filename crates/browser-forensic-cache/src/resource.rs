@@ -1,8 +1,8 @@
 //! The public `CachedResource` type and `Cache/` directory enumeration.
 //!
-//! Ties the pieces together: [`parse_simple_entry`](crate::parse_simple_entry)
-//! recovers the URL + stream bytes, [`parse_http_meta`](crate::parse_http_meta)
-//! decodes the response metadata, and [`decode_body`](crate::decode_body)
+//! Ties the pieces together: [`parse_simple_entry`]
+//! recovers the URL + stream bytes, [`parse_http_meta`]
+//! decodes the response metadata, and [`decode_body`]
 //! transparently decompresses the body under its `Content-Encoding`.
 
 use std::path::{Path, PathBuf};

@@ -6,11 +6,11 @@
 //! read-only and panic-free:
 //!
 //! * the LevelDB **key** layout — a `(database id, object-store id, index id)`
-//!   prefix followed by an encoded IDBKey ([`varint`], [`key`]);
+//!   prefix followed by an encoded IDBKey (`varint`, `key`);
 //! * the per-database / per-store **metadata** records that name each database
 //!   and object store;
-//! * the record **value** — a Blink envelope ([`envelope`]) wrapping a V8
-//!   `ValueSerializer` stream ([`v8`]) decoded to a [`serde_json::Value`] for the
+//! * the record **value** — a Blink envelope (`envelope`) wrapping a V8
+//!   `ValueSerializer` stream (`v8`) decoded to a [`serde_json::Value`] for the
 //!   documented tag subset, with any unsupported tag surfaced raw rather than
 //!   fabricated.
 //!

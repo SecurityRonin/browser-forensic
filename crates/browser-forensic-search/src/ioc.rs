@@ -111,7 +111,7 @@ pub fn extract_iocs(events: &[BrowserEvent]) -> Vec<IocMatch> {
 /// Extract every candidate entity from a single text run.
 ///
 /// The caller is responsible for length-bounding `text`; [`extract_iocs`] does
-/// so via [`crate::filter::bound`].
+/// so via `crate::filter::bound`.
 #[must_use]
 pub fn extract_from_text(text: &str) -> Vec<TextHit> {
     let mut out = Vec::new();

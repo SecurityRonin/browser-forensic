@@ -7,7 +7,7 @@
 //! `text`/`jsonl`/`csv` output. The interactive TUI is launched via the injected
 //! `launch_tui` callback.
 //!
-//! Cross-browser: the [`Family`] auto-detector routes a user-supplied file or
+//! Cross-browser: the `Family` auto-detector routes a user-supplied file or
 //! profile directory to the matching reader — Chromium (`History`/SNSS via
 //! `browser-chrome` + `snss`), Firefox (`places.sqlite`/`sessionstore.jsonlz4`
 //! via `browser-firefox`), or Safari (`History.db` via `browser-safari`) — and

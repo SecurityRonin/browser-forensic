@@ -26,7 +26,7 @@
 //! wire-compressed body** (gzip observed). So the stored body is only decoded
 //! when it actually looks compressed for the declared encoding; otherwise it is
 //! surfaced verbatim as the usable content. Decoding reuses the shared
-//! [`decode_body`](crate::decode_body) dispatch and its bomb caps.
+//! [`decode_body`] dispatch and its bomb caps.
 //!
 //! Untrusted-input posture: `#![forbid(unsafe_code)]` (crate-wide), no
 //! `unwrap`/`expect`, the database is opened **read-only + immutable** (no
