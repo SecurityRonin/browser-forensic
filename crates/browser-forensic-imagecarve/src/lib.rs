@@ -118,7 +118,6 @@ pub fn carve_image(source: &dyn ImageSource, source_path: &Path) -> Vec<CarvedAr
     carve_image_with(source, source_path, WINDOW, OVERLAP)
 }
 
-
 /// [`carve_image`] with explicit window/overlap sizing (the seam tests drive to
 /// exercise window-boundary straddling with a small window).
 #[must_use]
@@ -449,5 +448,4 @@ mod tests {
             let _ = carve_image(&src, Path::new("tail.bin"));
         }
     }
-
 }

@@ -22,7 +22,8 @@ use disk_forensic::container::{self, ReadSeek};
 use forensic_vfs::{ImageSource, VfsResult};
 
 /// Open `path` through the **container abstraction** and carve it (see
-/// [`carve_image`]). `disk_forensic::container::open` sniffs the wrapper and
+/// [`browser_forensic_imagecarve::carve_image`]). `disk_forensic::container::open`
+/// sniffs the wrapper and
 /// returns a **decoded, decompressed** `Read + Seek` view of the disk, so the
 /// same carve engine runs over E01/EWF, VMDK, VHDX, VHD, QCOW2, DMG, ISO9660,
 /// and raw/`dd` images through one code path with no per-format branch — a
@@ -239,8 +240,8 @@ fn read_positioned(reader: &mut dyn ReadSeek, offset: u64, len: usize) -> ReadRe
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use rusqlite::Connection;
+    use tempfile::NamedTempFile;
 
     // Fixture builders mirrored from browser-forensic-imagecarve's tests. They
     // construct evidence, not behaviour, so a drift between the two copies
