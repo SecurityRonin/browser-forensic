@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-browser-forensic-cache = { version = "0.1.0", path = "../browser-forensic-cache" }
+browser-forensic-cache = { version = "0.1.1", path = "../browser-forensic-cache" }
 url = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
