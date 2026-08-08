@@ -1747,7 +1747,7 @@ fn recover_findings(
 fn recover_whole_image_findings(
     image: &Path,
 ) -> Result<Vec<browser_forensic_core::finding::Finding>> {
-    let artifacts = browser_forensic_imagecarve::carve_image_path(image).map_err(|e| {
+    let artifacts = crate::imagecarve_container::carve_image_path(image).map_err(|e| {
         anyhow::anyhow!(
             "cannot open image {} for whole-image carve: {e:?}",
             image.display()

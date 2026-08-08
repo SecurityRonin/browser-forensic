@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use snss::{Nav, Source, SourceKind, Tab, Window};
 
+pub mod imagecarve_container;
 mod render;
 pub use render::draw;
 
