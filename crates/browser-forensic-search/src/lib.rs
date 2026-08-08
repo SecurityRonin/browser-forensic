@@ -1,8 +1,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
-//! Search, filter, and entity/IOC extraction over normalized [`BrowserEvent`]s.
+//! Search, filter, and entity/IOC extraction over normalized `BrowserEvent`s.
 //!
 //! A read-only analysis layer that never touches the source artifacts again:
-//! it operates purely on the [`BrowserEvent`] rows the collector already
+//! it operates purely on the `BrowserEvent` rows the collector already
 //! produced (and, optionally, cached-body text passed in as untrusted bytes).
 //!
 //! - [`filter`] — substring / regex search across an event's textual fields,

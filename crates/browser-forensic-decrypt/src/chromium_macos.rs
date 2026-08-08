@@ -42,7 +42,7 @@ pub fn decrypt_chromium_value_macos(encrypted: &[u8], storage_key: &[u8; 16]) ->
         return Err(DecryptError::NotV10(hex(seen)));
     }
     let ciphertext = &encrypted[V10_PREFIX.len()..];
-    if ciphertext.is_empty() || ciphertext.len() % 16 != 0 {
+    if ciphertext.is_empty() || !ciphertext.len().is_multiple_of(16) {
         return Err(DecryptError::Decrypt(format!(
             "ciphertext length {} is not a non-zero multiple of the 16-byte AES block",
             ciphertext.len()

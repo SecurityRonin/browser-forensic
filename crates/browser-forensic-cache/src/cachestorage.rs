@@ -20,7 +20,7 @@
 //! the **`CacheMetadata` proto** (request method + request/response headers +
 //! response status + times — `content/browser/cache_storage/cache_storage.proto`)
 //! in **stream 0**, and the **response body** in **stream 1**. This module
-//! reuses [`parse_simple_entry`](crate::parse_simple_entry) for the SimpleCache
+//! reuses [`parse_simple_entry`] for the SimpleCache
 //! framing and the published `protobuf-forensic-core` decoder for the protos.
 //!
 //! Two honesty notes grounded in real data (Slack/Discord/Electron corpora):

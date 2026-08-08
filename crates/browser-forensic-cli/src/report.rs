@@ -132,7 +132,7 @@ fn bodyfile_sanitize(s: &str) -> String {
 /// crtime`, pipe-delimited, times in Unix seconds. `MD5`, `inode`, `mode`,
 /// `UID`, `GID`, `size` are `0` (browser events carry no filesystem metadata);
 /// the event's single timestamp goes in the MAC slot the artifact implies
-/// (see [`timestamp_semantic`]) and the other three slots are `0`.
+/// (see `timestamp_semantic`) and the other three slots are `0`.
 ///
 /// Spec: SleuthKit body file 3.x
 /// (<https://wiki.sleuthkit.org/index.php?title=Body_file>), consumed by
@@ -228,7 +228,7 @@ fn l2t_extra(e: &BrowserEvent) -> String {
 ///
 /// A fixed 17-column header followed by one row per event. `date`/`time` are
 /// rendered in `tz` (UTC when `None`); `source` is always `WEBHIST`;
-/// `sourcetype`/`type`/`MACB` come from the artifact ([`timestamp_semantic`]);
+/// `sourcetype`/`type`/`MACB` come from the artifact (`timestamp_semantic`);
 /// `extra` carries every attribute as `k=v`. Every field is RFC 4180-escaped,
 /// so a value can never break the column structure. Values are faithful — no
 /// humanizing or truncation.
@@ -329,7 +329,7 @@ const HTML_TIMELINE_ROWS: usize = 1000;
 /// header, per-artifact counts, top domains, integrity / anti-forensic flags
 /// (from `meta`), and a chronological timeline table. Every value —
 /// URLs, titles, flags, paths — is HTML-escaped (XSS guard) and shown in full;
-/// only whole trailing rows past [`HTML_TIMELINE_ROWS`] are omitted, with a
+/// only whole trailing rows past `HTML_TIMELINE_ROWS` are omitted, with a
 /// note. Findings are framed as observations of what was recovered, not
 /// conclusions.
 #[must_use]

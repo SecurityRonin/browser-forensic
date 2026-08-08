@@ -37,7 +37,7 @@
 //! the `response-head` element as a normal CRLF-delimited HTTP header block. The
 //! body is stored **exactly as received on the wire** — still compressed under
 //! its `Content-Encoding` — so it is decoded through the shared
-//! [`decode_body`](crate::decode_body) dispatch (tier-1 oracle: a brotli-encoded
+//! [`decode_body`] dispatch (tier-1 oracle: a brotli-encoded
 //! `gstatic.com` SVG decoded byte-for-byte identical to `curl` of the same
 //! immutable, content-hashed URL).
 //!

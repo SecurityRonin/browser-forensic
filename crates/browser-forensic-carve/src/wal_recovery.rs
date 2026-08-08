@@ -1,11 +1,11 @@
 //! WAL (Write-Ahead Log) recovery.
 //!
-//! Delegated to the validated [`sqlite_forensic`] carver (as [`carve_sqlite_free_pages`]
+//! Delegated to the validated [`sqlite_forensic`] carver (as `carve_sqlite_free_pages`
 //! is for the main file): open the database WITH its `-wal` sidecar, carve, and keep
 //! the records recovered from WAL-frame / commit-snapshot residue — the deleted rows
 //! that live only in the uncommitted WAL, structured and attributed, under the
 //! 0-false-positive exclusion invariant. On-disk residue is
-//! [`carve_sqlite_free_pages`]' job, so filtering to WAL substrates avoids
+//! `carve_sqlite_free_pages`' job, so filtering to WAL substrates avoids
 //! double-counting across the two calls.
 
 use std::path::Path;

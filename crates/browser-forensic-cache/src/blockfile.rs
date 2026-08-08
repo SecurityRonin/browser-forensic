@@ -6,9 +6,9 @@
 //! index hash table, follows every `next` chain to enumerate `EntryStore`
 //! records, recovers each key (the request URL, inline or long-key/external),
 //! and rebuilds the cached response: stream 0 (the pickled `HttpResponseInfo`)
-//! is decoded with [`parse_http_meta`](crate::parse_http_meta) — the *same*
+//! is decoded with [`parse_http_meta`] — the *same*
 //! metadata format SimpleCache uses — and stream 1 (the body) is transparently
-//! decompressed with [`decode_body`](crate::decode_body).
+//! decompressed with [`decode_body`].
 //!
 //! Layout facts: Chromium `net/disk_cache/blockfile/{disk_format,
 //! disk_format_base,addr}.h`, cross-checked against the CCL reverse-engineered

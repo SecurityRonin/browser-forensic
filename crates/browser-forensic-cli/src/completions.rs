@@ -1,7 +1,7 @@
 //! RFC 0001 Phase P8 — shell completions.
 //!
 //! `br4n6 completions <SHELL>` writes a completion script to stdout. The script
-//! is derived by `clap_complete` from the same [`Cli`](crate::cli::Cli) command
+//! is derived by `clap_complete` from the same [`Cli`] command
 //! tree the binary parses, so completions never drift from the actual verb
 //! surface — adding or renaming a verb regenerates a correct script for free.
 

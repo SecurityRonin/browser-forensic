@@ -7,7 +7,7 @@
 //! 1. **Orphaned SimpleCache** — a `[hash]_0` entry file present on disk whose
 //!    key-hash is absent from the SimpleCache index (`index-dir/the-real-index`)
 //!    is deleted-but-not-yet-purged residue. Parsed with
-//!    [`resource_from_entry_bytes`](crate::resource_from_entry_bytes). A lone
+//!    [`resource_from_entry_bytes`]. A lone
 //!    `[hash]_s` sparse body with no companion `_0` is a dangling body fragment.
 //! 2. **Blockfile free-but-intact** — an `EntryStore` sitting in a block marked
 //!    FREE in the block-file allocation map yet still structurally valid

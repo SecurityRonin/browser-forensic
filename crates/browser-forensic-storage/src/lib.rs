@@ -13,7 +13,7 @@
 //!   ([`parse_firefox_local_storage`]) and `storage/default/*/idb/*.sqlite`
 //!   ([`parse_firefox_indexeddb`]).
 //!
-//! Every parser emits [`BrowserEvent`]s with [`ArtifactKind::LocalStorage`],
+//! Every parser emits [`BrowserEvent`]s with `ArtifactKind::LocalStorage`,
 //! distinguished by a `storage_type` attr (`local_storage`, `session_storage`,
 //! `indexeddb`). [`parse_path`] auto-detects the backend from a file or
 //! directory; [`collect_chromium_web_storage`] / [`collect_firefox_web_storage`]

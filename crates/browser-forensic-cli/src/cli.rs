@@ -7,7 +7,7 @@
 //! `text`/`jsonl`/`csv` output. The interactive TUI is launched via the injected
 //! `launch_tui` callback.
 //!
-//! Cross-browser: the [`Family`] auto-detector routes a user-supplied file or
+//! Cross-browser: the `Family` auto-detector routes a user-supplied file or
 //! profile directory to the matching reader — Chromium (`History`/SNSS via
 //! `browser-chrome` + `snss`), Firefox (`places.sqlite`/`sessionstore.jsonlz4`
 //! via `browser-firefox`), or Safari (`History.db` via `browser-safari`) — and
@@ -3440,7 +3440,7 @@ pub fn resolve_dpapi_key(
 
 /// Decode a lowercase/uppercase hex string into bytes.
 fn decode_hex(s: &str) -> Result<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         anyhow::bail!("hex string has an odd length ({})", s.len());
     }
     (0..s.len())

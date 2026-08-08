@@ -105,7 +105,7 @@ pub fn human_transition_label(token: &str) -> &'static str {
 /// hops back to a navigation root). Root visits (`from_visit == 0`) and visits
 /// whose `from_visit` dangles get `nav_depth = 0` and no `referrer_url`.
 ///
-/// Traversal is depth-bounded ([`MAX_CHAIN_DEPTH`]) and cycle-guarded: a cyclic
+/// Traversal is depth-bounded (`MAX_CHAIN_DEPTH`) and cycle-guarded: a cyclic
 /// or dangling `from_visit` graph never loops, overflows the stack, or panics.
 pub fn resolve_referrer_chains(events: &mut [BrowserEvent]) {
     // Snapshot the linkage so the per-event mutation below has no borrow conflict.

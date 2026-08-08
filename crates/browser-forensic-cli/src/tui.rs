@@ -1,6 +1,6 @@
 //! The `br4n6` terminal-UI mode: a Midnight-Commander-style, vi-keyed viewer over
 //! Chromium session state (open / recently-closed tabs and windows). The pure
-//! reducer lives in [`crate::App`]; this module is the side-effecting main loop.
+//! reducer lives in `crate::App`; this module is the side-effecting main loop.
 //!
 //! Loads sessions from an explicit `Sessions` directory when given, otherwise the
 //! default local profile.
