@@ -1,4 +1,4 @@
-/target
+target/
 .worktrees
 
 # cargo-fuzz build artifacts, corpora and crash reproducers (the targets and
