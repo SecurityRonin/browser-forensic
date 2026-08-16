@@ -25,6 +25,8 @@ jobs:
         with:
           components: rust-src
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+        with:
+          cache-on-failure: true
       - run: cargo install cargo-fuzz --locked
       # `+nightly` beats the rust-toolchain.toml pin: cargo-fuzz's sanitizer -Z
       # flags are nightly-only, and the toml pins a stable version that a bare
@@ -59,6 +61,8 @@ jobs:
         with:
           components: rust-src
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+        with:
+          cache-on-failure: true
       - run: cargo install cargo-fuzz --locked
       - name: Fuzz ${{ matrix.target }} (10 min)
         run: cargo +nightly fuzz run "${{ matrix.target }}" -- -max_total_time=600 -rss_limit_mb=4096
