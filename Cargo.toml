@@ -73,7 +73,7 @@ sqlite-forensic = "0.10"
 # sniffs the wrapper and returns a decoded (decompressed) `Read + Seek` view for
 # E01/EWF, VMDK, VHDX, VHD, QCOW2, DMG, ISO9660, and raw — one code path, no
 # per-format branch. Whole-image carving reads through it instead of raw bytes.
-disk-forensic = "0.9"
+disk-forensic = "0.11"
 thiserror = "2"
 rust_xlsxwriter = "0.96"
 chrono-tz = "0.10"
