@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   ci:
-    uses: SecurityRonin/fleet-ci/.github/workflows/rust-ci.yml@9234e1fa9f85b14a8d6fddc7a8f7378f7e30b183
+    uses: SecurityRonin/fleet-ci/.github/workflows/rust-ci.yml@85c7263e5e1a25a090f602419ac27f87aeb1d1e3
     with:
       # The old ci.yml ran clippy, build, test and coverage on DEFAULT features
       # only — `--all-features` appears nowhere in it. Inheriting the `true`
