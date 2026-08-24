@@ -13,8 +13,14 @@ url = "https://raw.githubusercontent.com/EmbarkStudios/rust-ecosystem/main/audit
 [imports.google]
 url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
 
+[imports.isrg]
+url = "https://raw.githubusercontent.com/divviup/libprio-rs/main/supply-chain/audits.toml"
+
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
+
+[imports.zcash]
+url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
 [policy.browser-forensic-cache]
 audit-as-crates-io = false
@@ -78,9 +84,18 @@ criteria = "safe-to-deploy"
 version = "0.8.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.aes]]
+version = "0.9.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.aes-gcm]]
 version = "0.10.3"
 criteria = "safe-to-deploy"
+
+[[exemptions.aes-kw]]
+version = "0.2.1"
+criteria = "safe-to-deploy"
+notes = "RFC 3394 AES key wrapping for AFF4, via aff4 -> disk-forensic 0.11. RustCrypto; no imported audit set covers this version."
 
 [[exemptions.ahash]]
 version = "0.8.12"
@@ -138,10 +153,6 @@ criteria = "safe-to-run"
 version = "0.6.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.autocfg]]
-version = "1.5.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.bech32]]
 version = "0.12.0"
 criteria = "safe-to-deploy"
@@ -151,11 +162,15 @@ version = "2.13.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.block-buffer]]
-version = "0.10.4"
+version = "0.12.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.block-padding]]
 version = "0.3.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.block-padding]]
+version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.brotli]]
@@ -164,50 +179,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.brotli-decompressor]]
 version = "5.0.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-carve]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-chrome]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-cli]]
-version = "0.3.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-core]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-discovery]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-firefox]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-integrity]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-mcp]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-memory]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-safari]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.browser-forensic-triage]]
-version = "0.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.by_address]]
@@ -230,6 +201,11 @@ criteria = "safe-to-deploy"
 version = "1.12.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.bzip2]]
+version = "0.6.1"
+criteria = "safe-to-deploy"
+notes = "bzip2 0.6 wraps libbz2-rs-sys (pure Rust); no C libbzip2 is built or linked. Via archive-core -> disk-forensic 0.11. Its bzip2-1.0.6 licence is already allowed in memory-forensic, archive-forensic and usb-forensic on the same reasoning."
+
 [[exemptions.bzip2-rs]]
 version = "0.1.2"
 criteria = "safe-to-deploy"
@@ -246,12 +222,12 @@ criteria = "safe-to-deploy"
 version = "0.1.2"
 criteria = "safe-to-deploy"
 
-[[exemptions.cc]]
-version = "1.2.61"
+[[exemptions.cbc]]
+version = "0.2.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.cfg-if]]
-version = "1.0.4"
+[[exemptions.cc]]
+version = "1.2.61"
 criteria = "safe-to-deploy"
 
 [[exemptions.chrono]]
@@ -261,6 +237,11 @@ criteria = "safe-to-deploy"
 [[exemptions.chrono-tz]]
 version = "0.10.4"
 criteria = "safe-to-deploy"
+
+[[exemptions.cipher]]
+version = "0.5.2"
+criteria = "safe-to-deploy"
+notes = "RustCrypto block/stream cipher traits at the 2026 major (0.5). Older majors are already exempted here; the imported audit sets have not caught up to this one."
 
 [[exemptions.clap]]
 version = "4.6.1"
@@ -298,6 +279,11 @@ criteria = "safe-to-deploy"
 version = "0.9.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.const-oid]]
+version = "0.10.2"
+criteria = "safe-to-deploy"
+notes = "RustCrypto OID handling at the 2026 major (0.10). Imported audit sets have not caught up to this version."
+
 [[exemptions.convert_case]]
 version = "0.10.0"
 criteria = "safe-to-deploy"
@@ -305,6 +291,11 @@ criteria = "safe-to-deploy"
 [[exemptions.core-foundation]]
 version = "0.10.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.cpubits]]
+version = "0.1.1"
+criteria = "safe-to-deploy"
+notes = "RustCrypto CPU feature detection (github:RustCrypto/utils), a new dependency of aes 0.9. Imported audit sets have not caught up to this version."
 
 [[exemptions.cpufeatures]]
 version = "0.2.17"
@@ -350,12 +341,12 @@ criteria = "safe-to-deploy"
 version = "0.9.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.crunchy]]
-version = "0.2.4"
+[[exemptions.crypto-common]]
+version = "0.1.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]
-version = "0.1.7"
+version = "0.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.csscolorparser]]
@@ -386,6 +377,11 @@ criteria = "safe-to-deploy"
 version = "0.1.4"
 criteria = "safe-to-run"
 
+[[exemptions.deflate64]]
+version = "0.1.12"
+criteria = "safe-to-deploy"
+notes = "Deflate64 codec for the zip reader, via archive-core -> disk-forensic 0.11. Unaudited by any imported set."
+
 [[exemptions.deltae]]
 version = "0.3.2"
 criteria = "safe-to-deploy"
@@ -406,6 +402,10 @@ criteria = "safe-to-deploy"
 version = "0.10.7"
 criteria = "safe-to-deploy"
 
+[[exemptions.digest]]
+version = "0.11.3"
+criteria = "safe-to-deploy"
+
 [[exemptions.dirs]]
 version = "6.0.0"
 criteria = "safe-to-deploy"
@@ -416,10 +416,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.dispatch2]]
 version = "0.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.document-features]]
-version = "0.2.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.dtoa]]
@@ -434,16 +430,8 @@ criteria = "safe-to-deploy"
 version = "1.0.20"
 criteria = "safe-to-deploy"
 
-[[exemptions.errno]]
-version = "0.3.14"
-criteria = "safe-to-deploy"
-
 [[exemptions.error-code]]
 version = "3.3.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.ese-core]]
-version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.ese-core]]
@@ -518,16 +506,8 @@ criteria = "safe-to-deploy"
 version = "0.3.4"
 criteria = "safe-to-deploy"
 
-[[exemptions.getrandom]]
-version = "0.4.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.ghash]]
 version = "0.5.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.glob]]
-version = "0.3.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.goblin]]
@@ -546,10 +526,6 @@ criteria = "safe-to-deploy"
 version = "0.9.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.hmac]]
-version = "0.12.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.http]]
 version = "1.4.2"
 criteria = "safe-to-deploy"
@@ -557,6 +533,11 @@ criteria = "safe-to-deploy"
 [[exemptions.httparse]]
 version = "1.10.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.hybrid-array]]
+version = "0.4.14"
+criteria = "safe-to-deploy"
+notes = "RustCrypto const-generic array type underpinning the 2026 traits. Imported audit sets have not caught up to this version."
 
 [[exemptions.iana-time-zone]]
 version = "0.1.65"
@@ -606,16 +587,8 @@ criteria = "safe-to-deploy"
 version = "0.15.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.indexmap]]
-version = "2.14.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.indoc]]
 version = "2.0.7"
-criteria = "safe-to-deploy"
-
-[[exemptions.inout]]
-version = "0.1.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.instability]]
@@ -661,6 +634,11 @@ criteria = "safe-to-deploy"
 [[exemptions.lab]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.libbz2-rs-sys]]
+version = "0.2.5"
+criteria = "safe-to-deploy"
+notes = "Pure-Rust bzip2 port backing the bzip2 crate. Via archive-core -> disk-forensic 0.11."
 
 [[exemptions.libc]]
 version = "0.2.186"
@@ -715,15 +693,7 @@ version = "3.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.lru]]
-version = "0.12.5"
-criteria = "safe-to-deploy"
-
-[[exemptions.lru]]
-version = "0.16.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.lru]]
-version = "0.18.0"
+version = "0.18.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.lz4_flex]]
@@ -737,6 +707,11 @@ criteria = "safe-to-deploy"
 [[exemptions.lzma-rs]]
 version = "0.3.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.lzma-rust2]]
+version = "0.19.0"
+criteria = "safe-to-deploy"
+notes = "LZMA/LZMA2 codec dispatched by the 7z and zip readers, via archive-core -> disk-forensic 0.11. Unaudited by any imported set."
 
 [[exemptions.mac_address]]
 version = "1.1.8"
@@ -814,10 +789,6 @@ criteria = "safe-to-deploy"
 version = "1.70.2"
 criteria = "safe-to-deploy"
 
-[[exemptions.opaque-debug]]
-version = "0.3.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.open]]
 version = "5.3.5"
 criteria = "safe-to-deploy"
@@ -874,14 +845,6 @@ criteria = "safe-to-deploy"
 version = "0.11.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.phf]]
-version = "0.12.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.phf]]
-version = "0.13.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.phf_codegen]]
 version = "0.11.3"
 criteria = "safe-to-deploy"
@@ -894,10 +857,6 @@ criteria = "safe-to-deploy"
 version = "0.11.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.phf_generator]]
-version = "0.13.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.phf_macros]]
 version = "0.11.3"
 criteria = "safe-to-deploy"
@@ -908,14 +867,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.phf_shared]]
 version = "0.11.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.phf_shared]]
-version = "0.12.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.phf_shared]]
-version = "0.13.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project-lite]]
@@ -949,6 +900,11 @@ criteria = "safe-to-deploy"
 [[exemptions.potential_utf]]
 version = "0.1.5"
 criteria = "safe-to-deploy"
+
+[[exemptions.ppmd-rust]]
+version = "1.4.0"
+criteria = "safe-to-deploy"
+notes = "PPMd codec dispatched by the 7z reader, via archive-core -> disk-forensic 0.11. Unaudited by any imported set."
 
 [[exemptions.ppv-lite86]]
 version = "0.2.21"
@@ -987,7 +943,7 @@ version = "0.30.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.ratatui-core]]
-version = "0.1.1"
+version = "0.1.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.ratatui-crossterm]]
@@ -1008,10 +964,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rayon]]
 version = "1.12.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.rayon-core]]
-version = "1.13.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]
@@ -1066,10 +1018,6 @@ criteria = "safe-to-deploy"
 version = "2.1.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.rustc_version]]
-version = "0.4.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.rustix]]
 version = "1.1.4"
 criteria = "safe-to-deploy"
@@ -1086,13 +1034,13 @@ criteria = "safe-to-deploy"
 version = "0.103.13"
 criteria = "safe-to-deploy"
 
-[[exemptions.rustversion]]
-version = "1.0.22"
-criteria = "safe-to-deploy"
-
 [[exemptions.rusty-leveldb]]
 version = "4.0.1"
 criteria = "safe-to-run"
+
+[[exemptions.ruzstd]]
+version = "0.7.3"
+criteria = "safe-to-deploy"
 
 [[exemptions.ruzstd]]
 version = "0.8.3"
@@ -1126,22 +1074,6 @@ criteria = "safe-to-deploy"
 version = "0.37.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.semver]]
-version = "1.0.28"
-criteria = "safe-to-deploy"
-
-[[exemptions.serde]]
-version = "1.0.228"
-criteria = "safe-to-deploy"
-
-[[exemptions.serde_core]]
-version = "1.0.228"
-criteria = "safe-to-deploy"
-
-[[exemptions.serde_derive]]
-version = "1.0.228"
-criteria = "safe-to-deploy"
-
 [[exemptions.serde_derive_internals]]
 version = "0.29.1"
 criteria = "safe-to-deploy"
@@ -1154,6 +1086,11 @@ criteria = "safe-to-deploy"
 version = "0.4.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.sevenz-rust2]]
+version = "0.21.5"
+criteria = "safe-to-deploy"
+notes = "7z container reader, via archive-core -> disk-forensic 0.11 (taken to clear RUSTSEC-2026-0253). No imported audit set vouches for this publisher. Reaches the browser-forensic-cli binary only; no library crate in this workspace depends on disk-forensic."
+
 [[exemptions.sha-1]]
 version = "0.10.1"
 criteria = "safe-to-deploy"
@@ -1163,7 +1100,7 @@ version = "0.10.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.sha2]]
-version = "0.10.9"
+version = "0.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.signal-hook]]
@@ -1206,10 +1143,6 @@ criteria = "safe-to-deploy"
 version = "0.28.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.subtle]]
-version = "2.6.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.syn]]
 version = "1.0.109"
 criteria = "safe-to-deploy"
@@ -1235,15 +1168,7 @@ version = "0.23.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.thiserror]]
-version = "1.0.69"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror]]
 version = "2.0.18"
-criteria = "safe-to-deploy"
-
-[[exemptions.thiserror-impl]]
-version = "1.0.69"
 criteria = "safe-to-deploy"
 
 [[exemptions.thiserror-impl]]
@@ -1264,6 +1189,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.tinyvec]]
 version = "1.12.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.twox-hash]]
+version = "1.6.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.twox-hash]]
@@ -1288,10 +1217,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.unicode-truncate]]
 version = "2.0.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.universal-hash]]
-version = "0.5.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.untrusted]]
@@ -1410,10 +1335,6 @@ criteria = "safe-to-deploy"
 version = "0.59.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.windows-link]]
-version = "0.2.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.windows-result]]
 version = "0.4.1"
 criteria = "safe-to-deploy"
@@ -1518,6 +1439,11 @@ criteria = "safe-to-deploy"
 version = "0.13.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.xts-mode]]
+version = "0.5.1"
+criteria = "safe-to-deploy"
+notes = "XTS block mode for AFF4 encrypted streams, via aff4 -> disk-forensic 0.11. RustCrypto; no imported audit set covers this version."
+
 [[exemptions.yoke]]
 version = "0.8.2"
 criteria = "safe-to-deploy"
@@ -1564,10 +1490,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.zlib-rs]]
 version = "0.6.6"
-criteria = "safe-to-deploy"
-
-[[exemptions.zmij]]
-version = "1.0.21"
 criteria = "safe-to-deploy"
 
 [[exemptions.zopfli]]

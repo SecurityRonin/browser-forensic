@@ -20,7 +20,7 @@ url = { workspace = true }
 # that browser-forensic never exercises. The _EPROCESS walk it would provide is
 # reimplemented here on memf-core's public ObjectReader (symbol-driven, no
 # hardcoded offsets), keeping the dependency tree clean and audit-green.
-memf-format = "0.2"
+memf-format = "0.3"
 memf-core = "0.2"
 memf-symbols = "0.2"
 memf-session = "0.3"

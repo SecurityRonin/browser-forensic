@@ -29,6 +29,12 @@ allow = [
     "Zlib",
     "BSL-1.0",
     "MPL-2.0",
+    # libbz2-rs-sys (pure-Rust bzip2 port) carries the permissive BSD-style
+    # bzip2/libbzip2 licence, reached via the archive decode path that arrives
+    # with disk-forensic 0.11. Non-copyleft, same class as the entries above.
+    # memory-forensic, archive-forensic and usb-forensic already allow it on the
+    # same reasoning, so this follows fleet precedent rather than setting one.
+    "bzip2-1.0.6",
     # webpki-roots (Mozilla CA bundle) relicensed to CDLA-Permissive-2.0 at 1.0.
     # Pulled transitively by `ureq` under `memf-symbols` (kernel-PDB fetch). A
     # permissive data license with no copyleft or patent traps.
