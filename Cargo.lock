@@ -661,7 +661,7 @@ dependencies = [
 
 [[package]]
 name = "browser-forensic-memory"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "browser-forensic-core",

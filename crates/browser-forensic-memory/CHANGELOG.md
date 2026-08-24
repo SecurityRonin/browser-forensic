@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/SecurityRonin/browser-forensic/compare/browser-forensic-memory-v0.2.2...browser-forensic-memory-v0.2.3) - 2026-08-24
+
+### Fixed
+
+- *(security)* bump disk-forensic and memf-format to clear RUSTSEC-2026-0253 ([#16](https://github.com/SecurityRonin/browser-forensic/pull/16))
+
 ## [0.2.2](https://github.com/SecurityRonin/browser-forensic/compare/browser-forensic-memory-v0.2.1...browser-forensic-memory-v0.2.2) - 2026-08-08
 
 ### Other
