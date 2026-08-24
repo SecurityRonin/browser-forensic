@@ -3,6 +3,18 @@
 
 [audits]
 
+[[trusted.ad1-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-07-01"
+end = "2027-08-24"
+
+[[trusted.aff4]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-13"
+end = "2027-08-24"
+
 [[trusted.apm-partition-core]]
 criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
@@ -14,6 +26,18 @@ criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-06-08"
 end = "2027-08-05"
+
+[[trusted.archive-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-07-18"
+end = "2027-08-24"
+
+[[trusted.dar-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-08"
+end = "2027-08-24"
 
 [[trusted.disk-forensic]]
 criteria = "safe-to-deploy"
@@ -44,6 +68,12 @@ criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-03-05"
 end = "2027-08-05"
+
+[[trusted.filetime]]
+criteria = "safe-to-deploy"
+user-id = 1 # Alex Crichton (alexcrichton)
+start = "2019-04-23"
+end = "2027-08-24"
 
 [[trusted.forensic-carve]]
 criteria = "safe-to-deploy"
@@ -213,6 +243,12 @@ user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-06-16"
 end = "2027-08-05"
 
+[[trusted.tar]]
+criteria = "safe-to-deploy"
+user-id = 1 # Alex Crichton (alexcrichton)
+start = "2019-03-04"
+end = "2027-08-24"
+
 [[trusted.vhdx-core]]
 criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
@@ -230,3 +266,9 @@ criteria = "safe-to-deploy"
 user-id = 347968 # Albert Hui (h4x0r)
 start = "2026-06-06"
 end = "2027-08-05"
+
+[[trusted.zip-forensic-core]]
+criteria = "safe-to-deploy"
+user-id = 347968 # Albert Hui (h4x0r)
+start = "2026-06-29"
+end = "2027-08-24"
