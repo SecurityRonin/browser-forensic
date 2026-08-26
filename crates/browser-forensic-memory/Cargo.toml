@@ -1,6 +1,6 @@
 [package]
 name = "browser-forensic-memory"
-version = "0.2.2"
+version = "0.2.3"
 description = "Browser memory forensics — process-attributed artifact carving from memory images (memf) plus raw byte-scan fallback"
 edition.workspace = true
 rust-version.workspace = true
